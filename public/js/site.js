@@ -11,6 +11,11 @@
   function $(s, r) { return (r || document).querySelector(s); }
   function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  /* Only same-origin relative paths; rejects //host, /\host, javascript:, absolute URLs. */
+  function sameOriginPath(p) {
+    if (typeof p !== 'string' || !/^\/(?![\/\\])/.test(p)) return null;
+    try { var u = new URL(p, location.origin); return u.origin === location.origin ? u.pathname + u.search + u.hash : null; } catch (e) { return null; }
+  }
   function safeUrl(u) { return /^https:\/\//i.test(String(u || '')) ? esc(u) : '#'; }
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 
@@ -86,8 +91,7 @@
   function afterAuth(r, msgEl) {
     if (r.ok) {
       state.csrf = r.csrf;
-      var next = new URLSearchParams(location.search).get('next');
-      location.href = next && next.charAt(0) === '/' && next.charAt(1) !== '/' ? next : '/me';
+      location.href = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
     } else if (msgEl) {
       msgEl.className = 'form-msg error';
       msgEl.textContent = r.message || 'Sign-in failed. Please try again.';
@@ -163,7 +167,7 @@
       if (r.status === 403 && r.error === 'age_required') {
         return confirmAge().then(function (ok) { btn.disabled = false; msg.textContent = ''; if (ok) book(btn); });
       }
-      if (r.ok && r.checkoutUrl) { track('checkout_start', eventId); location.href = r.checkoutUrl; return; }
+      if (r.ok && /^https:\/\//.test(r.checkoutUrl || '')) { track('checkout_start', eventId); location.href = r.checkoutUrl; return; }
       if (r.ok && r.bookingId) { location.href = '/bookings/' + r.bookingId; return; }
       if (r.status === 401) return goSignin();
       btn.disabled = false;
@@ -183,6 +187,7 @@
         b.disabled = false;
         if (!r.ok) { window.alert(r.message || 'Membership is not available yet.'); return; }
         var wa = window.Telegram && window.Telegram.WebApp;
+        if (!/^https:\/\/t\.me\//.test(r.invoiceLink || '')) { window.alert('Membership is not available yet.'); return; }
         if (wa && wa.openInvoice) wa.openInvoice(r.invoiceLink); else location.href = r.invoiceLink;
       });
     });
