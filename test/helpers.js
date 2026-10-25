@@ -85,7 +85,7 @@ globalThis.fetch = async (input, init = {}) => {
     if (o) {
       overrides.delete([...overrides.keys()].find((k) => overrides.get(k) === o));
       const r = await o(body, path);
-      return jsonResponse(r.body ?? r, r.status ?? 200);
+      return r && r.__http ? jsonResponse(r.body, r.status) : jsonResponse(r);
     }
     if (path === '/v1/payment_links' && init.method === 'POST') {
       const id = `plink_${crypto.randomBytes(6).toString('hex')}`;
