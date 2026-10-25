@@ -1,0 +1,145 @@
+{
+  "commercialStatus": "awaiting_commercial_validation",
+  "disclaimer": "INR amounts represent positioning target benchmarks in India. Charges are billed exclusively in Telegram Stars (XTR) through Telegram's in-app payment system. The exact Stars amounts are configurable and subject to commercial signoff.",
+  "billingIntervalDays": 30,
+  "billingIntervalSeconds": 2592000,
+  "currency": "XTR",
+  "currencyLabel": "Telegram Stars (XTR)",
+  "cancellationPolicy": "Subscriptions renew automatically every 30 days. You can cancel at any time directly in Telegram under Settings > Subscriptions. When canceled, your membership remains active until the end of the current 30-day billing period.",
+  "expirationPolicy": "Upon subscription expiration or non-renewal, private Telegram channel access is automatically revoked.",
+  "refundPolicy": "Telegram Stars payments are non-refundable digital goods per Telegram Terms of Service. Exceptional billing discrepancies can be reported via Grievance Redressal.",
+  "tiers": [
+    {
+      "id": "insider",
+      "slug": "insider",
+      "name": "Insider",
+      "headline": "Essential social discovery & community access",
+      "inrTarget": 149,
+      "inrTargetLabel": "₹149 / month",
+      "starsPrice": 75,
+      "starsPriceLabel": "75 Stars / 30 days",
+      "starsAwaitingValidation": true,
+      "billingPeriodDays": 30,
+      "billingPeriodSeconds": 2592000,
+      "channelConfigKey": "TELEGRAM_INSIDER_CHANNEL_ID",
+      "channelName": "StrangersMeetup — Insider Lounge",
+      "badge": "Popular Entry",
+      "isPopular": false,
+      "enabled": true,
+      "benefits": [
+        {
+          "text": "Access to the Insider private Telegram channel",
+          "status": "active"
+        },
+        {
+          "text": "Verified 21+ adults-only regional community updates",
+          "status": "active"
+        },
+        {
+          "text": "Curated member social activity notifications",
+          "status": "active"
+        },
+        {
+          "text": "Entry-level member experiences & open circles",
+          "status": "active"
+        },
+        {
+          "text": "Direct community moderation & report tools",
+          "status": "active"
+        },
+        {
+          "text": "Interactive member discovery polling",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "social-plus",
+      "slug": "social-plus",
+      "name": "Social Plus",
+      "headline": "Enhanced discovery, priority meetup access & mixers",
+      "inrTarget": 499,
+      "inrTargetLabel": "₹499 / month",
+      "starsPrice": 250,
+      "starsPriceLabel": "250 Stars / 30 days",
+      "starsAwaitingValidation": true,
+      "billingPeriodDays": 30,
+      "billingPeriodSeconds": 2592000,
+      "channelConfigKey": "TELEGRAM_SOCIAL_PLUS_CHANNEL_ID",
+      "channelName": "StrangersMeetup — Social Plus Circle",
+      "badge": "Most Popular",
+      "isPopular": true,
+      "enabled": true,
+      "benefits": [
+        {
+          "text": "Access to the Social Plus private Telegram channel",
+          "status": "active"
+        },
+        {
+          "text": "All Insider member benefits included",
+          "status": "active"
+        },
+        {
+          "text": "Priority RSVP & reservations for public adult meetups",
+          "status": "active"
+        },
+        {
+          "text": "Premium curated social mixers and themed evenings",
+          "status": "active"
+        },
+        {
+          "text": "Additional premium social discovery experiences",
+          "status": "active"
+        },
+        {
+          "text": "Curated member introduction drops (bi-weekly)",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "vip-circle",
+      "slug": "vip-circle",
+      "name": "VIP Circle",
+      "headline": "Exclusive high-tier gatherings & private salon experiences",
+      "inrTarget": 999,
+      "inrTargetLabel": "₹999 / month",
+      "starsPrice": 500,
+      "starsPriceLabel": "500 Stars / 30 days",
+      "starsAwaitingValidation": true,
+      "billingPeriodDays": 30,
+      "billingPeriodSeconds": 2592000,
+      "channelConfigKey": "TELEGRAM_VIP_CHANNEL_ID",
+      "channelName": "StrangersMeetup — VIP Circle",
+      "badge": "Signature VIP",
+      "isPopular": false,
+      "enabled": true,
+      "benefits": [
+        {
+          "text": "Access to the exclusive VIP Circle private Telegram channel",
+          "status": "active"
+        },
+        {
+          "text": "All Social Plus & Insider privileges included",
+          "status": "active"
+        },
+        {
+          "text": "Exclusive VIP-only salons and private gatherings",
+          "status": "active"
+        },
+        {
+          "text": "Guaranteed priority access to limited-capacity member meetups",
+          "status": "active"
+        },
+        {
+          "text": "Direct host concierge for meetup arrangements",
+          "status": "active"
+        },
+        {
+          "text": "VIP member spotlight & private matching salons",
+          "status": "planned"
+        }
+      ]
+    }
+  ]
+}

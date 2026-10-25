@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StrangersMeetup — Adults-Only Social Discovery & Dating (21+)</title>
+  <meta name="description" content="StrangersMeetup is an adults-only dating and social-discovery membership experience for people aged 21 and older across Tamil Nadu, Puducherry, Karnataka, and Kerala.">
+  <meta name="theme-color" content="#07090b">
+  
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+  <!-- Age Gate Dialog (21+ Statutory Gate) -->
+  <dialog id="age-gate-dialog" aria-labelledby="age-gate-title">
+    <div class="modal-header">
+      <span class="age-badge-pill" style="margin-bottom: 0.6rem; display: inline-block;">Statutory 21+ Verification</span>
+      <h2 id="age-gate-title" class="modal-title">Adults-Only Community</h2>
+      <p style="color: var(--text-secondary); font-size: 0.9rem;">
+        StrangersMeetup is an exclusive dating and social discovery experience strictly restricted to adults aged 21 and older.
+      </p>
+    </div>
+
+    <div id="age-gate-error" class="error-banner" role="alert"></div>
+
+    <form id="age-gate-form">
+      <div class="form-group">
+        <label for="dob-input" class="form-label">Your Date of Birth</label>
+        <input type="date" id="dob-input" class="form-input" required max="2010-01-01">
+      </div>
+
+      <div class="form-group">
+        <label for="state-input" class="form-label">Select Your State / Region</label>
+        <select id="state-input" class="form-select" required>
+          <option value="" disabled selected>Choose your home region...</option>
+          <option value="TN">Tamil Nadu</option>
+          <option value="PY">Puducherry</option>
+          <option value="KA">Karnataka</option>
+          <option value="KL">Kerala</option>
+          <option value="OTHER">Other Region (Currently Waitlist)</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-top: 1.2rem;">
+        <label class="checkbox-label">
+          <input type="checkbox" id="affirm-checkbox" required style="accent-color: var(--accent-teal); margin-top: 0.2rem;">
+          <span>I solemnly affirm under applicable laws that I am at least 21 years of age, located in an eligible region, and agree to respectful, consensual social interactions.</span>
+        </label>
+      </div>
+
+      <p style="font-size: 0.75rem; color: var(--text-muted); margin: 1rem 0 1.5rem; line-height: 1.4;">
+        * Notice: This initial self-declaration is an eligibility gateway and does not constitute independently verified government identity. Zero tolerance for deceptive submissions.
+      </p>
+
+      <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
+        Verify & Enter StrangersMeetup
+      </button>
+    </form>
+  </dialog>
+
+  <!-- Checkout Dialog -->
+  <dialog id="checkout-dialog" aria-labelledby="checkout-title">
+    <div class="modal-header">
+      <span class="age-badge-pill" style="margin-bottom: 0.5rem; display: inline-block;">Official Telegram Checkout</span>
+      <h3 id="checkout-title" class="modal-title">Membership Checkout</h3>
+    </div>
+    
+    <div id="checkout-details">
+      <!-- Injected via JavaScript -->
+    </div>
+
+    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+      <a id="checkout-proceed-btn" href="#" target="_blank" rel="noopener noreferrer" class="btn-primary" style="flex: 1; justify-content: center; display: none;">
+        Open Telegram & Subscribe ↗
+      </a>
+      <button type="button" class="btn-secondary" onclick="document.getElementById('checkout-dialog').close()">
+        Close
+      </button>
+    </div>
+  </dialog>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="nav-container">
+      <a href="/" class="brand-link">
+        <svg class="brand-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+        </svg>
+        <span>Strangers<span style="color: var(--accent-teal);">Meetup</span></span>
+      </a>
+
+      <div style="display: flex; align-items: center; gap: 0.8rem;">
+        <span class="age-badge-pill">21+ Only</span>
+      </div>
+
+      <nav>
+        <ul class="nav-links">
+          <li><a href="#how-it-works">How It Works</a></li>
+          <li><a href="#memberships">Memberships</a></li>
+          <li><a href="#telegram">Telegram Club</a></li>
+          <li><a href="#regions">Regions</a></li>
+          <li><a href="#safety">Trust & Safety</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="#memberships" class="nav-cta-btn">Join Now</a></li>
+        </ul>
+      </nav>
+
+      <button class="mobile-menu-toggle" aria-label="Toggle navigation menu" aria-expanded="false">
+        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile Drawer -->
+  <div id="mobile-nav-drawer" style="display: none; background: var(--bg-surface); padding: 1.5rem; border-bottom: 1px solid var(--border-subtle);">
+    <ul style="list-style: none; display: flex; flex-direction: column; gap: 1rem;">
+      <li><a href="#how-it-works" style="color: var(--text-primary); font-size: 1.1rem;">How It Works</a></li>
+      <li><a href="#memberships" style="color: var(--text-primary); font-size: 1.1rem;">Memberships & Pricing</a></li>
+      <li><a href="#telegram" style="color: var(--text-primary); font-size: 1.1rem;">Telegram Channel Experience</a></li>
+      <li><a href="#regions" style="color: var(--text-primary); font-size: 1.1rem;">Regional Availability</a></li>
+      <li><a href="#safety" style="color: var(--text-primary); font-size: 1.1rem;">Trust & Safety</a></li>
+      <li><a href="#faq" style="color: var(--text-primary); font-size: 1.1rem;">Frequently Asked Questions</a></li>
+    </ul>
+  </div>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="section hero-section">
+      <div class="container hero-content">
+        <div class="hero-pill-announcement">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"></path>
+          </svg>
+          Adults 21+ Social Discovery & Curated Meetups
+        </div>
+
+        <h1 class="hero-title">
+          Real Connections. Genuine Chemistry. <span class="glow">Consensual Meetups.</span>
+        </h1>
+
+        <p class="hero-description">
+          An intimate, vetted membership community for discerning adults aged 21 and older across South India. Discover mutual attraction, start respectful private conversations, and arrange memorable real-world meetups.
+        </p>
+
+        <div class="hero-cta-group">
+          <a href="#memberships" class="btn-primary">
+            Explore Membership Tiers
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M5 12h14M12 5l7 7-7 7"></path>
+            </svg>
+          </a>
+          <a href="#safety" class="btn-secondary">
+            Safety & Consent Standards
+          </a>
+        </div>
+
+        <div class="region-pills-row">
+          <span>Active In:</span>
+          <span class="region-pill">Tamil Nadu</span>
+          <span class="region-pill">Puducherry</span>
+          <span class="region-pill">Karnataka</span>
+          <span class="region-pill">Kerala</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="section">
+      <div class="container">
+        <div class="section-title-wrap">
+          <span class="section-tag">How It Works</span>
+          <h2 class="section-heading">From Social Discovery to Real-Life Meetup</h2>
+          <p class="section-subheading">
+            A dignified, privacy-first pathway designed for genuine adults seeking real relationships, romantic sparks, and high-caliber social circles.
+          </p>
+        </div>
+
+        <div class="steps-grid">
+          <div class="step-card">
+            <span class="step-number">Step 01</span>
+            <div class="step-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <h3 class="step-title">Discover Nearby</h3>
+            <p class="step-desc">
+              Browse curated introductions of interesting, verified adults in your metropolitan region without bots, fake profiles, or unsolicited commercial messages.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <span class="step-number">Step 02</span>
+            <div class="step-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+              </svg>
+            </div>
+            <h3 class="step-title">Express Mutual Interest</h3>
+            <p class="step-desc">
+              Connect on your terms. Mutual interest ensures you only converse with members who genuinely share your attraction, conversation style, and dating preferences.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <span class="step-number">Step 03</span>
+            <div class="step-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </div>
+            <h3 class="step-title">Engage in Private Channels</h3>
+            <p class="step-desc">
+              Access tier-gated private Telegram channels. Keep your phone number private via Telegram username settings while engaging in vibrant community discussions.
+            </p>
+          </div>
+
+          <div class="step-card">
+            <span class="step-number">Step 04</span>
+            <div class="step-icon-wrap">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <h3 class="step-title">Consensual Public Meetups</h3>
+            <p class="step-desc">
+              Transition from online rapport to vetted public meetups, curated mixers, or 1-on-1 coffee dates at verified public venues with absolute safety.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Membership Tiers Section -->
+    <section id="memberships" class="section">
+      <div class="container">
+        <div class="section-title-wrap">
+          <span class="section-tag">Monthly Memberships</span>
+          <h2 class="section-heading">Choose Your Discovery Experience</h2>
+          <p class="section-subheading">
+            Three carefully structured monthly tiers powered by Telegram Stars recurring billing. Cancel anytime with complete peace of mind.
+          </p>
+        </div>
+
+        <div class="tiers-grid">
+          <!-- Tier 1: Insider -->
+          <div class="tier-card" data-tier="insider">
+            <div class="tier-header">
+              <h3 class="tier-name">Insider</h3>
+              <p class="tier-headline">Essential social discovery & community access</p>
+            </div>
+
+            <div class="tier-price-box">
+              <div class="tier-target-price">
+                ₹149 <small>/ month target</small>
+              </div>
+              <div class="tier-stars-rate">
+                <span class="tier-stars-tag">75 Telegram Stars</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">(every 30 days)</span>
+              </div>
+            </div>
+
+            <ul class="tier-benefits-list">
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Access to the Insider private Telegram channel</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Verified 21+ adults-only regional community updates</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Curated member social activity notifications</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Entry-level member experiences & open circles</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Direct community moderation & report tools</span>
+              </li>
+              <li class="tier-benefit-item" style="color: var(--text-muted);">
+                <span style="color: var(--text-muted);">○</span>
+                <span>Interactive member discovery polling <span class="benefit-status-pill">Planned</span></span>
+              </li>
+            </ul>
+
+            <button type="button" class="btn-tier-checkout" onclick="initiateCheckout('insider')">
+              Select Insider Membership
+            </button>
+          </div>
+
+          <!-- Tier 2: Social Plus (Popular) -->
+          <div class="tier-card popular" data-tier="social-plus">
+            <span class="tier-badge">Most Popular</span>
+            
+            <div class="tier-header">
+              <h3 class="tier-name">Social Plus</h3>
+              <p class="tier-headline">Enhanced discovery, priority meetup access & mixers</p>
+            </div>
+
+            <div class="tier-price-box">
+              <div class="tier-target-price">
+                ₹499 <small>/ month target</small>
+              </div>
+              <div class="tier-stars-rate">
+                <span class="tier-stars-tag">250 Telegram Stars</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">(every 30 days)</span>
+              </div>
+            </div>
+
+            <ul class="tier-benefits-list">
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Access to the Social Plus private Telegram channel</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>All Insider member benefits included</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Priority RSVP & reservations for public adult meetups</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Premium curated social mixers and themed evenings</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Additional premium social discovery experiences</span>
+              </li>
+              <li class="tier-benefit-item" style="color: var(--text-muted);">
+                <span style="color: var(--text-muted);">○</span>
+                <span>Curated member introduction drops <span class="benefit-status-pill">Planned</span></span>
+              </li>
+            </ul>
+
+            <button type="button" class="btn-tier-checkout" onclick="initiateCheckout('social-plus')">
+              Select Social Plus Membership
+            </button>
+          </div>
+
+          <!-- Tier 3: VIP Circle -->
+          <div class="tier-card" data-tier="vip-circle">
+            <div class="tier-header">
+              <h3 class="tier-name">VIP Circle</h3>
+              <p class="tier-headline">Exclusive high-tier gatherings & private salon experiences</p>
+            </div>
+
+            <div class="tier-price-box">
+              <div class="tier-target-price">
+                ₹999 <small>/ month target</small>
+              </div>
+              <div class="tier-stars-rate">
+                <span class="tier-stars-tag">500 Telegram Stars</span>
+                <span style="font-size: 0.8rem; color: var(--text-muted);">(every 30 days)</span>
+              </div>
+            </div>
+
+            <ul class="tier-benefits-list">
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Access to the exclusive VIP Circle private Telegram channel</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>All Social Plus & Insider privileges included</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Exclusive VIP-only salons and private gatherings</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Guaranteed priority access to limited-capacity member meetups</span>
+              </li>
+              <li class="tier-benefit-item">
+                <span class="benefit-check">✓</span>
+                <span>Direct host concierge for meetup arrangements</span>
+              </li>
+              <li class="tier-benefit-item" style="color: var(--text-muted);">
+                <span style="color: var(--text-muted);">○</span>
+                <span>VIP spotlight & private matching salons <span class="benefit-status-pill">Planned</span></span>
+              </li>
+            </ul>
+
+            <button type="button" class="btn-tier-checkout" onclick="initiateCheckout('vip-circle')">
+              Select VIP Circle Membership
+            </button>
+          </div>
+        </div>
+
+        <div class="tier-disclosure-footer">
+          <strong>Transparent Billing & Cancellation Disclosure:</strong><br>
+          INR targets (₹149, ₹499, ₹999) serve as positioning benchmarks in India. All charges are executed strictly in Telegram Stars (XTR) through Telegram's in-app payment system. Subscriptions renew automatically every 30 days. You can cancel auto-renewal at any time in Telegram under <em>Settings &gt; Subscriptions</em>. When a subscription ends or is canceled, access to the corresponding private channel remains active until the end of the paid 30-day period, after which it is automatically revoked.
+        </div>
+      </div>
+    </section>
+
+    <!-- Telegram Membership Section -->
+    <section id="telegram" class="section">
+      <div class="container">
+        <div class="telegram-feature-box">
+          <div class="telegram-content">
+            <span class="section-tag">Seamless Infrastructure</span>
+            <h3>Powered by Telegram for Maximum Privacy & Discretion</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 1.2rem;">
+              We eliminate risky third-party app installations and invasive tracker permissions. StrangersMeetup operates through verified Telegram private channels and bot automation.
+            </p>
+
+            <ul class="telegram-benefits-list">
+              <li>
+                <span style="color: var(--accent-teal); font-weight: bold;">🔒</span>
+                <span><strong>Phone Number Concealment:</strong> Your phone number remains completely hidden from other members by configuring Telegram Username privacy.</span>
+              </li>
+              <li>
+                <span style="color: var(--accent-teal); font-weight: bold;">⭐</span>
+                <span><strong>Official Telegram Stars Billing:</strong> In-app, 1-click subscription management backed by Apple App Store and Google Play billing mechanisms.</span>
+              </li>
+              <li>
+                <span style="color: var(--accent-teal); font-weight: bold;">⚡</span>
+                <span><strong>Instant Channel Invite:</strong> Your unique single-use invite link is unlocked immediately upon server confirmation of payment.</span>
+              </li>
+            </ul>
+
+            <p style="font-size: 0.85rem; color: var(--text-muted);">
+              * Note: A free Telegram account is required to participate in StrangersMeetup channels.
+            </p>
+          </div>
+
+          <div class="telegram-preview-card">
+            <div class="telegram-chat-header">
+              <div class="telegram-bot-avatar">SM</div>
+              <div>
+                <div style="font-weight: 700; font-size: 0.95rem;">StrangersMeetup Bot</div>
+                <div style="font-size: 0.75rem; color: var(--accent-teal);">Official Subscription Gateway</div>
+              </div>
+            </div>
+
+            <div class="tg-bubble">
+              Welcome to <strong>StrangersMeetup</strong>. Your 21+ eligibility declaration is acknowledged.
+            </div>
+
+            <div class="tg-bubble-stars">
+              <div style="font-weight: 700; color: #f3f6f8; margin-bottom: 0.4rem;">
+                Social Plus 30-Day Recurring Pass
+              </div>
+              <div style="font-size: 1.1rem; color: var(--accent-teal); font-weight: 800; margin-bottom: 0.4rem;">
+                ⭐ 250 Telegram Stars
+              </div>
+              <div style="font-size: 0.78rem; color: var(--text-muted);">
+                Renews automatically every 30 days. Cancel anytime in Telegram Settings.
+              </div>
+            </div>
+
+            <div class="tg-bubble" style="margin-top: 0.8rem;">
+              ✅ Payment verified. Your private channel invite link is unlocked below.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Regional Availability Section -->
+    <section id="regions" class="section">
+      <div class="container">
+        <div class="section-title-wrap">
+          <span class="section-tag">Territory & Geofencing</span>
+          <h2 class="section-heading">Exclusively Serving South India</h2>
+          <p class="section-subheading">
+            StrangersMeetup is focused exclusively on four vibrant Southern territories to maintain community safety, culture alignment, and authentic local meetup opportunities.
+          </p>
+        </div>
+
+        <div class="regions-grid">
+          <div class="region-card">
+            <div class="region-card-header">
+              <span class="region-name">Tamil Nadu</span>
+              <span class="region-status-badge">Active</span>
+            </div>
+            <p class="region-cities">
+              Chennai, Coimbatore, Madurai, Tiruchirappalli, Salem.
+            </p>
+          </div>
+
+          <div class="region-card">
+            <div class="region-card-header">
+              <span class="region-name">Puducherry</span>
+              <span class="region-status-badge">Active</span>
+            </div>
+            <p class="region-cities">
+              Pondicherry Central, White Town, Auroville coastal belt.
+            </p>
+          </div>
+
+          <div class="region-card">
+            <div class="region-card-header">
+              <span class="region-name">Karnataka</span>
+              <span class="region-status-badge">Active</span>
+            </div>
+            <p class="region-cities">
+              Bengaluru (Koramangala, Indiranagar, HSR, Whitefield), Mysuru, Mangaluru.
+            </p>
+          </div>
+
+          <div class="region-card">
+            <div class="region-card-header">
+              <span class="region-name">Kerala</span>
+              <span class="region-status-badge">Active</span>
+            </div>
+            <p class="region-cities">
+              Kochi, Thiruvananthapuram, Kozhikode, Thrissur.
+            </p>
+          </div>
+        </div>
+
+        <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 2rem; max-width: 700px; margin-left: auto; margin-right: auto;">
+          * Transparent Disclosure: Active membership counts and meetup density vary by metropolitan zone. We build real, organic communities and refuse to deploy fake bot accounts to fabricate artificial density.
+        </p>
+      </div>
+    </section>
+
+    <!-- Trust & Safety Section -->
+    <section id="safety" class="section">
+      <div class="container">
+        <div class="section-title-wrap">
+          <span class="section-tag">Safety First</span>
+          <h2 class="section-heading">Our Consent & Community Standards</h2>
+          <p class="section-subheading">
+            We enforce strict standards to ensure every interaction is dignified, respectful, and fully consensual.
+          </p>
+        </div>
+
+        <div class="safety-grid">
+          <div class="safety-card">
+            <h4>
+              <span style="color: var(--accent-teal);">🛡️</span> Strict 21+ Age Boundary
+            </h4>
+            <p>
+              Minors are strictly prohibited. Anyone attempting to falsify their age or facilitate access for minors will be permanently banned and reported to statutory authorities.
+            </p>
+          </div>
+
+          <div class="safety-card">
+            <h4>
+              <span style="color: var(--accent-teal);">🤝</span> Uncompromising Mutual Consent
+            </h4>
+            <p>
+              Consent must be ongoing, voluntary, and freely given. Harassment, coercion, badgering, and unsolicited explicit content are grounds for immediate permanent removal.
+            </p>
+          </div>
+
+          <div class="safety-card">
+            <h4>
+              <span style="color: var(--accent-teal);">🚫</span> No Paid Sexual Solicitation
+            </h4>
+            <p>
+              StrangersMeetup is a social dating and mutual discovery platform. Paid sexual solicitation, prostitution, commercial sex work advertising, and financial extortion are strictly banned.
+            </p>
+          </div>
+
+          <div class="safety-card">
+            <h4>
+              <span style="color: var(--accent-teal);">☕</span> Public-Only Initial Meetups
+            </h4>
+            <p>
+              Always meet in busy public venues (cafes, lounges, restaurants). Never agree to initial private hotel rooms or isolated locations. Inform a trusted friend of your plans.
+            </p>
+          </div>
+
+          <div class="safety-card">
+            <h4>
+              <span style="color: var(--accent-teal);">🛑</span> Instant Block & Report
+            </h4>
+            <p>
+              Every member has the unconditional right to cease conversation and block any user. Our community moderation team reviews abuse reports within statutory SLAs.
+            </p>
+          </div>
+
+          <div class="safety-card">
+            <h4>
+              <span style="color: var(--accent-teal);">🔒</span> Privacy by Default
+            </h4>
+            <p>
+              We collect the minimum data necessary. We never sell user information, track off-site activity, or publicly display precise GPS coordinates.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="section">
+      <div class="container">
+        <div class="section-title-wrap">
+          <span class="section-tag">Got Questions?</span>
+          <h2 class="section-heading">Frequently Asked Questions</h2>
+          <p class="section-subheading">
+            Everything you need to know about billing, Telegram access, privacy, and community rules.
+          </p>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>Why are prices listed in both INR and Telegram Stars?</span>
+              <span class="faq-chevron">▼</span>
+            </summary>
+            <div class="faq-answer">
+              The INR amounts (₹149, ₹499, ₹999) represent our positioning target benchmarks for members in India. Under Telegram's platform policy, in-app digital channel memberships must be billed in Telegram Stars (XTR). When subscribing, you purchase Stars through Apple App Store or Google Play in INR and redeem them for the subscription.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>How do I get access to the private Telegram channel?</span>
+              <span class="faq-chevron">▼</span>
+            </summary>
+            <div class="faq-answer">
+              Once your Telegram Stars payment is successfully confirmed by the Telegram Bot API, our server immediately issues a single-use private channel invite link. Clicking the link admits your verified Telegram account into the channel corresponding to your tier.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>How does recurring subscription renewal and cancellation work?</span>
+              <span class="faq-chevron">▼</span>
+            </summary>
+            <div class="faq-answer">
+              Subscriptions renew automatically every 30 days. You can cancel auto-renewal at any time without fees directly inside the Telegram application by navigating to <em>Settings &gt; Subscriptions</em>. When canceled, your access remains valid until the 30-day period expires.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>What happens to my channel access if my subscription expires?</span>
+              <span class="faq-chevron">▼</span>
+            </summary>
+            <div class="faq-answer">
+              If your subscription expires or renewal fails, our automated entitlement engine revokes channel access. You can resubscribe at any time to regain entry.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>Can I get a refund if I change my mind?</span>
+              <span class="faq-chevron">▼</span>
+            </summary>
+            <div class="faq-answer">
+              Digital memberships paid with Telegram Stars are non-refundable digital goods under Telegram Terms of Service. In cases of duplicate charges or technical failure, you can contact our Grievance Redressal desk.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary class="faq-question">
+              <span>Who is eligible to join StrangersMeetup?</span>
+              <span class="faq-chevron">▼</span>
+            </summary>
+            <div class="faq-answer">
+              You must be at least 21 years of age and residing in Tamil Nadu, Puducherry, Karnataka, or Kerala. Falsifying age or geographical location is a violation of our Terms of Service.
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Persistent Mobile Bottom Bar -->
+  <aside class="mobile-bottom-bar" aria-label="Quick membership selector">
+    <div class="mobile-bar-info">
+      <span class="mobile-bar-tier-hint">Monthly Access Starts At</span>
+      <span class="mobile-bar-price">₹149 / month (75 Stars)</span>
+    </div>
+    <a href="#memberships" class="btn-primary" style="padding: 0.6rem 1.2rem; font-size: 0.9rem;">
+      View Tiers
+    </a>
+  </aside>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a href="/" class="brand-link">
+            <svg class="brand-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+            </svg>
+            <span>Strangers<span style="color: var(--accent-teal);">Meetup</span></span>
+          </a>
+          <p>
+            An adults-only (21+) social discovery experience. Built for genuine attraction, respectful conversations, and safe public meetups across South India.
+          </p>
+        </div>
+
+        <div class="footer-column">
+          <h5>Memberships</h5>
+          <ul>
+            <li><a href="#memberships">Insider (₹149/mo)</a></li>
+            <li><a href="#memberships">Social Plus (₹499/mo)</a></li>
+            <li><a href="#memberships">VIP Circle (₹999/mo)</a></li>
+            <li><a href="/billing.html">Billing & Renewal</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Trust & Legal</h5>
+          <ul>
+            <li><a href="/safety.html">Dating Safety Guide</a></li>
+            <li><a href="/community.html">Community Rules</a></li>
+            <li><a href="/terms.html">Terms of Service</a></li>
+            <li><a href="/privacy.html">Privacy Policy</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-column">
+          <h5>Compliance</h5>
+          <ul>
+            <li><a href="/grievance.html">Grievance Redressal</a></li>
+            <li><span style="color: var(--text-muted); font-size: 0.85rem;">IT Rules 2021 Compliant</span></li>
+            <li><span style="color: var(--text-muted); font-size: 0.85rem;">DPDPA 2023 Aligned</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>
+          &copy; 2026 StrangersMeetup. All rights reserved. Strictly 21+ adults only.
+        </div>
+        <div>
+          Operating in Tamil Nadu, Puducherry, Karnataka, and Kerala.
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/app.js" defer></script>
+</body>
+</html>

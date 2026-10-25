@@ -1,0 +1,24 @@
+{
+  "name": "strangersmeetup",
+  "version": "1.0.0",
+  "description": "StrangersMeetup — Adults-only dating & social discovery membership platform",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "lint": "node scripts/lint.js"
+  },
+  "keywords": [
+    "strangersmeetup",
+    "dating",
+    "telegram-stars",
+    "adult-social"
+  ],
+  "author": "StrangersMeetup Team",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
