@@ -40,7 +40,18 @@ checkJson(path.join(ROOT, 'package.json'));
 checkJson(path.join(ROOT, 'config/tiers.json'));
 
 // 2. Check HTML files exist
-const htmlFiles = ['index.html', 'terms.html', 'privacy.html', 'community.html', 'safety.html', 'billing.html', 'grievance.html'];
+const htmlFiles = [
+  'index.html',
+  'terms.html',
+  'privacy.html',
+  'community.html',
+  'safety.html',
+  'billing.html',
+  'grievance.html',
+  'venue.html',
+  'host.html',
+  'partner.html'
+];
 for (const file of htmlFiles) {
   const p = path.join(ROOT, 'public', file);
   if (fs.existsSync(p)) {

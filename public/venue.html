@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>List Your Venue — StrangersMeetup Spaces & Hospitality</title>
+  <meta name="description" content="Partner your cafe, rooftop, cocktail lounge, or boutique resort with StrangersMeetup across South India. Host curated 21+ adult social discovery gatherings.">
+  <link rel="canonical" href="https://strangersmeetup.example.com/venue.html">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <header class="header">
+    <div class="nav-container">
+      <a href="/" class="brand-link">
+        <svg class="brand-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+        </svg>
+        <span>Strangers<span class="accent-teal">Meetup</span></span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="/#events">Events</a></li>
+          <li><a href="/#how-it-works">How It Works</a></li>
+          <li><a href="/#telegram">Join on Telegram</a></li>
+          <li><a href="/venue.html" class="active">List Your Venue</a></li>
+        </ul>
+      </nav>
+      <a href="/" class="btn-secondary" style="padding: 0.45rem 1.1rem; font-size: 0.85rem;">← Back to Home</a>
+    </div>
+  </header>
+
+  <main class="container section" style="max-width: 780px;">
+    <div class="editorial-header-block">
+      <span class="editorial-eyebrow">Hospitality & Spaces</span>
+      <h1 class="page-title">List Your Venue with StrangersMeetup</h1>
+      <p class="page-subtitle">
+        Turn slower evenings into magnetic gatherings of discerning, respectful 21+ adults. We partner with curated cafes, rooftop terraces, speakeasies, and boutique retreats across Bengaluru, Chennai, Kochi, Coimbatore, and Puducherry.
+      </p>
+    </div>
+
+    <div class="form-card">
+      <div id="venue-form-status" class="alert-banner" style="display: none;"></div>
+
+      <form id="venue-inquiry-form" class="inquiry-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="venue-name" class="form-label">Venue Name *</label>
+            <input type="text" id="venue-name" class="form-input" required placeholder="e.g. The Courtyard Cafe & Lounge">
+          </div>
+
+          <div class="form-group">
+            <label for="contact-name" class="form-label">Your Name & Title *</label>
+            <input type="text" id="contact-name" class="form-input" required placeholder="e.g. Priya Nair, General Manager">
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="contact-email" class="form-label">Business Email *</label>
+            <input type="email" id="contact-email" class="form-input" required placeholder="manager@yourvenue.com">
+          </div>
+
+          <div class="form-group">
+            <label for="contact-phone" class="form-label">Contact Phone / WhatsApp *</label>
+            <input type="tel" id="contact-phone" class="form-input" required placeholder="+91 98765 43210">
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="venue-city" class="form-label">City *</label>
+            <select id="venue-city" class="form-select" required>
+              <option value="" disabled selected>Select city...</option>
+              <option value="Bengaluru">Bengaluru</option>
+              <option value="Chennai">Chennai</option>
+              <option value="Coimbatore">Coimbatore</option>
+              <option value="Kochi">Kochi</option>
+              <option value="Puducherry">Puducherry</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="venue-area" class="form-label">Neighborhood / Area *</label>
+            <input type="text" id="venue-area" class="form-input" required placeholder="e.g. Indiranagar, Alwarpet, Fort Kochi">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="venue-type" class="form-label">Venue Category & Atmosphere</label>
+          <select id="venue-type" class="form-select">
+            <option value="Rooftop / Cocktail Lounge">Rooftop / Cocktail Lounge</option>
+            <option value="Artisanal Cafe / Courtyard">Artisanal Cafe / Courtyard</option>
+            <option value="Speakeasy / Private Salon">Speakeasy / Private Salon</option>
+            <option value="Boutique Resort / Coastal Retreat">Boutique Resort / Coastal Retreat</option>
+            <option value="Gallery / Cultural Space">Gallery / Cultural Space</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="venue-capacity" class="form-label">Estimated Guest Capacity (Seated / Standing)</label>
+          <input type="text" id="venue-capacity" class="form-input" placeholder="e.g. 25-40 guests comfortably">
+        </div>
+
+        <div class="form-group">
+          <label for="venue-notes" class="form-label">Tell us about your space & preferred event nights</label>
+          <textarea id="venue-notes" class="form-textarea" rows="4" placeholder="Share links to your Instagram/menu, quieter nights you'd like to activate (e.g. Wednesday/Thursday), or unique features."></textarea>
+        </div>
+
+        <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; padding: 0.9rem;">
+          Submit Venue for Review
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-content">
+      <div class="footer-col">
+        <a href="/" class="brand-link" style="margin-bottom: 0.8rem;">
+          <span>Strangers<span class="accent-teal">Meetup</span></span>
+        </a>
+        <p class="footer-bio">
+          Human-first social discovery and curated event experiences across South India. Strictly 21+.
+        </p>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem;">
+          Official Social: <a href="https://www.instagram.com/the.strangers.meetup/" target="_blank" rel="noopener noreferrer" style="color: var(--accent-teal);">Instagram @the.strangers.meetup</a>
+        </p>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Partner & Host</h4>
+        <ul class="footer-links">
+          <li><a href="/partner.html">Partner With Us</a></li>
+          <li><a href="/host.html">Become a Host</a></li>
+          <li><a href="/venue.html">List Your Venue</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4 class="footer-heading">Trust & Legal</h4>
+        <ul class="footer-links">
+          <li><a href="/safety.html">Trust & Safety</a></li>
+          <li><a href="/community.html">Community Standards</a></li>
+          <li><a href="/terms.html">Terms of Service</a></li>
+          <li><a href="/privacy.html">Privacy Policy</a></li>
+          <li><a href="/billing.html">Refunds & Billing</a></li>
+          <li><a href="/grievance.html">Grievance Redressal</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <p>© 2026 StrangersMeetup. All rights reserved. Strict 21+ eligibility enforced.</p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('venue-inquiry-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const statusBanner = document.getElementById('venue-form-status');
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Submitting...';
+
+      try {
+        const payload = {
+          type: 'venue',
+          name: document.getElementById('contact-name').value,
+          email: document.getElementById('contact-email').value,
+          phone: document.getElementById('contact-phone').value,
+          city: document.getElementById('venue-city').value,
+          organization: document.getElementById('venue-name').value,
+          details: {
+            area: document.getElementById('venue-area').value,
+            venueType: document.getElementById('venue-type').value,
+            capacity: document.getElementById('venue-capacity').value,
+            notes: document.getElementById('venue-notes').value
+          }
+        };
+
+        const res = await fetch('/api/inquiries', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          statusBanner.className = 'alert-banner alert-success';
+          statusBanner.textContent = data.message;
+          statusBanner.style.display = 'block';
+          e.target.reset();
+        } else {
+          statusBanner.className = 'alert-banner alert-error';
+          statusBanner.textContent = data.error || 'Submission failed. Please check inputs.';
+          statusBanner.style.display = 'block';
+        }
+      } catch (err) {
+        statusBanner.className = 'alert-banner alert-error';
+        statusBanner.textContent = 'Network error. Please try again.';
+        statusBanner.style.display = 'block';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Venue for Review';
+      }
+    });
+  </script>
+</body>
+</html>
