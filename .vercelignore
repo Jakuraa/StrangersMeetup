@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+research_notes
+reports
+test
+.claude
+.remember
+.playwright-mcp
+migrations/legacy-sqlite
+data
