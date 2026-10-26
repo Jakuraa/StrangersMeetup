@@ -81,6 +81,17 @@ test('page views: path only, referrer host only, distinct visitors counted', asy
   assert.equal(x.conversions.funnel.value[0].count, 2);
 });
 
+test('page-view beacon is a quiet 204 when no database is configured (no console errors on previews)', async () => {
+  const saved = process.env.DATABASE_URL;
+  delete process.env.DATABASE_URL;
+  try {
+    const r = await new Client().post('/api/analytics', { name: 'page_view', visitorId: crypto.randomUUID(), path: '/' });
+    assert.equal(r.status, 204);
+  } finally {
+    process.env.DATABASE_URL = saved;
+  }
+});
+
 test('profile: optional, validated, CSRF-protected, clearable', async () => {
   const u = await signedInClient();
   assert.equal((await new Client().get('/api/me/profile')).status, 401);
