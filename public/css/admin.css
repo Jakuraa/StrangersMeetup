@@ -1,0 +1,31 @@
+.admin-body { background: var(--alt); }
+.admin-gate { padding: 80px var(--gutter); }
+.admin { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+.admin-nav { background: var(--ink); color: #e9e3dc; padding: 20px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+.admin-nav .logo { color: #fff; margin-bottom: 4px; }
+.admin-role { color: #b9afa5; text-transform: capitalize; font-size: .85rem; }
+.admin-nav nav { display: grid; gap: 2px; margin-top: 16px; }
+.admin-nav button { all: unset; cursor: pointer; padding: 9px 10px; border-radius: 8px; font-size: .92rem; }
+.admin-nav button:hover, .admin-nav button[aria-current="page"] { background: #3a3530; color: #fff; }
+.admin-main { padding: 24px; min-width: 0; }
+.admin-main h1 { font-size: 1.6rem; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; }
+.kpi b { display: block; font-size: 1.5rem; }
+.kpi span { font-size: .82rem; color: var(--muted); }
+.kpi .none { font-size: 1rem; color: var(--muted); font-weight: 400; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px; overflow-x: auto; }
+table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
+table.t th, table.t td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.t th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.admin-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.admin-form .wide { grid-column: 1 / -1; }
+.admin-form label { display: grid; gap: 4px; font-size: .85rem; font-weight: 600; }
+.admin-form .check { font-weight: 400; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--alt); border: 1px solid var(--line); font-size: .75rem; }
+.toast { position: fixed; bottom: 16px; right: 16px; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: .9rem; z-index: 50; }
+.toast.err { background: var(--accent); }
+.config-list { columns: 2; font-size: .85rem; }
+@media (max-width: 800px) { .admin { grid-template-columns: 1fr; } .admin-nav { position: static; height: auto; } .admin-nav nav { grid-auto-flow: column; overflow-x: auto; } .config-list { columns: 1; } }
+.panel h2, .admin-main h2 { font-size: 1.15rem; margin-bottom: 12px; }
