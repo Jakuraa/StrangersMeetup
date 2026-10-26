@@ -129,3 +129,19 @@ test('legacy routes redirect via vercel.json and old API endpoints are gone', as
     assert.equal((await new Client().get(p)).status, 404, p);
   }
 });
+
+test('cinematic homepage: content is server-rendered, readable without JS, and motion respects reduced-motion', async () => {
+  const r = await new Client().get('/');
+  assert.match(r.text, /<body class="home-cinema"/);
+  // Headline words are wrapped for the rise-in but the full sentence is still present as text.
+  const h1 = r.text.match(/<h1 class="cine-title">([\s\S]*?)<\/h1>/)[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  assert.equal(h1, 'Your next favourite people are still strangers.');
+  // All four scenes ship as plain list items; JS only upgrades them to the scroll-scrubbed version.
+  assert.equal((r.text.match(/<li class="scene" data-scene=/g) || []).length, 4);
+  assert.doesNotMatch(r.text, /class="scenes is-live/);
+  assert.doesNotMatch(r.text, /gsap/i); // no third-party animation runtime
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/site.css'), 'utf8');
+  assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.js \.reveal \{ filter: none; \}\s*\.js \.stagger > \* \{ opacity: 1; transform: none; \}/);
+  const js = fs.readFileSync(path.join(ROOT, 'public/js/site.js'), 'utf8');
+  assert.match(js, /if \(scenesEl && !reduce\)/);
+});

@@ -44,32 +44,82 @@
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 
-  /* ---------- reveals (GSAP when available, IntersectionObserver otherwise) ---------- */
+  /* ---------- reveals ---------- */
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var reveals = $$('.reveal');
-  reveals.forEach(function (el) { if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add('in'); });
+  var reveals = $$('.reveal, .stagger');
   if (!reduce && 'IntersectionObserver' in window) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         if (!en.isIntersecting) return;
         io.unobserve(en.target);
-        if (window.gsap) {
-          window.gsap.fromTo(en.target, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.6, ease: 'power2.out', clearProps: 'transform', onStart: function () { en.target.classList.add('in'); en.target.style.transition = 'none'; } });
-        } else {
-          en.target.classList.add('in');
-        }
+        en.target.classList.add('in');
       });
-    }, { rootMargin: '0px 0px -8% 0px' });
-    reveals.forEach(function (el) { if (!el.classList.contains('in')) io.observe(el); });
-    var loadGsap = function () {
-      var s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js';
-      s.async = true;
-      document.head.appendChild(s);
-    };
-    if ('requestIdleCallback' in window) requestIdleCallback(loadGsap, { timeout: 2500 }); else setTimeout(loadGsap, 1500);
+    }, { rootMargin: '0px 0px -10% 0px' });
+    reveals.forEach(function (el) { io.observe(el); });
   } else {
     reveals.forEach(function (el) { el.classList.add('in'); });
+  }
+
+  /* ---------- cinematic homepage: hero convergence, scroll-scrubbed scenes, header state ---------- */
+  var hero = $('[data-cine-hero]');
+  var stage = hero && $('.cine-stage', hero);
+  var scenesEl = $('[data-scenes]');
+  var header = $('.site-header');
+  var cinema = document.body.classList.contains('home-cinema');
+  function clamp(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+  if (cinema && header) {
+    var syncHeader = function () {
+      var limit = hero ? hero.offsetHeight - 80 : 0;
+      var past = window.scrollY > limit && !(scenesEl && inside(scenesEl));
+      header.classList.toggle('solid', past);
+    };
+    var inside = function (el) { var r = el.getBoundingClientRect(); return r.top <= 64 && r.bottom > 64; };
+    if (toggle) toggle.addEventListener('click', function () { if (toggle.getAttribute('aria-expanded') === 'true') header.classList.add('solid'); else syncHeader(); });
+  }
+
+  var sceneItems = scenesEl ? $$('.scene', scenesEl) : [];
+  var bars = scenesEl ? $$('.scene-progress span', scenesEl) : [];
+  var visual = scenesEl && $('.scenes-visual', scenesEl);
+  if (scenesEl && !reduce) {
+    scenesEl.classList.add('is-live');
+    sceneItems[0].classList.add('on');
+  }
+
+  var ticking = false;
+  function frame() {
+    ticking = false;
+    var vh = window.innerHeight;
+    if (stage && !reduce) {
+      var h = hero.getBoundingClientRect();
+      // 0 at rest → 1 once the hero has scrolled ~60% away: the two lights converge.
+      stage.style.setProperty('--s', (0.18 + clamp(-h.top / (h.height * 0.6)) * 0.82).toFixed(3));
+    }
+    if (visual) {
+      var r = scenesEl.getBoundingClientRect();
+      var p = clamp(-r.top / (r.height - vh));
+      var n = sceneItems.length;
+      var idx = Math.min(n - 1, Math.floor(p * n));
+      sceneItems.forEach(function (s, i) { s.classList.toggle('on', i === idx); s.classList.toggle('past', i < idx); });
+      bars.forEach(function (b, i) { b.style.setProperty('--f', clamp(p * n - i).toFixed(3)); });
+      visual.style.setProperty('--q', clamp(p * 2.4).toFixed(3));
+      visual.style.setProperty('--c', clamp((p - 0.7) * 4).toFixed(3));
+    }
+    if (syncHeader) syncHeader();
+  }
+  function onScroll() { if (!ticking) { ticking = true; requestAnimationFrame(frame); } }
+  if (cinema) {
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    frame();
+  }
+
+  // Subtle pointer parallax on the hero lights (fine pointers only).
+  if (stage && !reduce && window.matchMedia('(pointer: fine)').matches) {
+    hero.addEventListener('pointermove', function (e) {
+      stage.style.setProperty('--mx', ((e.clientX / window.innerWidth) * 2 - 1).toFixed(3));
+      stage.style.setProperty('--my', ((e.clientY / window.innerHeight) * 2 - 1).toFixed(3));
+    });
   }
 
   /* ---------- session ---------- */
