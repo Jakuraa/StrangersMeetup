@@ -32,9 +32,38 @@
     if (!v && window.crypto && crypto.randomUUID) { v = crypto.randomUUID(); store('sm_vid', v); }
     return v;
   }
-  function track(name, eventId) {
-    try { api('POST', '/api/analytics', { name: name, visitorId: visitor() || undefined, eventId: eventId || undefined }); } catch (e) { /* ignore */ }
+  function track(name, eventId, extra) {
+    try {
+      var body = { name: name, visitorId: visitor() || undefined, eventId: eventId || undefined };
+      Object.keys(extra || {}).forEach(function (k) { if (extra[k]) body[k] = extra[k]; });
+      api('POST', '/api/analytics', body);
+    } catch (e) { /* ignore */ }
   }
+  /* First-party page view: path only, referrer host only, utm_source. No cookies, no query strings. */
+  (function () {
+    var ref = '';
+    try { var r = document.referrer ? new URL(document.referrer) : null; if (r && r.host !== location.host) ref = r.hostname; } catch (e) { /* ignore */ }
+    var utm = '';
+    try { utm = (new URLSearchParams(location.search).get('utm_source') || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 60); } catch (e) { /* ignore */ }
+    var path = location.pathname.replace(/[^A-Za-z0-9\-._~/%]/g, '').slice(0, 200) || '/';
+    if (path.indexOf('/admin') !== 0) track('page_view', null, { path: path, ref: ref, utm: utm });
+  })();
+
+  /* ---------- inside Telegram? ----------
+     Digital goods sold inside Telegram apps must use Stars, so web-only checkouts (SuperProfile)
+     are hidden in the Mini App. The flag survives in-app navigation for this tab. */
+  var inTelegram = false;
+  try {
+    if (location.hash.indexOf('tgWebAppData') !== -1 || /tgWebApp/.test(location.search) || window.TelegramWebviewProxy) sessionStorage.setItem('sm_in_tg', '1');
+    inTelegram = sessionStorage.getItem('sm_in_tg') === '1';
+  } catch (e) { inTelegram = Boolean(window.TelegramWebviewProxy); }
+  if (inTelegram) {
+    $$('[data-web-only]').forEach(function (n) { n.hidden = true; n.setAttribute('aria-hidden', 'true'); });
+    $$('[data-tg-only]').forEach(function (n) { n.hidden = false; });
+  }
+  $$('[data-membership-click]').forEach(function (a) {
+    a.addEventListener('click', function () { track('membership_click'); });
+  });
 
   /* ---------- nav ---------- */
   var toggle = $('.nav-toggle');
@@ -311,7 +340,44 @@
   var signout = $('[data-signout]');
   if (signout) signout.addEventListener('click', function () { api('POST', '/api/auth/logout', {}).then(function () { location.href = '/'; }); });
 
+  /* ---------- voluntary profile ---------- */
+  var LABELS = {
+    female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say',
+    '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+',
+    nightlife: 'Nightlife', strangers_trips: 'Strangers trips', meetups: 'Meetups', dinners: 'Dinners', weekend_parties: 'Weekend parties',
+    dating: 'Dating', matchmaking: 'Matchmaking', board_games: 'Board games', movies: 'Movies'
+  };
+  function renderProfile(el) {
+    api('GET', '/api/me/profile').then(function (r) {
+      if (!r.ok) { el.hidden = true; return; }
+      var p = r.profile, o = r.options;
+      var sel = function (name, opts, cur) {
+        return '<label class="field"><span>' + esc(name === 'gender' ? 'Gender' : name === 'age_band' ? 'Age' : 'City') + '</span><select name="' + name + '"><option value="">Not shared</option>' +
+          opts.map(function (v) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(LABELS[v] || v) + '</option>'; }).join('') + '</select></label>';
+      };
+      el.innerHTML = '<form class="lead-form" data-profile-form><h2>About you (optional)</h2>' +
+        '<p class="muted">Helps us plan the right events. Every field is optional, only shown to our team as anonymous totals, and you can clear it any time.</p>' +
+        sel('gender', o.genders, p.gender) + sel('age_band', o.ageBands, p.ageBand) + sel('city', o.cities, p.city) +
+        '<fieldset class="field"><legend>Interests</legend>' + o.interests.map(function (v) {
+          return '<label class="check"><input type="checkbox" name="interests" value="' + esc(v) + '"' + (p.interests.indexOf(v) !== -1 ? ' checked' : '') + '> <span>' + esc(LABELS[v] || v) + '</span></label>';
+        }).join('') + '</fieldset>' +
+        '<button class="btn btn-ghost" type="submit">Save</button> <p class="form-msg" role="status" aria-live="polite" data-profile-msg></p></form>';
+      var form = $('[data-profile-form]', el);
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var body = { gender: form.gender.value || null, age_band: form.age_band.value || null, city: form.city.value || null,
+          interests: $$('input[name=interests]:checked', form).map(function (i) { return i.value; }) };
+        api('PATCH', '/api/me/profile', body).then(function (res) {
+          var m = $('[data-profile-msg]', form);
+          m.className = 'form-msg ' + (res.ok ? 'ok' : 'error');
+          m.textContent = res.ok ? 'Saved.' : (res.message || 'Could not save. Please try again.');
+        });
+      });
+    });
+  }
+
   miniApp().then(refreshMe).then(function () {
+    var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
     var mb = $('[data-my-bookings]'); if (mb) renderBookings(mb);
     var bs = $('[data-booking-status]'); if (bs) renderStatus(bs);
   });

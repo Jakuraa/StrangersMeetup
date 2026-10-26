@@ -49,12 +49,21 @@ export function stubOnce(key, fn) {
   overrides.set(key, fn);
 }
 
+/** Serve any https URL starting with `prefix`: fn(url, init) => { status, body, headers } | Response. */
+const urlStubs = new Map();
+export function stubUrl(prefix, fn) {
+  if (fn) urlStubs.set(prefix, fn); else urlStubs.delete(prefix);
+}
+
 function telegramResult(method, params) {
   switch (method) {
     case 'createChatInviteLink': return { invite_link: `https://t.me/+test${++linkSeq}`, member_limit: params.member_limit, expire_date: params.expire_date };
     case 'createInvoiceLink': return `https://t.me/$testinvoice${++linkSeq}`;
     case 'sendMessage': return { message_id: ++linkSeq, chat: { id: params.chat_id } };
     case 'getMe': return { id: 123456789, username: 'SmTestBot' };
+    case 'getWebhookInfo': return { url: 'https://sm.test/api/telegram/webhook', pending_update_count: 0, max_connections: 40, allowed_updates: ['message', 'callback_query', 'pre_checkout_query', 'chat_member'] };
+    case 'getChat': return { id: params.chat_id, type: 'supergroup', title: `Chat ${params.chat_id}` };
+    case 'getChatMember': return { status: 'administrator', can_invite_users: true, can_restrict_members: true, user: { id: params.user_id } };
     default: return true;
   }
 }
@@ -98,6 +107,15 @@ globalThis.fetch = async (input, init = {}) => {
     calls.push({ api: 'cashfree', method: init.method || 'GET', path: url, params: body });
     if (url.endsWith('/pg/orders') && init.method === 'POST') {
       return jsonResponse({ order_id: body.order_id, cf_order_id: 1, payment_session_id: 'session_test', order_status: 'ACTIVE' });
+    }
+  }
+  for (const [prefix, fn] of urlStubs) {
+    if (url.startsWith(prefix)) {
+      calls.push({ api: 'url', method: init.method || 'GET', path: url, headers: init.headers });
+      const r = await fn(url, init);
+      if (r instanceof Response) return r;
+      const status = r.status ?? 200;
+      return new Response([204, 304].includes(status) ? null : (r.body ?? ''), { status, headers: r.headers || {} });
     }
   }
   throw new Error(`Unexpected external fetch in tests: ${url}`);

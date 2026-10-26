@@ -36,7 +36,7 @@
   var fmtDT = function (d) { return d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; };
   var rupees = function (p) { return p === null || p === undefined ? '—' : '₹' + (Number(p) / 100).toLocaleString('en-IN'); };
   function table(cols, rows, empty) {
-    if (!rows.length) return el('p', { class: 'muted', text: empty || 'No data yet.' });
+    if (!rows.length) return el('p', { class: 'muted', text: empty || 'None.' });
     return el('table', { class: 't' }, [
       el('thead', {}, [el('tr', {}, cols.map(function (c) { return el('th', { text: c[0] }); }))]),
       el('tbody', {}, rows.map(function (r) { return el('tr', {}, cols.map(function (c) { var v = c[1](r); return el('td', {}, [v instanceof Node ? v : String(v === null || v === undefined ? '—' : v)]); })); }))
@@ -66,8 +66,8 @@
         ['Alert subscribers', k.alert_subscribers]
       ];
       clear(main).append(el('h1', { text: 'Overview' }), el('div', { class: 'kpis' }, items.map(function (i) {
-        var zero = !Number(i[1]);
-        return el('div', { class: 'kpi' }, [el('b', { class: zero ? 'none' : null, text: zero ? 'No data yet' : (i[2] ? i[2](i[1]) : Number(i[1]).toLocaleString('en-IN')) }), el('span', { text: i[0] })]);
+        // A zero from the database is a real zero; it is shown as 0.
+        return el('div', { class: 'kpi' }, [el('b', { text: i[2] ? i[2](i[1]) : Number(i[1]).toLocaleString('en-IN') }), el('span', { text: i[0] })]);
       })), el('div', { class: 'panel' }, [el('h2', { text: 'Configuration' }), el('ul', { class: 'config-list' }, Object.keys(r.config).map(function (key) {
         return el('li', {}, [el('strong', { text: key + ': ' }), String(r.config[key])]);
       }))]));
@@ -75,7 +75,7 @@
   };
 
   /* ---------- events ---------- */
-  var CATS = ['meetup', 'dating_mixer', 'nightlife', 'dinner_club', 'movie', 'board_games', 'weekend_trip', 'resort_getaway'];
+  var CATS = ['meetup', 'dating_mixer', 'matchmaking', 'nightlife', 'weekend_party', 'dinner_club', 'movie', 'board_games', 'weekend_trip', 'resort_getaway'];
   function toLocalInput(iso) {
     if (!iso) return '';
     var d = new Date(new Date(iso).getTime() + 5.5 * 3600e3);
@@ -273,23 +273,294 @@
     return api('GET', '/api/admin/tiers').then(function (r) {
       var owner = ROLE === 'super_admin';
       clear(main).append(el('h1', { text: 'Membership tiers' }),
-        el('p', { class: 'muted', text: 'Stars amounts stay empty (“Announcing soon”) until the owner sets them. Only super_admin can edit.' }),
+        el('p', { class: 'muted', text: 'Prices stay unset (“Announcing soon”) until the owner approves them. SuperProfile tiers show no price here — the price lives on SuperProfile. Only super_admin can edit.' }),
         el('div', {}, r.tiers.map(function (t) {
           var name = el('input', { type: 'text', value: t.name, disabled: !owner });
           var stars = el('input', { type: 'number', min: 1, max: 10000, value: t.stars_amount === null ? '' : t.stars_amount, placeholder: 'Not set', disabled: !owner });
           var chat = el('input', { type: 'text', value: t.telegram_chat_id === null ? '' : t.telegram_chat_id, placeholder: 'Uses TG_CHAT_ID env', disabled: !owner });
           var benefits = el('textarea', { rows: 3, disabled: !owner }); benefits.value = (t.benefits || []).join('\n');
           var active = el('input', { type: 'checkbox', disabled: !owner }); active.checked = t.active;
+          var provider = el('select', { disabled: !owner }, [['telegram_stars', 'Telegram Stars (in Telegram)'], ['superprofile', 'SuperProfile (web checkout)']].map(function (o) { return el('option', { value: o[0], text: o[1], selected: o[0] === t.access_provider }); }));
+          var spUrl = el('input', { type: 'url', value: t.superprofile_url || '', placeholder: 'https://superprofile.bio/…', disabled: !owner });
+          var spRef = el('input', { type: 'text', value: t.superprofile_product_ref || '', placeholder: 'Product name/id as sent by the automation', disabled: !owner });
           var form = el('form', { class: 'admin-form panel' }, [el('h2', { class: 'wide', text: t.code }), el('label', {}, ['Name', name]), el('label', {}, ['Stars / 30 days', stars]),
-            el('label', {}, ['Telegram chat id', chat]), el('label', { class: 'check' }, [active, ' Active']), el('label', { class: 'wide' }, ['Benefits (one per line)', benefits]),
+            el('label', {}, ['Telegram chat id', chat]), el('label', { class: 'check' }, [active, ' Active']),
+            el('label', {}, ['Sold via', provider]), el('label', {}, ['SuperProfile product URL', spUrl]), el('label', {}, ['SuperProfile product reference', spRef]),
+            el('label', { class: 'wide' }, ['Benefits (one per line)', benefits]),
             owner ? el('div', { class: 'wide' }, [el('button', { class: 'btn btn-primary btn-sm', type: 'submit', text: 'Save' })]) : '']);
           form.addEventListener('submit', function (e) {
             e.preventDefault();
-            api('PATCH', '/api/admin/tiers/' + t.id, { name: name.value, stars_amount: stars.value ? Number(stars.value) : null, telegram_chat_id: chat.value.trim() ? Number(chat.value) : null, active: active.checked, benefits: benefits.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean) })
+            api('PATCH', '/api/admin/tiers/' + t.id, { name: name.value, stars_amount: stars.value ? Number(stars.value) : null, telegram_chat_id: chat.value.trim() ? Number(chat.value) : null, active: active.checked, benefits: benefits.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean),
+              access_provider: provider.value, superprofile_url: spUrl.value.trim() || null, superprofile_product_ref: spRef.value.trim() || null })
               .then(function () { toast('Saved'); }).catch(fail);
           });
           return form;
         })));
+    });
+  };
+
+
+  /* ---------- insights ----------
+     A metric is { available, value, reason?, note? }. Unavailable metrics render as "Unavailable"
+     with the reason — never as 0. A real zero renders as 0. */
+  var INSIGHT_DAYS = 30;
+  function metricText(m, fmt) {
+    if (!m || !m.available) return null;
+    if (m.unit === '%') return m.value + '%';
+    if (m.unit === 'paise') return rupees(m.value);
+    if (m.unit === 'stars') return Number(m.value).toLocaleString('en-IN') + ' ⭐';
+    return fmt ? fmt(m.value) : Number(m.value).toLocaleString('en-IN');
+  }
+  function tile(label, m) {
+    var txt = metricText(m);
+    var kids = [txt === null ? el('b', { class: 'none', text: 'Unavailable' }) : el('b', { text: txt }), el('span', { text: label })];
+    var why = m && (m.available ? m.note : m.reason);
+    if (m && m.available && m.unit === '%' && m.denominator) why = m.numerator + ' of ' + m.denominator + (why ? ' · ' + why : '');
+    if (why) kids.push(el('small', { class: 'kpi-note', text: why }));
+    return el('div', { class: 'kpi' + (txt === null ? ' kpi-na' : '') }, kids);
+  }
+  function unavailable(m) { return el('p', { class: 'na-note', text: 'Unavailable — ' + m.reason }); }
+  function bars(rows, opts) {
+    // Horizontal magnitude bars, single hue. Suppressed buckets show "<5", no bar.
+    opts = opts || {};
+    if (!rows.length) return el('p', { class: 'muted', text: opts.empty || 'None in this window (0).' });
+    var max = Math.max.apply(null, rows.map(function (r) { return r.count || 0; }).concat([1]));
+    return el('div', { class: 'hbars', role: 'table' }, rows.map(function (r) {
+      var label = opts.label ? opts.label(r.label) : r.label;
+      var val = r.suppressed ? '<5' : Number(r.count).toLocaleString('en-IN');
+      return el('div', { class: 'hbar', role: 'row', title: label + ': ' + val }, [
+        el('span', { class: 'hbar-l', role: 'cell', text: label }),
+        el('span', { class: 'hbar-track', 'aria-hidden': 'true' }, [r.suppressed || !r.count ? null : el('span', { class: 'hbar-fill', style: 'width:' + Math.max(1, Math.round((r.count / max) * 100)) + '%' })]),
+        el('span', { class: 'hbar-v', role: 'cell', text: val })
+      ]);
+    }));
+  }
+  function columns(data, key, label, since) {
+    // Daily single-series columns over the whole window (days without rows are real zeros);
+    // hover title per bar; table view follows.
+    if (!data.length) return el('p', { class: 'muted', text: 'No days with data in this window (0).' });
+    var byDay = {};
+    data.forEach(function (r) { byDay[r.day] = r; });
+    var rows = [];
+    var istDay = function (t) { return new Date(t + 5.5 * 3600e3).toISOString().slice(0, 10); };
+    for (var t = new Date(since).getTime(); istDay(t) <= istDay(Date.now()); t += 864e5) {
+      var d = istDay(t);
+      var o = { day: d }; o[key] = byDay[d] ? byDay[d][key] : 0;
+      rows.push(o);
+    }
+    var max = Math.max.apply(null, rows.map(function (r) { return r[key]; }).concat([1]));
+    return el('div', {}, [
+      el('div', { class: 'cols', role: 'img', 'aria-label': label + ' per day' }, rows.map(function (r) {
+        return el('span', { class: 'col', title: r.day + ': ' + r[key] + ' ' + label.toLowerCase() }, [r[key] ? el('span', { class: 'col-fill', style: 'height:' + Math.max(2, Math.round((r[key] / max) * 100)) + '%' }) : null]);
+      })),
+      el('div', { class: 'cols-axis muted small' }, [el('span', { text: rows[0].day }), el('span', { text: rows[rows.length - 1].day })]),
+      el('details', {}, [el('summary', { text: 'Table view' }), table([['Day', function (r) { return r.day; }], [label, function (r) { return r[key]; }]], data)])
+    ]);
+  }
+  function section(title, kids, note) {
+    return el('div', { class: 'panel' }, [el('h2', { text: title })].concat(note ? [el('p', { class: 'muted', text: note })] : []).concat(kids));
+  }
+  function block(title, m, render) {
+    return el('div', { class: 'subpanel' }, [el('h3', { text: title }), m.available ? render(m.value, m) : unavailable(m)].concat(m.available && m.note ? [el('p', { class: 'muted small', text: m.note })] : []));
+  }
+  var CAT_LABEL = { meetup: 'Meetup', dating_mixer: 'Dating mixer', nightlife: 'Nightlife', dinner_club: 'Dinner club', movie: 'Movie night', board_games: 'Board games', weekend_trip: 'Strangers trip', resort_getaway: 'Resort getaway', weekend_party: 'Weekend party', matchmaking: 'Matchmaking' };
+  var HUMAN = { female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say', '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+' };
+  function human(v) { return HUMAN[v] || CAT_LABEL[v] || String(v).replace(/_/g, ' '); }
+
+  TABS.insights = function () {
+    return api('GET', '/api/admin/insights?days=' + INSIGHT_DAYS).then(function (r) {
+      var x = r.insights;
+      var picker = el('div', { class: 'row-actions' }, [7, 30, 90, 365].map(function (d) {
+        return el('button', { class: 'btn btn-sm ' + (d === x.windowDays ? 'btn-primary' : 'btn-ghost'), type: 'button', 'aria-pressed': d === x.windowDays ? 'true' : 'false', text: d === 365 ? '1 year' : d + ' days', onclick: function () { INSIGHT_DAYS = d; show('insights'); } });
+      }));
+      var t = x.traffic, g = x.registrations, b = x.bookings, v = x.revenue, c = x.conversions, m = x.membership, d = x.demographics, f = x.failures;
+      clear(main).append(
+        el('h1', { text: 'Insights' }),
+        el('p', { class: 'muted', text: 'From this site’s own database only. “Unavailable” means we have no data source for it — it is not zero. Generated ' + fmtDT(x.generatedAt) + '.' }),
+        picker,
+        section('Visitors', [
+          el('div', { class: 'kpis' }, [tile('Visitors', t.visitors), tile('Page views', t.pageViews), tile('Signups ÷ visitors', c.visitorToSignup)]),
+          block('Daily visitors', t.daily, function (rows) { return columns(rows, 'visitors', 'Visitors', x.since); }),
+          el('div', { class: 'two' }, [block('Top pages', t.topPaths, function (rows) { return bars(rows); }), block('Top sources (referrer host / utm_source)', t.topReferrers, function (rows) { return bars(rows, { empty: 'No external referrers in this window.' }); })])
+        ], t.trackingSince ? 'First-party tracking since ' + fmtDT(t.trackingSince) + '.' : null),
+        section('Registrations', [
+          el('div', { class: 'kpis' }, [tile('Users (all time)', g.totalUsers), tile('New in window', g.newUsers), tile('Confirmed 21+', g.ageConfirmed), tile('Started the bot', g.botStarted), tile('Event alert subscribers', g.alertSubscribers), tile('Restricted accounts', g.restricted)]),
+          block('Signups per day', g.daily, function (rows) { return columns(rows, 'count', 'Signups', x.since); })
+        ]),
+        section('Paid members', [
+          el('h3', { text: 'Telegram Stars' }),
+          el('div', { class: 'kpis' }, [tile('Active', m.stars.active), tile('New in window', m.stars.newInWindow), tile('Renewals in window', m.stars.renewalsInWindow), tile('Expiring ≤ 7 days', m.stars.expiring7d), tile('Revoked in window', m.stars.revokedInWindow), tile('Expired, removal pending', m.stars.expiredAwaitingRemoval)]),
+          el('h3', { text: 'SuperProfile' }),
+          el('div', { class: 'kpis' }, [tile('Active', m.superprofile.active), tile('New in window', m.superprofile.newInWindow), tile('Repeat purchases in window', m.superprofile.renewalsInWindow), tile('Expired in window', m.superprofile.expiredInWindow), tile('Abandoned checkouts', m.superprofile.abandonedInWindow), tile('Unmapped products', m.superprofile.unmappedProducts)])
+        ], m.note),
+        section('Revenue', [el('div', { class: 'kpis' }, [tile('Live ticket gross', v.liveTicketGross), tile('Live refunded', v.liveTicketRefunded), tile('Sandbox ticket gross', v.sandboxTicketGross), tile('Paid tickets', v.paidTickets), tile('Stars received', v.starsReceived), tile('SuperProfile (reported)', v.superprofile)])]),
+        section('Bookings & conversions', [
+          el('div', { class: 'kpis' }, [tile('Upcoming events (ours)', b.upcomingInternalEvents), tile('Upcoming external listings', b.upcomingExternalListings), tile('Upcoming sample events', b.upcomingSampleEvents), tile('Event view → Book click', c.eventViewToBookClick), tile('Booking started → confirmed', c.bookingStartToConfirmed), tile('Membership clicks', c.membershipClicks)]),
+          el('div', { class: 'two' }, [
+            block('Funnel', c.funnel, function (rows) { return bars(rows.map(function (s) { return { label: s.step, count: s.count }; })); }),
+            block('Bookings by status (created in window)', b.byStatus, function (rows) { return bars(rows, { label: human }); })
+          ]),
+          block('Confirmed bookings by format', b.confirmedByCategory, function (rows) { return bars(rows, { label: human }); }),
+          block('Upcoming event fill', b.upcomingFill, function (rows) {
+            return table([['Event', function (e) { return e.title; }], ['Starts', function (e) { return fmtDT(e.start_at); }], ['Confirmed', function (e) { return e.confirmed + ' / ' + e.capacity; }], ['Live holds', function (e) { return e.holds; }]], rows, 'No upcoming events of ours (0).');
+          })
+        ]),
+        section('Audience (voluntary)', [el('div', { class: 'two' }, [
+          block('Gender', d.gender, function (rows, mm) { return el('div', {}, [bars(rows, { label: human }), el('p', { class: 'muted small', text: mm.respondents + ' of ' + mm.of + ' users answered' })]); }),
+          block('Age', d.ageBand, function (rows, mm) { return el('div', {}, [bars(rows, { label: human }), el('p', { class: 'muted small', text: mm.respondents + ' of ' + mm.of + ' users answered' })]); }),
+          block('City', d.city, function (rows, mm) { return el('div', {}, [bars(rows), el('p', { class: 'muted small', text: mm.respondents + ' of ' + mm.of + ' users answered' })]); }),
+          block('Interests', d.interests, function (rows, mm) { return el('div', {}, [bars(rows, { label: human }), el('p', { class: 'muted small', text: mm.respondents + ' of ' + mm.of + ' users answered' })]); })
+        ])], d.note),
+        section('Discovery feeds', [
+          block('Feeds', x.discovery.feeds, function (rows) {
+            return table([['Feed', function (q) { return q.name; }], ['Health', function (q) { return el('span', { class: 'pill pill-' + q.health, text: q.health.replace('_', ' ') }); }],
+              ['Last fetch', function (q) { return fmtDT(q.last_fetched_at); }], ['Last success', function (q) { return fmtDT(q.last_success_at); }], ['Fails in a row', function (q) { return q.consecutive_failures; }],
+              ['Items', function (q) { return q.last_item_count; }], ['Pending', function (q) { return q.pending; }], ['Error', function (q) { return q.last_error; }]], rows, 'No feeds added yet.');
+          }),
+          block('Moderation queue', x.discovery.queue, function (q) { return el('div', { class: 'kpis' }, [tile('Pending', { available: true, value: q.pending }), tile('Pending submissions', { available: true, value: q.pending_submissions }), tile('Pending without a date', { available: true, value: q.pending_without_date }), tile('Flagged duplicates', { available: true, value: q.duplicate })]); })
+        ]),
+        section('Failures', [
+          el('div', { class: 'kpis' }, [tile('Overdue notifications', f.overdueNotifications), tile('Unprocessed webhooks (>10 min)', f.unprocessedWebhooks), tile('Refunds due', f.refundsDue)]),
+          el('div', { class: 'two' }, [
+            block('Failed payments by reason', f.failedPayments, function (rows) { return bars(rows); }),
+            block('Failed Telegram notifications by kind', f.failedNotifications, function (rows) { return table([['Kind', function (q) { return q.label; }], ['Count', function (q) { return q.count; }], ['Latest error', function (q) { return q.sampleError; }]], rows, 'None in this window (0).'); })
+          ]),
+          block('Integration errors', f.integrationErrors, function (rows) { return table([['Source', function (q) { return q.source; }], ['Kind', function (q) { return q.kind; }], ['Count', function (q) { return q.n; }], ['Last', function (q) { return fmtDT(q.last_at); }], ['Latest detail', function (q) { return q.last_detail; }]], rows, 'None in this window (0).'); })
+        ]),
+        section('Configuration (names only)', [el('ul', { class: 'config-list' }, Object.keys(x.config).map(function (key) { return el('li', {}, [el('strong', { text: key + ': ' }), String(x.config[key])]); }))])
+      );
+    });
+  };
+
+  /* ---------- discovery: feeds + moderation ---------- */
+  var CAND_STATUS = 'pending';
+  TABS.discovery = function () {
+    return Promise.all([api('GET', '/api/admin/feeds'), api('GET', '/api/admin/candidates?status=' + CAND_STATUS)]).then(function (rs) {
+      var ff = {};
+      function fi(name, label, type, extra) { var i = el(type === 'select' ? 'select' : 'input', Object.assign({ name: name }, type === 'select' ? {} : { type: type }, extra || {})); ff[name] = i; return el('label', {}, [label, i]); }
+      var catSel = fi('default_category', 'Default format (optional)', 'select');
+      ff.default_category.appendChild(el('option', { value: '', text: '—' })); CATS.forEach(function (c) { ff.default_category.appendChild(el('option', { value: c, text: human(c) })); });
+      var citySel = fi('default_city', 'Default city (optional)', 'select');
+      ['', 'Chennai', 'Bengaluru', 'Coimbatore', 'Kochi', 'Puducherry'].forEach(function (c) { ff.default_city.appendChild(el('option', { value: c, text: c || '—' })); });
+      var feedForm = el('form', { class: 'admin-form panel' }, [
+        el('h2', { class: 'wide', text: 'Add a feed' }),
+        el('p', { class: 'wide muted', text: 'Only add RSS/Atom feeds you are allowed to use (publisher permission or published terms). robots.txt is checked on every fetch. Items go to the queue below — nothing is published automatically.' }),
+        fi('name', 'Name', 'text', { required: true }), fi('url', 'Feed URL (https)', 'url', { required: true }), fi('site_url', 'Publisher site (https, for attribution link)', 'url'),
+        fi('attribution', 'Attribution shown on listings (e.g. publisher name)', 'text', { required: true }), catSel, citySel,
+        el('label', { class: 'wide' }, ['Permission basis (required)', (ff.permission_basis = el('textarea', { name: 'permission_basis', rows: 2, required: true, placeholder: 'e.g. Email from the organiser on 2026-10-20 allowing us to list their public events with a link back.' }))]),
+        el('div', { class: 'wide' }, [el('button', { class: 'btn btn-primary btn-sm', type: 'submit', text: 'Add feed' })])
+      ]);
+      feedForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        api('POST', '/api/admin/feeds', { name: ff.name.value, url: ff.url.value, site_url: ff.site_url.value, attribution: ff.attribution.value, permission_basis: ff.permission_basis.value, default_category: ff.default_category.value, default_city: ff.default_city.value, active: true })
+          .then(function () { toast('Feed added'); show('discovery'); }).catch(fail);
+      });
+      var feeds = rs[0].feeds;
+      var feedTable = table([
+        ['Feed', function (f) { return el('div', {}, [el('strong', { text: f.name }), el('div', { class: 'muted small', text: f.url })]); }],
+        ['Status', function (f) { return (f.active ? '' : 'paused · ') + (f.last_status || 'never fetched') + (f.consecutive_failures ? ' (' + f.consecutive_failures + ' fails)' : ''); }],
+        ['Last fetch', function (f) { return fmtDT(f.last_fetched_at); }], ['Last error', function (f) { return f.last_error; }],
+        ['Permission', function (f) { return f.permission_basis; }],
+        ['', function (f) {
+          return el('div', { class: 'row-actions' }, [
+            btn('Fetch now', function () { api('POST', '/api/admin/feeds/' + f.id + '/fetch', {}).then(function (r) { toast(r.result.status + ' · ' + r.result.new + ' new · ' + r.result.dup + ' duplicate'); show('discovery'); }).catch(fail); }),
+            btn(f.active ? 'Pause' : 'Resume', function () {
+              api('PATCH', '/api/admin/feeds/' + f.id, { name: f.name, url: f.url, site_url: f.site_url, attribution: f.attribution, permission_basis: f.permission_basis, default_category: f.default_category, default_city: f.default_city, active: !f.active }).then(function () { show('discovery'); }).catch(fail);
+            })
+          ]);
+        }]
+      ], feeds, 'No feeds yet.');
+
+      var statusTabs = el('div', { class: 'row-actions' }, ['pending', 'duplicate', 'approved', 'rejected'].map(function (s) {
+        return el('button', { class: 'btn btn-sm ' + (s === CAND_STATUS ? 'btn-primary' : 'btn-ghost'), type: 'button', text: s, onclick: function () { CAND_STATUS = s; show('discovery'); } });
+      }));
+      var cands = rs[1].candidates;
+      var list = cands.length ? el('div', {}, cands.map(candidateCard)) : el('p', { class: 'muted', text: 'Nothing ' + CAND_STATUS + '.' });
+      clear(main).append(el('h1', { text: 'Discovery' }), el('h2', { text: 'Moderation queue' }), statusTabs, list, el('h2', { text: 'Feeds' }), feedForm, el('div', { class: 'panel' }, [feedTable]));
+    });
+  };
+
+  function candidateCard(c) {
+    var source = c.origin === 'feed' ? 'Feed: ' + (c.feed_name || '?') : 'Submission' + (c.submitter_contact ? ' from ' + c.submitter_contact : '');
+    var head = el('div', {}, [
+      el('p', { class: 'muted small', text: source + ' · received ' + fmtDT(c.created_at) }),
+      el('h3', { text: c.title }),
+      c.summary ? el('p', { text: c.summary }) : null,
+      el('p', { class: 'small' }, [
+        'When: ', c.start_at ? fmtDT(c.start_at) : el('strong', { text: 'no event date in source — confirm on the source page' }),
+        ' · City: ' + (c.city || '—') + ' · Venue: ' + (c.venue || '—'),
+        c.link ? el('span', {}, [' · ', el('a', { href: c.link, target: '_blank', rel: 'noopener nofollow', text: 'Source page' })]) : ' · no https link'
+      ]),
+      c.duplicate_title ? el('p', { class: 'na-note', text: 'Possible duplicate of: ' + c.duplicate_title }) : null,
+      c.review_note ? el('p', { class: 'muted small', text: 'Note: ' + c.review_note }) : null,
+      c.event_slug ? el('p', { class: 'small' }, [el('a', { href: '/admin/preview/' + c.event_id, target: '_blank', text: 'Preview created event' })]) : null
+    ]);
+    if (c.status !== 'pending' && c.status !== 'duplicate') return el('div', { class: 'panel' }, [head]);
+    var f = {};
+    function inp(name, label, type, value, extra) {
+      var i = el(type === 'select' ? 'select' : 'input', Object.assign({ name: name }, type === 'select' ? {} : { type: type }, extra || {}));
+      if (type === 'select') (extra.options || []).forEach(function (o) { i.appendChild(el('option', { value: o[0], text: o[1], selected: o[0] === value })); });
+      else if (type === 'checkbox') i.checked = Boolean(value); else i.value = value || '';
+      f[name] = i;
+      return el('label', { class: type === 'checkbox' ? 'check' : null }, type === 'checkbox' ? [i, ' ' + label] : [label, i]);
+    }
+    var form = el('form', { class: 'admin-form' }, [
+      inp('mode', 'List as', 'select', c.link ? 'external' : 'internal', { options: [['external', 'External listing (book on organiser page)'], ['internal', 'Our own event (draft)']] }),
+      inp('title', 'Title', 'text', c.title, { required: true }),
+      inp('category', 'Format', 'select', c.category || 'meetup', { options: CATS.map(function (k) { return [k, human(k)]; }) }),
+      inp('city', 'City', 'text', c.city, { required: true }),
+      inp('start_at', 'Starts (IST) — verify on source', 'datetime-local', toLocalInput(c.start_at), { required: true }),
+      inp('end_at', 'Ends (IST)', 'datetime-local', toLocalInput(c.end_at)),
+      inp('venue', 'Venue (shown publicly for external)', 'text', c.venue),
+      inp('external_url', 'Booking / details link (https)', 'url', c.link),
+      inp('source_name', 'Attribute to', 'text', c.feed_attribution || c.organizer),
+      inp('publish', 'Publish now (external only)', 'checkbox', false),
+      el('div', { class: 'wide row-actions' }, [
+        el('button', { class: 'btn btn-primary btn-sm', type: 'submit', text: 'Approve' }),
+        btn('Reject', function () { api('POST', '/api/admin/candidates/' + c.id + '/reject', { status: 'rejected' }).then(function () { toast('Rejected'); show('discovery'); }).catch(fail); }),
+        c.status === 'pending' ? btn('Mark duplicate', function () { api('POST', '/api/admin/candidates/' + c.id + '/reject', { status: 'duplicate' }).then(function () { toast('Marked duplicate'); show('discovery'); }).catch(fail); }) : null
+      ])
+    ]);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      api('POST', '/api/admin/candidates/' + c.id + '/approve', {
+        mode: f.mode.value, title: f.title.value, category: f.category.value, city: f.city.value, start_at: fromLocalInput(f.start_at.value), end_at: fromLocalInput(f.end_at.value),
+        summary: c.summary ? c.summary.slice(0, 300) : null, venue: f.venue.value, external_url: f.external_url.value, source_name: f.source_name.value, publish: f.publish.checked
+      }).then(function (r) { toast('Approved — event ' + r.event.status); show('discovery'); }).catch(fail);
+    });
+    return el('div', { class: 'panel' }, [head, form]);
+  }
+
+  /* ---------- integrations ---------- */
+  TABS.integrations = function () {
+    var calls = [api('GET', '/api/admin/integrations/telegram').catch(function (e) { return { error: e }; }), api('GET', '/api/admin/superprofile').catch(function (e) { return { error: e }; })];
+    return Promise.all(calls).then(function (rs) {
+      var out = [el('h1', { text: 'Integrations' })];
+      var t = rs[0].telegram;
+      if (rs[0].error) out.push(el('div', { class: 'panel' }, [el('h2', { text: 'Telegram' }), el('p', { text: (rs[0].error.message || 'Not available for your role') })]));
+      else {
+        var yes = function (v) { return v ? 'yes' : 'NO'; };
+        var rows = [['Bot token set', yes(t.tokenConfigured)], ['Bot username set', yes(t.usernameConfigured)], ['Webhook secret set', yes(t.webhookSecretConfigured)], ['Telegram Login (OIDC) set', yes(t.loginOidcConfigured)], ['Test environment', t.testEnvironment ? 'yes' : 'no']];
+        if (t.bot) rows.push(['getMe', t.bot.ok ? '@' + t.bot.username + (t.bot.usernameMatches ? '' : ' (does NOT match TELEGRAM_BOT_USERNAME)') : 'FAILED: ' + t.bot.error]);
+        if (t.webhook) rows.push(['Webhook URL', t.webhook.ok ? (t.webhook.url || '(none set)') + (t.webhook.matchesThisDeployment ? ' ✓ this deployment' : ' — expected ' + t.expectedWebhook) : 'FAILED: ' + t.webhook.error]);
+        if (t.webhook && t.webhook.ok) rows.push(['Pending updates', String(t.webhook.pendingUpdates)], ['Last webhook error', t.webhook.lastError ? fmtDT(t.webhook.lastErrorAt) + ' — ' + t.webhook.lastError : 'none']);
+        out.push(el('div', { class: 'panel' }, [el('h2', { text: 'Telegram (live check)' }), t.available ? null : unavailable({ reason: t.reason }),
+          table([['Check', function (r) { return r[0]; }], ['Result', function (r) { return r[1]; }]], rows),
+          t.available ? el('h3', { text: 'Chats (bot must be admin with invite + ban rights)' }) : null,
+          t.available ? table([['Chat', function (c) { return c.name; }], ['Id', function (c) { return c.chatId; }], ['Title', function (c) { return c.title; }],
+            ['Bot status', function (c) { return c.skipped || c.botStatus || c.memberError || c.chatError || c.error; }], ['Invite', function (c) { return c.canInvite === null || c.canInvite === undefined ? '—' : yes(c.canInvite); }],
+            ['Ban/remove', function (c) { return c.canRestrict === null || c.canRestrict === undefined ? '—' : yes(c.canRestrict); }], ['OK', function (c) { return c.skipped ? 'n/a' : yes(c.ok); }]], t.chats) : null]));
+      }
+      var s = rs[1];
+      if (s.error) out.push(el('div', { class: 'panel' }, [el('h2', { text: 'SuperProfile' }), el('p', { text: s.error.message || 'Not available for your role' })]));
+      else out.push(el('div', { class: 'panel' }, [
+        el('h2', { text: 'SuperProfile' }),
+        el('p', { text: s.configured ? 'Webhook secret is set. Point a Zapier/Pabbly “Webhook” step at ' + location.origin + s.webhookPath + ' with header X-Webhook-Secret.' : 'Not connected: SUPERPROFILE_WEBHOOK_SECRET is not set on this deployment.' }),
+        el('p', { class: 'muted small', text: 'Map each SuperProfile product to a tier in “Membership tiers” (product reference). Buyer emails are stored only as keyed hashes.' }),
+        table([['Received', function (e) { return fmtDT(e.received_at); }], ['Event', function (e) { return e.event_type; }], ['Product', function (e) { return e.product_ref; }], ['Tier', function (e) { return e.tier || 'unmapped'; }],
+          ['Amount', function (e) { return e.amount_paise === null ? '—' : rupees(e.amount_paise); }], ['Email?', function (e) { return e.has_email ? 'hashed' : 'none'; }]], s.events, 'No SuperProfile events received.')
+      ]));
+      clear(main).append.apply(main, out);
     });
   };
 

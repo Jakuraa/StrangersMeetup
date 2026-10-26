@@ -29,3 +29,26 @@ table.t th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em
 .config-list { columns: 2; font-size: .85rem; }
 @media (max-width: 800px) { .admin { grid-template-columns: 1fr; } .admin-nav { position: static; height: auto; } .admin-nav nav { grid-auto-flow: column; overflow-x: auto; } .config-list { columns: 1; } }
 .panel h2, .admin-main h2 { font-size: 1.15rem; margin-bottom: 12px; }
+
+/* insights */
+.kpi-note { display: block; margin-top: 6px; font-size: .72rem; color: var(--muted); line-height: 1.35; }
+.kpi-na { border-style: dashed; }
+.na-note { font-size: .85rem; color: var(--muted); border-left: 3px dashed var(--line); padding-left: 10px; }
+.subpanel { margin: 14px 0; }
+.subpanel h3, .panel h3 { font-size: .95rem; margin: 10px 0 8px; }
+.small { font-size: .8rem; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 24px; }
+.hbars { display: grid; gap: 6px; }
+.hbar { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; gap: 10px; align-items: center; font-size: .84rem; }
+.hbar-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 10px; background: var(--alt); border-radius: 4px; overflow: hidden; }
+.hbar-fill { display: block; height: 100%; background: var(--chart, #3b6fb6); border-radius: 0 4px 4px 0; }
+.hbar-v { font-variant-numeric: tabular-nums; color: var(--ink); min-width: 2.5em; text-align: right; }
+.cols { display: flex; align-items: flex-end; gap: 2px; height: 120px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.col { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; min-width: 3px; }
+.col-fill { display: block; width: 100%; background: var(--chart, #3b6fb6); border-radius: 4px 4px 0 0; }
+.col:hover .col-fill, .hbar:hover .hbar-fill { filter: brightness(1.15); }
+.pill-healthy { border-color: #2e7d4f; }
+.pill-failing { border-color: #b3261e; font-weight: 600; }
+details summary { cursor: pointer; font-size: .82rem; color: var(--muted); }
+.cols-axis { display: flex; justify-content: space-between; margin-bottom: 6px; }

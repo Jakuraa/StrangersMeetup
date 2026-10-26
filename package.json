@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@vercel/functions": "^2.2.13",
+    "fast-xml-parser": "^5.11.2",
     "pg": "^8.23.1",
     "zod": "^3.25.76"
   }
