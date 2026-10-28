@@ -257,6 +257,68 @@
   $$('[data-book]').forEach(function (b) { b.addEventListener('click', function () { book(b); }); });
   if ($('[data-book]')) track('event_view', $('[data-book]').getAttribute('data-book'));
 
+  /* ---------- organiser events: choose a ticket tier ---------- */
+  $$('[data-tier-form]').forEach(function (form) {
+    var eventId = form.getAttribute('data-tier-form');
+    if (!eventId) return; /* draft preview: booking is switched off */
+    var qty = $('[data-qty]', form);
+    var eligWrap = $('[data-elig-wrap]', form);
+    var msg = $('[data-book-msg]', form);
+    var btn = $('button[type="submit"]', form);
+    track('event_view', eventId);
+    function syncTier() {
+      var r = $('input[name="ticketTypeId"]:checked', form);
+      if (!r) return;
+      var max = parseInt(r.getAttribute('data-max'), 10) || 1;
+      var cur = Math.min(parseInt(qty.value, 10) || 1, max);
+      qty.innerHTML = '';
+      for (var i = 1; i <= max; i++) { var o = document.createElement('option'); o.value = String(i); o.textContent = String(i); o.selected = i === cur; qty.appendChild(o); }
+      var elig = r.getAttribute('data-elig') || '';
+      eligWrap.hidden = !elig;
+      $('[data-elig-text]', form).textContent = elig;
+      if (!elig) $('input[name="eligibilityConfirmed"]', form).checked = false;
+    }
+    form.addEventListener('change', function (ev) { if (ev.target.name === 'ticketTypeId') syncTier(); });
+    function submit() {
+      var r = $('input[name="ticketTypeId"]:checked', form);
+      $$('.field-error', form).forEach(function (f) { f.classList.remove('field-error'); });
+      if (!r) { msg.className = 'book-msg error'; msg.textContent = 'Choose a ticket first.'; return; }
+      track('book_click', eventId);
+      if (!state.me) return goSignin();
+      var body = { ticketTypeId: r.value, quantity: parseInt(qty.value, 10) || 1, answers: {} };
+      if (!eligWrap.hidden) body.eligibilityConfirmed = $('input[name="eligibilityConfirmed"]', form).checked;
+      var pk = $('[name="pickupPointId"]', form);
+      if (pk) body.pickupPointId = pk.value || null;
+      $$('[name^="answers."]', form).forEach(function (inp) {
+        var k = inp.name.slice(8);
+        if (inp.type === 'checkbox') { body.answers[k] = body.answers[k] || []; if (inp.checked) body.answers[k].push(inp.value); }
+        else if (inp.type === 'radio') { if (inp.checked) body.answers[k] = inp.value; }
+        else if (inp.value.trim()) body.answers[k] = inp.value;
+      });
+      btn.disabled = true;
+      msg.className = 'book-msg'; msg.textContent = 'One moment…';
+      api('POST', '/api/events/' + encodeURIComponent(eventId) + '/book', body).then(function (res) {
+        if (res.status === 401) return goSignin();
+        if (res.status === 403 && res.error === 'age_required') {
+          return confirmAge().then(function (ok) { btn.disabled = false; msg.textContent = ''; if (ok) submit(); });
+        }
+        if (!res.ok) {
+          btn.disabled = false;
+          msg.className = 'book-msg error';
+          msg.textContent = res.message || 'Could not book. Please try again.';
+          (res.fields || []).forEach(function (f) {
+            var n = form.querySelector('[data-field="' + f.field + '"]') || (form.querySelector('[name="' + f.field + '"]') || {}).parentNode;
+            if (n && n.classList) n.classList.add('field-error');
+          });
+          return;
+        }
+        if (/^https:\/\//.test(res.checkoutUrl || '')) { track('checkout_start', eventId); location.href = res.checkoutUrl; return; }
+        location.href = '/bookings/' + encodeURIComponent(res.bookingId);
+      });
+    }
+    form.addEventListener('submit', function (ev) { ev.preventDefault(); submit(); });
+  });
+
   /* ---------- membership (Telegram Stars) ---------- */
   $$('[data-join-tier]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -295,7 +357,8 @@
   function fmt(iso) {
     try { return new Date(iso).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }); } catch (e) { return iso; }
   }
-  var STATUS = { pending_payment: 'Awaiting payment confirmation', confirmed: 'Confirmed', checked_in: 'Checked in', cancelled: 'Cancelled', refunded: 'Refunded' };
+  var STATUS = { pending_approval: 'Request sent — awaiting the host', declined: 'Not accepted', pending_payment: 'Awaiting payment confirmation', confirmed: 'Confirmed', checked_in: 'Checked in', cancelled: 'Cancelled', refunded: 'Refunded' };
+  var PAYMENT = { not_required: 'No payment needed', created: 'Waiting for the payment provider to confirm', paid: 'Paid', failed: 'Payment failed', refunded: 'Refunded' };
 
   function renderBookings(el) {
     api('GET', '/api/me/bookings').then(function (r) {
@@ -319,12 +382,23 @@
         var b = r.booking;
         var html = '<p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span>' + (b.isTest ? '<span>Test mode</span>' : '') + '</p>' +
           '<h2>' + esc(b.title) + '</h2><p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>';
-        if (b.status === 'pending_payment') {
+        var facts = '';
+        if (b.ticket) facts += '<div><dt>Ticket</dt><dd>' + esc(b.ticket.name) + ' × ' + esc(b.ticket.quantity) + (b.amountLabel ? ' · ' + esc(b.amountLabel) : '') + '</dd></div>';
+        if (b.paymentStatus && PAYMENT[b.paymentStatus]) facts += '<div><dt>Payment</dt><dd>' + esc(PAYMENT[b.paymentStatus]) + '</dd></div>';
+        if (b.pickup) facts += '<div><dt>Pickup</dt><dd>' + esc(b.pickup.name) + (b.pickup.location ? ' — ' + esc(b.pickup.location) : '') + (b.pickup.time ? ' · ' + esc(new Date(b.pickup.time + ':00Z').toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })) : '') + '</dd></div>';
+        if (b.contact) facts += '<div><dt>On-ground contact</dt><dd>' + esc(b.contact.name || '') + ' · <a href="' + safeUrl(b.contact.whatsappUrl) + '" rel="noopener">WhatsApp ' + esc(b.contact.phone) + '</a></dd></div>';
+        if (b.mapsUrl) facts += '<div><dt>Map</dt><dd><a href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener nofollow">Open in Maps</a></dd></div>';
+        if (facts) html += '<dl>' + facts + '</dl>';
+        if (b.status === 'pending_approval') {
+          html += '<p>The host reviews each request. You’ll get a Telegram message when they decide — nothing is charged before then.</p>';
+        } else if (b.status === 'declined') {
+          html += '<p>The host couldn’t accept your request this time. You have not been charged.</p>';
+        } else if (b.status === 'pending_payment') {
           html += '<p>We are waiting for the payment provider to confirm your payment. This page updates automatically.</p>';
           if (b.checkoutUrl && b.holdActive) html += '<p><a class="btn btn-primary" href="' + safeUrl(b.checkoutUrl) + '">Return to checkout</a></p>';
           if (!b.holdActive) html += '<p class="muted">Your seat hold has expired. If you already paid, we will confirm or refund it automatically.</p>';
         } else if (b.status === 'confirmed' || b.status === 'checked_in') {
-          html += '<p><strong>You are in.</strong> ' + (b.venue ? 'Venue: ' + esc(b.venue) + '. ' : '') + 'Your confirmation and private group invite are sent by our Telegram bot.</p>';
+          html += '<p><strong>You are in.</strong> ' + (b.venue ? 'Venue: ' + esc(b.venue) + '. ' : '') + (b.ticket ? 'Your confirmation is sent by our Telegram bot.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
           if (b.invite) html += '<p><a class="btn btn-tg" href="' + safeUrl(b.invite.link) + '" rel="noopener">Join the private group</a></p><p class="muted">Single-use invite, valid until ' + esc(fmt(b.invite.expiresAt)) + '.</p>';
           if (BOT) html += '<p><a class="link-arrow" href="https://t.me/' + esc(BOT) + '?start=booking_' + esc(b.id) + '">Open the bot to get a fresh invite</a></p>';
         } else if (b.status === 'refunded') {

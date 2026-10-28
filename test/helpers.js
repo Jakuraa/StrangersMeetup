@@ -163,7 +163,7 @@ export class Client {
     if (this.csrf && method !== 'GET' && !h['x-csrf-token']) h['x-csrf-token'] = this.csrf;
     let payload;
     if (body !== undefined) {
-      if (typeof body === 'string') payload = body;
+      if (typeof body === 'string' || Buffer.isBuffer(body)) payload = body;
       else { payload = JSON.stringify(body); h['content-type'] = 'application/json'; }
     }
     const res = await realFetch(`${BASE}${path}`, { method, headers: h, body: payload, redirect: 'manual' });
