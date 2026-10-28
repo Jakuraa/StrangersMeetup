@@ -215,6 +215,7 @@
         if (r.ok) {
           S.version = r.draft.version;
           S.issues = r.draft.issues || [];
+          S.issuesData = JSON.parse(snapshot);
           if (JSON.stringify(S.data) === snapshot) { S.dirty = false; store(localKey(), null); } else backup();
           setStatus('saved');
           showErrors();
@@ -236,8 +237,13 @@
     window.addEventListener('beforeunload', function (e) { if (S.dirty) { backup(); e.preventDefault(); e.returnValue = ''; } });
 
     /* ---------- errors ---------- */
+    // Issues come from the server's check of the last saved data. A field edited since then is not
+    // flagged with its old issue: showing it would be wrong and would shift the layout mid-tap.
+    function edited(path) {
+      return Boolean(S.issuesData && path) && JSON.stringify(getPath(S.data, path)) !== JSON.stringify(getPath(S.issuesData, path));
+    }
     function issueFor(path) {
-      for (var i = 0; i < S.issues.length; i++) if (S.issues[i].field === path && S.issues[i].severity === 'error') return S.issues[i];
+      for (var i = 0; i < S.issues.length; i++) if (S.issues[i].field === path && S.issues[i].severity === 'error' && !edited(path)) return S.issues[i];
       return null;
     }
     function showErrors() {
@@ -251,7 +257,7 @@
       });
       var sum = $('[data-step-summary]', el);
       if (sum) {
-        var n = S.issues.filter(function (i) { return i.step === S.step && i.severity === 'error'; }).length;
+        var n = S.issues.filter(function (i) { return i.step === S.step && i.severity === 'error' && !edited(i.field); }).length;
         sum.textContent = S.shown[S.step] && n ? n + ' thing' + (n === 1 ? '' : 's') + ' to finish here before you can publish. You can keep going and come back.' : '';
       }
     }
@@ -654,6 +660,7 @@
     }
     function adopt(draft) {
       S.draft = draft; S.data = draft.data || {}; S.version = draft.version; S.step = draft.step || 'basics'; S.issues = draft.issues || []; S.dirty = false; S.conflict = null;
+      S.issuesData = clone(S.data);
       var local = store(localKey());
       if (local && local.v === draft.version && JSON.stringify(local.data) !== JSON.stringify(draft.data)) {
         S.data = local.data; S.step = local.step || S.step; S.flash = 'Restored changes from this device that hadn’t been saved yet.';

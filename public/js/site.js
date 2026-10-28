@@ -67,11 +67,17 @@
 
   /* ---------- nav ---------- */
   var toggle = $('.nav-toggle');
-  if (toggle) toggle.addEventListener('click', function () {
-    var nav = $('#site-nav');
-    var open = nav.classList.toggle('open');
+  function setMenu(open) {
+    $('#site-nav').classList.toggle('open', open);
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
+  }
+  if (toggle) {
+    toggle.addEventListener('click', function () { setMenu(toggle.getAttribute('aria-expanded') !== 'true'); });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') { setMenu(false); toggle.focus(); }
+    });
+    $('#site-nav').addEventListener('click', function (ev) { if (ev.target.closest('a')) setMenu(false); });
+  }
 
   /* ---------- reveals ---------- */
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

@@ -304,3 +304,11 @@ test('admin: denied — demoting themselves, writes without CSRF', async () => {
   c.csrf = null;
   assert.equal((await c.post('/api/admin/organisers', { telegram_user_id: PERSONAS.guest.tg, enabled: true })).status, 403);
 });
+
+test('admin console renders only the tabs each role can load', async () => {
+  const tabs = async (p) => [...(await (await as(p)).get('/admin')).text.matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]);
+  assert.deepEqual(await tabs('admin'),
+    ['overview', 'insights', 'discovery', 'events', 'bookings', 'memberships', 'leads', 'media', 'tiers', 'integrations', 'admins']);
+  assert.deepEqual(await tabs('staff'), ['overview', 'events', 'bookings', 'memberships', 'leads', 'tiers']);
+  assert.deepEqual(await tabs('organiser'), [], 'not an admin: no console');
+});

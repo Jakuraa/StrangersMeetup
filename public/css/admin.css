@@ -27,7 +27,7 @@ table.t th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em
 .toast { position: fixed; bottom: 16px; right: 16px; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: .9rem; z-index: 50; }
 .toast.err { background: var(--accent); }
 .config-list { columns: 2; font-size: .85rem; }
-@media (max-width: 800px) { .admin { grid-template-columns: 1fr; } .admin-nav { position: static; height: auto; } .admin-nav nav { grid-auto-flow: column; overflow-x: auto; } .config-list { columns: 1; } }
+@media (max-width: 800px) { .admin { grid-template-columns: 1fr; } .admin-nav { position: static; height: auto; } .admin-nav nav { grid-auto-flow: column; overflow-x: auto; justify-content: start; } .admin-nav button { white-space: nowrap; } .config-list { columns: 1; } }
 .panel h2, .admin-main h2 { font-size: 1.15rem; margin-bottom: 12px; }
 
 /* insights */

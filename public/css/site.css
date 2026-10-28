@@ -92,7 +92,14 @@ p { margin: 0 0 1em; }
   .header-auth.btn-tg { width: 40px; min-height: 40px; padding: 0; font-size: 0; gap: 0; }
   .header-auth.btn-tg::before { width: 18px; height: 18px; }
   .header-auth.btn-ghost { padding: 6px 12px; font-size: .8rem; }
-  .logo-soft { display: none; }
+  /* Visually hidden, still part of the link's accessible name (visible label must start the name). */
+  .site-header .logo-soft { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  /* Signed-in header (logo, My bookings, menu) must fit a 320px phone; 21+ is stated on every event and on sign-in. */
+  .header-inner { gap: 8px; }
+  .header-actions { gap: 6px; }
+  .age-chip { display: none; }
 }
 
 /* Sections */
@@ -248,6 +255,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 
 /* Member */
 .booking-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.profile-block { margin-top: 40px; }
 .booking-list li, .booking-status { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
 
 /* Footer */
@@ -470,4 +478,4 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .dev-personas { margin-top: 24px; padding: 16px; border: 1px dashed var(--line); border-radius: var(--radius-sm); }
 .dev-personas h2 { font-size: 1rem; margin: 0 0 4px; }
 .dev-persona-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
-.dev-persona-list .btn { width: 100%; justify-content: space-between; gap: 8px; text-align: left; }
+.dev-persona-list .btn { width: 100%; height: auto; min-height: 44px; justify-content: space-between; flex-wrap: wrap; gap: 2px 8px; text-align: left; white-space: normal; }
