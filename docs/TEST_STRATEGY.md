@@ -5,9 +5,9 @@
 |---|---|---|---|
 | Syntax/JSON | `scripts/lint.js` (`node --check`) | all `.js`/`.json` | `npm run lint` |
 | Integration | `node:test`, real router in-process, real Postgres, external HTTP stubbed (`test/helpers.js`) | a **dedicated** test DB (the harness drops the `public` schema) | `TEST_DATABASE_URL=postgres://localhost/sm_test npm test` |
-| End-to-end *(M9; Playwright added as devDependency)* | Playwright: Chromium desktop, iPhone 14, 320 px, iPad, WebKit | local server + seeded local DB | `npm run e2e` *(planned)* |
+| End-to-end | Playwright + axe (dev-only deps): Chromium desktop 1280×800, Pixel 7, 320 px pass; WebKit/iPad still planned | local server on :3100 + `sm_e2e` re-seeded by `seed:local` | `npm run test:e2e` (see `docs/LOCAL_TESTING.md`) |
 | Accessibility *(M2+)* | `@axe-core/playwright` + manual keyboard/screen-reader pass | same | part of `npm run e2e` |
-| Visual | Playwright screenshots at 390 px and 1280 px, reviewed by a person | same | `npm run e2e -- --grep @visual` *(planned)* |
+| Visual | Screenshots of key screens per project in `test-results/screenshots/`, reviewed by a person | same | written by every `npm run test:e2e` run |
 
 There is no build step and no type checker in this repo; reports say so rather than claiming those checks passed.
 

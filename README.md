@@ -35,6 +35,7 @@ createdb sm_dev
 cp .env.example .env    # fill DATABASE_URL, SESSION_SECRET (32+ chars), CRON_SECRET; DEV_LOGIN=true for a local test login
 npm run migrate         # loads .env (only .env — not .env.local)
 npm run seed:demo       # optional: 4 sample events, all labelled "Sample"
+npm run seed:local      # optional, local DB only: 6 test personas + events in known states (docs/LOCAL_TESTING.md)
 npm run dev             # http://localhost:3000 (PORT)
 ```
 Reset a **local** database (refuses remote URLs, Vercel, production, and any DB that is not empty or StrangersMeetup):
@@ -47,6 +48,7 @@ npm run db:reset:local -- --yes=sm_dev [--seed-demo]
 createdb sm_test
 TEST_DATABASE_URL=postgres://localhost/sm_test npm test
 npm run lint
+npm run test:e2e        # Playwright + axe, desktop and mobile, against a local sm_e2e DB (docs/LOCAL_TESTING.md)
 ```
 The suite drops and recreates the `public` schema of `TEST_DATABASE_URL`, so point it at a dedicated test database.
 Tests run the real router against a real Postgres; Telegram and payment HTTP calls are stubbed in `test/helpers.js`. Coverage includes initData validation (bad hash/stale/replay), webhook signatures and idempotency, failed payments, paid ticket → one booking + one invite, capacity race, Stars membership lifecycle and revocation, admin roles/CSRF, form rate limits, secret scan of client assets, and "no fabricated numbers" on an empty DB.

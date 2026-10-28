@@ -65,7 +65,7 @@ Legend — Auth: `—` none · `user` session · `org` session + organiser · `o
 |---|---|---|---|---|
 | GET | `/auth/telegram/start`, `/auth/telegram/callback` | — | state+PKCE+nonce | 20/10 min |
 | POST | `/api/auth/telegram` | — (signed initData/widget) | — | 20/10 min |
-| POST | `/api/auth/dev` | local only (404 on Vercel, without `DEV_LOGIN=true`, or with `NODE_ENV=production`) | — | — |
+| POST | `/api/auth/dev` `{persona}` | local only: 404 on Vercel, without `DEV_LOGIN=true`, in production (`NODE_ENV`/`VERCEL_ENV`), or with a non-local `DATABASE_URL`; signs in seeded personas only (`docs/LOCAL_TESTING.md`) | — | — |
 | POST | `/api/auth/logout` | user if signed in (no-op otherwise); revokes this session | ✓ when signed in | — |
 | POST | `/api/auth/logout-all` | user; revokes all of the user's sessions | ✓ | — |
 | POST | `/api/auth/confirm-age` | user | ✓ | — |
