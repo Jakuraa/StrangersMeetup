@@ -7,7 +7,7 @@ import { assertSeedAllowed, SeedRefused } from './seed-guard.js';
 
 const DAY = 86_400_000;
 
-function at(daysFromNow, hourIst, minute = 0) {
+export function at(daysFromNow, hourIst, minute = 0) {
   const d = new Date(Date.now() + daysFromNow * DAY);
   // Build the date in IST (UTC+5:30) at the given local hour.
   const ymd = new Date(d.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);

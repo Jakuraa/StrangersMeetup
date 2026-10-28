@@ -223,10 +223,15 @@
     widget.appendChild(s);
   }
 
-  /* Dev-only sign-in (server refuses it on Vercel). */
-  var dev = $('[data-dev-login]');
-  if (dev) dev.addEventListener('click', function () {
-    api('POST', '/api/auth/dev', { ageConfirmed: true }).then(function (r) { afterAuth(r, $('[data-signin-msg]')); });
+  /* Local test personas (the server returns 404 unless persona sign-in is enabled on this machine). */
+  $$('[data-dev-login]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var msg = $('[data-signin-msg]');
+      api('POST', '/api/auth/dev', { persona: btn.getAttribute('data-dev-login') }).then(function (r) {
+        if (r.ok && r.landing) { location.href = sameOriginPath(new URLSearchParams(location.search).get('next')) || r.landing; return; }
+        msg.className = 'form-msg error'; msg.textContent = r.message || 'Persona sign-in failed.';
+      });
+    });
   });
 
   function confirmAge() {
