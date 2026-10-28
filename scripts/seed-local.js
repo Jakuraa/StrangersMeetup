@@ -76,6 +76,13 @@ export const LOCAL_DRAFTS = [
   ['organiser2', 'Test draft: Night cycling tour']
 ];
 
+// Moderation rows for the admin console. Leads carry payload.seed = 'local' so a re-seed removes exactly these.
+export const LOCAL_LEADS = [
+  ['venue', { seed: 'local', name: 'Test Venue Owner', email: 'venue@example.test', message: 'Rooftop for 40 guests. Menu: https://example.test/menu/' + 'x'.repeat(96) }],
+  ['host', { seed: 'local', name: 'Test Host', email: 'host@example.test', message: 'I run a weekly board games meetup.' }]
+];
+export const LOCAL_REPORTS = [['guest', 'Test report: someone at the last event made me uncomfortable.\nPlease review. Ref: TEST-0001']];
+
 /** Remove everything earlier runs created for the personas. Order follows the foreign keys. */
 async function clearPersonaData(c) {
   await c.query(`CREATE TEMP TABLE _pu ON COMMIT DROP AS SELECT id FROM users WHERE telegram_user_id = ANY($1::bigint[])`, [PERSONA_TG_IDS]);
@@ -94,6 +101,7 @@ async function clearPersonaData(c) {
   await c.query(`DELETE FROM ticket_types WHERE event_id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM analytics_events WHERE event_id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM reports WHERE user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM leads WHERE payload->>'seed' = 'local'`);
   await c.query(`UPDATE event_drafts SET event_id = NULL WHERE organiser_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM events WHERE id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM event_images WHERE owner_user_id IN (SELECT id FROM _pu)`);
@@ -171,6 +179,13 @@ async function insertDrafts(c, users) {
   }
 }
 
+async function insertModeration(c, users) {
+  for (const [type, payload] of LOCAL_LEADS) {
+    await c.query(`INSERT INTO leads (type, payload) VALUES ($1::lead_type, $2)`, [type, JSON.stringify(payload)]);
+  }
+  for (const [who, body] of LOCAL_REPORTS) await c.query(`INSERT INTO reports (user_id, body) VALUES ($1, $2)`, [users[who], body]);
+}
+
 /** A little funnel data across the 7/30/90-day insight windows, attributed to the seeded events. */
 async function insertAnalytics(c, events) {
   const ids = Object.values(events).map((e) => e.id);
@@ -191,6 +206,7 @@ export async function seedLocal({ e = process.env } = {}) {
     const events = await insertEvents(c, users);
     await insertBookings(c, users, events);
     await insertDrafts(c, users);
+    await insertModeration(c, users);
     await insertAnalytics(c, events);
     return countLocal(c);
   });
@@ -206,7 +222,9 @@ export async function countLocal(c = db) {
             (SELECT count(*)::int FROM ticket_types WHERE event_id IN (SELECT id FROM pe)) AS ticket_types,
             (SELECT count(*)::int FROM bookings WHERE event_id IN (SELECT id FROM pe)) AS bookings,
             (SELECT count(*)::int FROM event_drafts WHERE organiser_user_id IN (SELECT id FROM pu)) AS drafts,
-            (SELECT count(*)::int FROM analytics_events WHERE event_id IN (SELECT id FROM pe)) AS analytics`,
+            (SELECT count(*)::int FROM analytics_events WHERE event_id IN (SELECT id FROM pe)) AS analytics,
+            (SELECT count(*)::int FROM leads WHERE payload->>'seed' = 'local') AS leads,
+            (SELECT count(*)::int FROM reports WHERE user_id IN (SELECT id FROM pu)) AS reports`,
     [PERSONA_TG_IDS])).rows[0];
 }
 

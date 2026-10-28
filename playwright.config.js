@@ -20,8 +20,10 @@ export default defineConfig({
     screenshot: 'only-on-failure'
   },
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
-    { name: 'mobile', use: { ...devices['Pixel 7'] } }
+    { name: 'desktop', testIgnore: /admin-responsive/, use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
+    { name: 'mobile', testIgnore: /admin-responsive/, use: { ...devices['Pixel 7'] } },
+    // The admin viewport matrix (320, 375, Pixel 7, tablet, desktop) sets its own viewport per describe block.
+    { name: 'responsive', testMatch: /admin-responsive/, use: { ...devices['Desktop Chrome'] } }
   ],
   webServer: {
     command: 'node server.js',

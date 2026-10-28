@@ -1,6 +1,7 @@
 // e2e/admin.spec.js - The admin console for each role, and refusal for everyone else.
 import { test, expect } from '@playwright/test';
 import { signInAs, expectAccessible, expectNoHorizontalOverflow, screenshot } from './helpers.js';
+import { openAdminTab } from './admin-helpers.js';
 
 test('super admin sees the console and the roles and audit screens', async ({ page }, testInfo) => {
   await signInAs(page, 'admin');
@@ -9,7 +10,7 @@ test('super admin sees the console and the roles and audit screens', async ({ pa
   await expectNoHorizontalOverflow(page);
   await expectAccessible(page);
   await screenshot(page, testInfo, 'admin-overview');
-  await page.getByRole('button', { name: 'Admins & audit' }).click();
+  await openAdminTab(page, 'Admins & audit');
   await expect(page.getByRole('heading', { name: 'Admins' })).toBeVisible();
   await expect(page.locator('main')).toContainText('support');
   await expect(page.getByRole('heading', { name: 'Audit log' })).toBeVisible();
@@ -20,8 +21,12 @@ test('super admin sees the console and the roles and audit screens', async ({ pa
 test('event staff (support) gets a limited console and is refused admin-only actions', async ({ page }, testInfo) => {
   await signInAs(page, 'staff');
   await expect(page.locator('.admin-role')).toHaveText(/support/i);
-  await expect(page.getByRole('button', { name: 'Admins & audit' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Insights' })).toHaveCount(0);
+  const toggle = page.locator('.admin-nav-toggle');
+  if (await toggle.isVisible()) await toggle.click(); // phone widths: the section list is collapsed
+  const sections = page.getByRole('navigation', { name: 'Admin sections' });
+  await expect(sections.getByRole('button', { name: 'Events', exact: true })).toBeVisible();
+  await expect(sections.getByRole('button', { name: 'Admins & audit' })).toHaveCount(0);
+  await expect(sections.getByRole('button', { name: 'Insights' })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
   await screenshot(page, testInfo, 'staff-overview');
   for (const [method, path] of [['GET', '/api/admin/audit'], ['GET', '/api/admin/insights'], ['POST', '/api/admin/admins']]) {

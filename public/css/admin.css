@@ -3,31 +3,60 @@
 .admin { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
 .admin-nav { background: var(--ink); color: #e9e3dc; padding: 20px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
 .admin-nav .logo { color: #fff; margin-bottom: 4px; }
+.admin-nav .admin-nav-toggle { display: none; }
 .admin-role { color: #b9afa5; text-transform: capitalize; font-size: .85rem; }
 .admin-nav nav { display: grid; gap: 2px; margin-top: 16px; }
 .admin-nav button { all: unset; cursor: pointer; padding: 9px 10px; border-radius: 8px; font-size: .92rem; }
 .admin-nav button:hover, .admin-nav button[aria-current="page"] { background: #3a3530; color: #fff; }
-.admin-main { padding: 24px; min-width: 0; }
+/* `all: unset` above removes the default focus ring; the nav is dark, so the ring is white. */
+.admin-nav button:focus-visible, .admin-nav .admin-nav-toggle:focus-visible, .admin-nav a:focus-visible { outline: 3px solid #fff; outline-offset: 2px; border-radius: 8px; }
+.admin-main h1:focus { outline: none; }
+.admin-main h1:focus-visible, .admin-main h2:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.admin-main { padding: 24px; min-width: 0; overflow-wrap: anywhere; } /* long titles, ids and URLs wrap instead of widening the page */
 .admin-main h1 { font-size: 1.6rem; }
-.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 132px), 1fr)); gap: 12px; margin-bottom: 24px; }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; }
 .kpi b { display: block; font-size: 1.5rem; }
 .kpi span { font-size: .82rem; color: var(--muted); }
 .kpi .none { font-size: 1rem; color: var(--muted); font-weight: 400; }
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px; overflow-x: auto; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px; overflow-x: auto; container-type: inline-size; }
 table.t { width: 100%; border-collapse: collapse; font-size: .88rem; }
-table.t th, table.t td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.t th, table.t td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 table.t th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.t-code { font: .78rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.t-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.t-lab { display: none; }
+.state h1 { font-size: 1.2rem; margin: 0 0 8px; }
+.admin-main select, .admin-main input:not([type=checkbox]) { max-width: 100%; }
 .admin-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .admin-form .wide { grid-column: 1 / -1; }
 .admin-form label { display: grid; gap: 4px; font-size: .85rem; font-weight: 600; }
 .admin-form .check { font-weight: 400; }
 .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--alt); border: 1px solid var(--line); font-size: .75rem; }
-.toast { position: fixed; bottom: 16px; right: 16px; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: .9rem; z-index: 50; }
+.toast { position: fixed; bottom: 16px; right: 16px; left: 16px; margin-left: auto; max-width: 28rem; background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: .9rem; z-index: 50; overflow-wrap: anywhere; }
 .toast.err { background: var(--accent); }
 .config-list { columns: 2; font-size: .85rem; }
-@media (max-width: 800px) { .admin { grid-template-columns: 1fr; } .admin-nav { position: static; height: auto; } .admin-nav nav { grid-auto-flow: column; overflow-x: auto; justify-content: start; } .admin-nav button { white-space: nowrap; } .config-list { columns: 1; } }
+@media (max-width: 800px) {
+  .admin { grid-template-columns: 1fr; }
+  .admin-nav { position: static; height: auto; padding: 12px 14px; }
+  .admin-brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .admin-brand .logo, .admin-brand .admin-role { margin: 0; }
+  .admin-nav .admin-nav-toggle { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 0 14px; border-radius: 10px; background: #3a3530; color: #fff; cursor: pointer; font-size: .95rem; }
+  .admin-nav .admin-nav-toggle::after { content: ''; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); margin-left: auto; flex: none; }
+  .admin-nav .admin-nav-toggle[aria-expanded="true"]::after { transform: rotate(-135deg); }
+  .admin-nav .admin-nav-toggle span { color: #b9afa5; }
+  #admin-sections { display: none; margin-top: 8px; }
+  #admin-sections.open { display: grid; }
+  .admin-nav button[data-tab] { min-height: 44px; display: flex; align-items: center; }
+  .config-list { columns: 1; }
+  .admin-main .btn-sm { min-height: 44px; }
+  .admin-main select, .admin-main input:not([type=checkbox]) { min-height: 44px; }
+}
+@media (max-width: 480px) {
+  .admin-main { padding: 12px; }
+  .panel { padding: 12px; }
+}
 .panel h2, .admin-main h2 { font-size: 1.15rem; margin-bottom: 12px; }
 
 /* insights */
@@ -52,3 +81,37 @@ table.t th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em
 .pill-failing { border-color: #b3261e; font-weight: 600; }
 details summary { cursor: pointer; font-size: .82rem; color: var(--muted); }
 .cols-axis { display: flex; justify-content: space-between; margin-bottom: 6px; }
+
+/* ---------- responsive tables ----------
+   Wide: a normal table. Narrow: every row is a card, every column is kept as a labelled line, the identity
+   column leads and the actions sit last at full width. Tables with more than 6 columns stack earlier (below 920px of panel width, 760px for the rest). */
+@container (max-width: 759px) {
+  .t:not(.t-wide), .t:not(.t-wide) tbody, .t:not(.t-wide) tr, .t:not(.t-wide) td { display: block; }
+  .t:not(.t-wide) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .t:not(.t-wide) tr { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; background: var(--surface); }
+  .t:not(.t-wide) td { display: grid; grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr); gap: 4px 10px; align-items: baseline; border: 0; padding: 0; }
+  .t:not(.t-wide) .t-lab { display: block; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .t:not(.t-wide) .t-val { min-width: 0; overflow-wrap: anywhere; }
+  .t:not(.t-wide) .t-primary { order: -1; grid-template-columns: minmax(0, 1fr); font-weight: 700; font-size: 1.02rem; }
+  .t:not(.t-wide) .t-primary .t-lab { display: none; }
+  .t:not(.t-wide) .t-actions { grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); padding-top: 10px; margin-top: 2px; }
+  .t:not(.t-wide) .t-actions .btn, .t:not(.t-wide) .t-actions select { min-height: 44px; }
+  .t:not(.t-wide) .t-none { display: none; }
+}
+@container (max-width: 919px) {
+  .t.t-wide, .t.t-wide tbody, .t.t-wide tr, .t.t-wide td { display: block; }
+  .t.t-wide thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .t.t-wide tr { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 12px; background: var(--surface); }
+  .t.t-wide td { display: grid; grid-template-columns: minmax(5.5rem, 34%) minmax(0, 1fr); gap: 4px 10px; align-items: baseline; border: 0; padding: 0; }
+  .t.t-wide .t-lab { display: block; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .t.t-wide .t-val { min-width: 0; overflow-wrap: anywhere; }
+  .t.t-wide .t-primary { order: -1; grid-template-columns: minmax(0, 1fr); font-weight: 700; font-size: 1.02rem; }
+  .t.t-wide .t-primary .t-lab { display: none; }
+  .t.t-wide .t-actions { grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); padding-top: 10px; margin-top: 2px; }
+  .t.t-wide .t-actions .btn, .t.t-wide .t-actions select { min-height: 44px; }
+  .t.t-wide .t-none { display: none; }
+}
+/* Very narrow panels (320px phones): label above value. */
+@container (max-width: 400px) {
+  .t:is(.t, .t-wide) td { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
