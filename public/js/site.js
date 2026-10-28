@@ -412,7 +412,12 @@
   }
 
   var signout = $('[data-signout]');
-  if (signout) signout.addEventListener('click', function () { api('POST', '/api/auth/logout', {}).then(function () { location.href = '/'; }); });
+  if (signout) signout.addEventListener('click', function () {
+    api('POST', '/api/auth/logout', {}).then(function (j) {
+      if (j.ok) { location.href = '/'; return; }
+      signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+    });
+  });
 
   /* ---------- voluntary profile ---------- */
   var LABELS = {
