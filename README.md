@@ -8,7 +8,7 @@ Small hosted meetups, dinners, dating mixers and weekend trips for adults 21+ ac
 - Zero-build Node 24. One Vercel function (`api/index.js` → `lib/router.js`) renders pages and serves the API; `public/` holds static CSS/JS/images.
 - Postgres (`pg`), migrations in `migrations/NNN_*.sql`, tracked in `schema_migrations`.
 - Telegram Bot API (webhook), Telegram Login (OIDC) + Mini App `initData`.
-- Payments: Razorpay Payment Links for tickets; Telegram Stars subscriptions for membership. See `docs/PAYMENTS_DECISION.md`.
+- Payments: SuperProfile hosted checkout for tickets (linked from the site, confirmed by SuperProfile notifications); Telegram Stars subscriptions for membership inside Telegram. See `docs/PAYMENTS_DECISION.md`.
 
 ## Layout
 ```
@@ -16,7 +16,7 @@ api/index.js            single serverless entry
 lib/router.js           route table (pages + API)
 lib/handlers/*          HTTP handlers (pages, auth, bookings, payments, telegram, cron, admin, leads)
 lib/services/*          domain logic (events, bookings, membership, invites, notifications, refunds, users)
-lib/payments/*          PaymentProvider adapters (razorpay, cashfree)
+lib/payments/*          PaymentProvider (superprofile_link) + SuperProfile URL allowlist
 lib/telegram/*          Bot API client, auth validation, bot command routing
 lib/views/*             server-rendered HTML (auto-escaping `html` tag)
 migrations/             Postgres migrations (legacy SQLite files kept in migrations/legacy-sqlite/)

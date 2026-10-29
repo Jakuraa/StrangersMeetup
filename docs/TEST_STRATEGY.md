@@ -41,7 +41,7 @@ test environment; tests assert that paid tickets cannot be bought, never that a 
 | Second organiser: decline, manage page, image delete, events list; revoked organiser | M5 |
 | Full role matrix, allowed + denied per row | M6 |
 | Google OIDC tampering/replay/linking | M3 |
-| Cashfree webhook signature/timestamp | M9 |
+| SuperProfile webhook, checkout intents, claim flow, admin orders | done (`test/superprofile-checkout.test.js`) |
 | Client-side wizard safety copy (localStorage) | M9 (E2E) |
 
 ## Rules

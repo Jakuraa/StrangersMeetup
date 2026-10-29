@@ -578,6 +578,28 @@ test('admin event form: SuperProfile product ids are unique and changes are audi
   assert.equal(log.details.superprofileProductChanged, true);
 });
 
+// ---------------- provider removal ----------------
+
+test('Razorpay and Cashfree are gone from code, config, UI and docs', () => {
+  const skip = new Set(['node_modules', '.git', '.next', '.vercel', 'playwright-report', 'test-results', 'test', 'migrations']);
+  const hits = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (skip.has(e.name)) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.(js|mjs|json|md|html|css|svg|txt|sql|yml|yaml|example)$/.test(e.name) && e.name !== '.env.example') continue;
+      if (e.name === 'package-lock.json') continue;
+      if (/razorpay|cashfree/i.test(fs.readFileSync(p, 'utf8'))) hits.push(path.relative(ROOT, p));
+    }
+  };
+  walk(ROOT);
+  assert.deepEqual(hits, []);
+  const env = fs.readFileSync(path.join(ROOT, '.env.example'), 'utf8');
+  for (const name of ['PAYMENT_PROVIDER', 'RAZORPAY_', 'CASHFREE_', 'TICKET_CHECKOUT_ENABLED']) assert.ok(!env.includes(name), name);
+  assert.deepEqual(fs.readdirSync(path.join(ROOT, 'lib/payments')).sort(), ['availability.js', 'index.js', 'superprofile.js']);
+});
+
 test('the old payment webhook and booking-checkout API no longer exist', async () => {
   assert.equal((await new Client().post('/api/payments/webhook/razorpay', {})).status, 404);
   assert.equal((await new Client().post('/api/payments/webhook/superprofile_link', {})).status, 404);
