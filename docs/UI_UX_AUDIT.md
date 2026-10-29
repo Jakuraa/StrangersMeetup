@@ -1,6 +1,6 @@
 # StrangersMeetup — UI/UX quality audit (pre-release)
 
-- **Branch:** `feature/m2-responsive-admin` · audited from head `6bb6f08`; fixes are in the commit that adds this file.
+- **Branch:** `feature/m2-responsive-admin` · audited from head `6bb6f08`; first-pass fixes in `515154d`; the follow-up pass in §10 is a later commit on the same branch.
 - **Audited:** 2026-10-29, on a local build only (Node server + local Postgres `sm_e2e`, `DEV_LOGIN=true`, `ENABLE_LIVE_PAYMENTS=false`).
 - **Verification levels used in this report**
   - **Local** = observed on my machine against seeded demo data. Everything below is at this level unless stated.
@@ -10,7 +10,7 @@
 
 ## 1. Headline
 
-**Overall: 58 / 100 — a solid, safe-by-default engineering base with a good-looking public front door, but not release-ready as a product.**
+**Overall: 59 / 100 (58 after the first pass; re-scored in §10) — a solid, safe-by-default engineering base with a good-looking public front door, but not release-ready as a product.**
 
 The pages that exist are clean, responsive and accessible by automated measures. What holds the score down is not broken CSS but missing product: members can sign in only with Telegram (not configured here, so unverifiable), there are no event photos, paid checkout is off, a signed-in member cannot cancel a booking, event-scoped staff do not exist, and nothing has been seen on a deployed URL.
 
@@ -40,7 +40,7 @@ Legend: **Pass** = observed working, no material defect · **Partial** = works w
 | 3 | Free registration → booking confirmation | **Pass** (e2e + observed) | `guest-booking.spec` passes; the confirmed-booking page shows ticket, "No payment needed" and the venue (`375-booking` reviewed). The confirmation is delivered by a Telegram bot that is not configured here, so message delivery is **unverified**. |
 | 4a | Sold-out state | **Pass** | Disabled "Sold out" button, red state label (`375-event-soldout`). |
 | 4b | One-seat-left | **Pass** | `local-low-seats-trek` shows seat-left state; it lives at `/trips/…`, and `/events/<slug>` redirects there correctly. |
-| 4c | Past / cancelled | **Partial** | Correctly disabled ("Event ended", "Cancelled"), but the page still shows an enabled-looking ticket choice, the quantity picker, and "The exact address appears on your booking once it's confirmed" — misleading on an ended/cancelled event (D5). |
+| 4c | Past / cancelled | **Pass** (after §10) | First pass: button disabled but the page still showed the ticket choice, quantity picker and the venue-after-booking line (D5). §10: replaced by a status panel; server already refused bookings. |
 | 4d | Approval-required | **Pass** | "Request to join", host question field, "host approves each guest" (`375-event-approval`); organiser approve/decline covered by unit tests. |
 | 5 | Private venue privacy | **Pass** | `private-venue.spec` passes: venue absent from visitor HTML and `/api/events`, hidden from non-booked guests, pending requests, and other guests opening the booking URL; shown on own confirmed booking. Strongest area of the product. |
 | 6 | Login / logout / sessions / auth methods | **Partial** | Telegram is the only real method; it is **not configured locally, so not tested**. The persona picker is dev-only (404 off-localhost, guarded in code and tests). Server-side sessions with revocation exist (unit tests). Google sign-in: **N/I** (planned M3). Logged-out access to `/me` and `/admin` is handled (401 page / sign-in), see D6. |
@@ -84,11 +84,11 @@ Severity: P0 security/privacy/data · P1 core journey broken · P2 significant U
 | D1 | **P2** | `/events/local-paid-workshop`, 320px | Page scrolled sideways (359px wide in a 320px viewport); the booking card and facts were clipped. Cause: `1fr` grid tracks and a `<fieldset>` grew to content width. The existing 320px test did not include paid/sold-out/cancelled/past events, so the suite stayed green. | Open at 320px width | **Fixed** + regression test |
 | D2 | **P2** | `/events`, `/meetups/:city`, all widths | Format links (Nightlife, Trips, …) rendered as an unstyled browser bullet list (no CSS for `.format-nav`), and the page header was centred while the filters/grid were left-aligned. | Open `/events` | **Fixed** (pills; left-aligned header) |
 | D3 | P3 | Event detail, desktop | WHEN and WHERE columns touched with no gap ("9:30 pm IST" ran into "Besant Nagar"). | Open any event at 1280px | **Fixed** |
-| D4 | P3 | Phones | Some primary controls under 44px (see §3). | Measure at 375px | **Open** |
-| D5 | P3 | Past / cancelled event detail | Still shows ticket picker, quantity and "address appears on your booking once confirmed". | Open `local-past-meetup` | **Open** |
-| D6 | P3 | `/admin` signed out (and non-admin) | Bare, unstyled 401/403 page with no site header; `/me` signed out also triggers a console 401 from `/api/me/bookings` before the sign-in prompt. | Open `/admin` logged out | **Open** |
+| D4 | P3 | Phones | Some primary controls under 44px (see §3). | Measure at 375px | **Fixed in §10** (≥44px at 320/375 on audited pages, regression test) |
+| D5 | P3 | Past / cancelled event detail | Still shows ticket picker, quantity and "address appears on your booking once confirmed". | Open `local-past-meetup` | **Fixed in §10** + regression tests |
+| D6 | P3 | `/admin` signed out (and non-admin) | Bare, unstyled 401/403 page with no site header; `/me` signed out also triggers a console 401 from `/api/me/bookings` before the sign-in prompt. | Open `/admin` logged out | **Partly fixed in §10**: branded access screens. The `/me` signed-out console 401 is still open. |
 | D7 | P3 | Admin vs public | Different typeface/visual language. Acceptable for an internal tool; noted for consistency. | Compare screenshots | **Open** |
-| D8 | P2 (product) | All event cards | No imagery: identical placeholder graphic. Biggest gap vs. a premium discovery product. | Open `/events` | **Open** (needs content/design decision, not a quick fix) |
+| D8 | P2 (product) | All event cards | No imagery: identical placeholder graphic. Biggest gap vs. a premium discovery product. | Open `/events` | **Partly addressed in §10**: category-specific fallback art. Still no real photography (content decision). |
 | D9 | P2 (product) | Sign-in | Single method (Telegram) and it is the only visible CTA site-wide; users without Telegram have no path. | Open `/signin` | **Open** (Google is planned M3) |
 
 ## 5. Fixes made
@@ -155,9 +155,9 @@ The e2e suite additionally writes full-page admin screenshots per section and vi
 5. Add member **cancel booking** and an "add to calendar"/ticket view — members currently have no self-service after booking.
 
 **Should do**
-6. Past/cancelled event detail: hide the booking widget and the venue-after-booking line (D5).
-7. Branded signed-out / forbidden pages for `/admin` and avoid the console 401 on `/me` (D6).
-8. Raise primary phone targets to 44px: header Telegram button, ticket radio rows, checkboxes (D4).
+6. ~~Past/cancelled event detail~~ — done in §10.
+7. ~~Branded `/admin` access screens~~ — done in §10. Still open: avoid the console 401 on `/me` signed out.
+8. ~~44px phone targets~~ — done in §10 for the audited pages (not for every state, e.g. wizard steps 2–4 and admin were only spot-covered).
 9. Event-scoped staff + QR check-in (M5) before relying on volunteers at the door.
 10. Per-organiser analytics and editing of published events.
 
@@ -182,3 +182,49 @@ npx playwright test --project=mobile -g "no sideways scrolling at 320px"   # run
 ```
 
 Nothing was merged, rebased, reset, force-pushed or deployed; `main` and `launch-mvp` were not touched; no DNS, Vercel, payment or production data changes.
+
+
+## 10. Follow-up pass: closed events, admin access screen, tap targets, card art
+
+Branch `feature/m2-responsive-admin`, from head `515154d` (clean tree at start). Local only; nothing deployed, pushed, merged or touched on `main`/`launch-mvp`.
+
+### What changed
+| # | Fix | Files | Notes |
+|---|---|---|---|
+| 1 | Past and cancelled event pages show a status panel ("This event has ended" / "has been cancelled" + link to upcoming events) instead of ticket picker, quantity, submit button, venue-after-booking and "confirmation via Telegram" lines. Covers tiered and legacy single-price events. | `lib/views/event.js`, `public/css/site.css` | **Server-side enforcement already existed** (`bookTier` and the legacy booking path refuse unpublished and started events; approval refuses closed events). I added regression tests that lock it in; those tests passed *before* the view change, so they are guards, not fixes. Private venue is not in the closed page. |
+| 2 | Signed-out and non-admin `/admin` use the site layout (header, footer, skip link) with a clear heading, a Telegram sign-in button (`/signin?next=/admin`) and a way back. HTTP status stays 401 / 403, `noindex`. The 403 screen no longer mentions the allowlist, and neither screen loads admin JS or carries role/CSRF data. | `lib/views/admin.js`, `e2e/admin.spec.js` (copy) | Authorization code (`lib/handlers/admin.js`) untouched. |
+| 3 | 44px minimum touch targets at ≤800px: logo, header Telegram button (40→44) and "My bookings", `.btn-sm`, checkbox rows, footer links, card-title links, breadcrumbs, `link-arrow`, standalone prose links, booking-list titles. Desktop rules unchanged (all inside `max-width` queries). | `public/css/site.css` | In-sentence links are exempt (WCAG 2.5.8 inline exception). |
+| 4 | Cards without a photo get a per-category tint and glyph (12 categories, inline SVG, `aria-hidden`), keeping the existing two-ring motif. Real covers still win. | `lib/views/components.js`, `public/css/site.css` | Reuses existing classes and brand colours; no new image files. It is a better fallback, not photography. |
+
+Cache-bust `site.css` `v=10`→`v=11` (`lib/views/layout.js`, `lib/views/admin.js`).
+
+### Tests added (regression)
+- `test/closed-events.test.js` (9): closed pages have no picker; API refuses booking, no booking/payment row; pending request on a cancelled event cannot be approved; legacy page; `/admin` 401/403 screens. Page and `/admin` tests **failed before the fix** (6 failures run before editing views); API tests passed before (see above).
+- `test/card-art.test.js` (2): each category has a distinct decorative glyph; unknown category and cover-photo fallbacks. Fails on the old markup (no glyph).
+- `e2e/tap-targets.spec.js` (4, phone project, 320 and 375): measures every interactive control on public, menu-open, `/me` and organiser pages. Baseline run listed ~30 distinct offenders (footer links 20px tall, logo 27px, header button 40px, card titles ~26px, `.btn-sm` 36px, 20px checkbox rows); passes after.
+- `e2e/closed-and-gates.spec.js` (desktop + phone): closed pages (no radio/combobox/checkbox/textbox/button in the booking panel, axe, no overflow, keyboard Enter on the link), signed-out `/admin` (401, heading, focus, ≥44px CTA, axe, 320px fit), non-admin 403, card art.
+
+### Results (local; `sm_pv2_test` for unit, `sm_e2e` for browser)
+| Check | Result |
+|---|---|
+| `npm run lint` | 96/96 files OK |
+| `npm test` | 160/160 pass (was 149) |
+| `npm run test:e2e` | 113 passed, 5 skipped, 0 failed (118 tests). Skips: 1 intentional mobile-menu skip; 4 phone-only tap-target tests skip on the desktop project. |
+
+### Checks done and screenshots reviewed
+Reviewed at 320, 375, tablet 768 and desktop 1280: past and cancelled event pages, `/events` cards, signed-out `/admin`, plus `/admin` 403 and card art from the suite's captures. Keyboard: closed-page link and admin sign-in CTA are focusable, Enter works. Accessible names: panel is the named "Booking" landmark; CTA names are visible text. Overflow: none at 320. Error states: API refusals tested; sign-in page's own failure states unchanged.
+
+### Re-score (rubric in §1)
+| Category | Before | After | Why |
+|---|---|---|---|
+| Visual polish | 68 | **70** | Better card fallback and cleaner closed pages; still no photography, so only +2 |
+| Mobile UX | 72 | **76** | Tap targets fixed and now guarded by a test; checked only on the audited pages |
+| Core user journeys | 50 | 50 | A misleading page was fixed, but no new journey works end to end |
+| Accessibility | 70 | 70 | No human screen-reader pass yet (cap) |
+| Reliability | 70 | 70 | More tests do not change what is observed in use |
+| Launch readiness | 20 | 20 | Nothing deployed or externally verified |
+
+Weighted 61.2; keeping the earlier 2-point deduction for the suite-green-but-broken D1 gives **59 / 100**. This is not a release-ready score.
+
+### Outstanding product decisions / future work (not implemented here)
+Member booking cancellation; QR check-in; event-scoped staff (`event_staff`, M5); additional OAuth providers (Google, M3); payment integration (live payments stay off). Also open: real event photography, `/me` signed-out console 401, tap targets on wizard steps 2–4 and unvisited states, Safari/Firefox/device and screen-reader checks, preview/production verification.

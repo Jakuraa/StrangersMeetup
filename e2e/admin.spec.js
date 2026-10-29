@@ -39,11 +39,11 @@ test('event staff (support) gets a limited console and is refused admin-only act
 test('guests and organisers are refused the console', async ({ page }) => {
   await signInAs(page, 'guest');
   await page.goto('/admin');
-  await expect(page.locator('main')).toContainText('not on the admin allowlist');
+  await expect(page.locator('main')).toContainText('You don’t have access to this page');
   expect((await page.request.get('/api/admin/session')).status()).toBe(403);
 
   await signInAs(page, 'organiser');
   await page.goto('/admin');
-  await expect(page.locator('main')).toContainText('not on the admin allowlist');
+  await expect(page.locator('main')).toContainText('You don’t have access to this page');
   expect((await page.request.get('/api/admin/overview')).status()).toBe(403);
 });

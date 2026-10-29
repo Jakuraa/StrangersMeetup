@@ -105,7 +105,9 @@ Before running `npm test`, check that `TEST_DATABASE_URL` names a dedicated loca
 |---|---|---|
 | `desktop` | Desktop Chrome 1280×800 | every spec except `admin-responsive` |
 | `mobile` | Pixel 7 (412×839, touch) | every spec except `admin-responsive` |
-| `responsive` | per describe block: **320×640**, **375×667**, **Pixel 7** (412, touch), **tablet 768×1024**, **desktop 1280×800** | `e2e/admin-responsive.spec.js` |
+| `responsive` | per describe block: **320×640**, **375×667**, **Pixel 7** (412, touch), **tablet 768×1024**, **desktop 1280×800** | `e2e/closed-and-gates.spec.js` | past/cancelled event pages show a status panel and no booking controls; signed-out (401) and non-admin (403) `/admin` access screens; category card art |
+| `e2e/tap-targets.spec.js` | phone project only, 320 and 375px: every interactive control on public, menu, `/me` and organiser pages is ≥44px (inline links in sentences exempt) |
+| `e2e/admin-responsive.spec.js` |
 
 The admin console switches to the phone layout (Sections menu, card tables) at ≤800px; tables with more than six
 columns (Events) stay as cards up to 920px of panel width, so the tablet and Pixel 7 sizes see cards. Chromium only;

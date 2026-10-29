@@ -89,9 +89,9 @@ p { margin: 0 0 1em; }
   .header-actions { margin-left: auto; }
 }
 @media (max-width: 480px) {
-  .header-auth.btn-tg { width: 40px; min-height: 40px; padding: 0; font-size: 0; gap: 0; }
+  .header-auth.btn-tg { width: 44px; min-height: 44px; padding: 0; font-size: 0; gap: 0; }
   .header-auth.btn-tg::before { width: 18px; height: 18px; }
-  .header-auth.btn-ghost { padding: 6px 12px; font-size: .8rem; }
+  .header-auth.btn-ghost { padding: 6px 12px; font-size: .8rem; min-height: 44px; }
   /* Visually hidden, still part of the link's accessible name (visible label must start the name). */
   .site-header .logo-soft { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
@@ -151,8 +151,21 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   radial-gradient(circle at 38% 55%, transparent 33%, rgba(35, 32, 29, .55) 33.4%, rgba(35, 32, 29, .55) 34%, transparent 34.4%),
   radial-gradient(circle at 62% 45%, transparent 33%, rgba(163, 71, 58, .7) 33.4%, rgba(163, 71, 58, .7) 34%, transparent 34.4%),
   var(--alt); }
-.card-art-dating_mixer, .card-art-nightlife { background-color: #efe2dc; }
-.card-art-weekend_trip, .card-art-resort_getaway { background-color: #e9e6dc; }
+/* Category tints: a quiet palette per format so a row of cards without photos doesn't read as one repeated tile. */
+.card-art { display: grid; place-items: center; color: var(--art-ink, var(--ink-2)); }
+.card-glyph { width: 72px; height: 72px; opacity: .85; }
+.card-art-meetup { background-color: #e8e4da; --art-ink: #5b5a3f; }
+.card-art-dating_mixer { background-color: #f1ded9; --art-ink: #8d3c31; }
+.card-art-nightlife { background-color: #e3dde9; --art-ink: #4d3f6b; }
+.card-art-dinner_club { background-color: #f1e5d3; --art-ink: #8a5a1f; }
+.card-art-movie { background-color: #dde3e8; --art-ink: #34495e; }
+.card-art-board_games { background-color: #dfe8dd; --art-ink: #3e6a47; }
+.card-art-weekend_trip { background-color: #e0e7dc; --art-ink: #3f6247; }
+.card-art-resort_getaway { background-color: #dae8e8; --art-ink: #2f6a6d; }
+.card-art-weekend_party { background-color: #f3e2d6; --art-ink: #a2502b; }
+.card-art-matchmaking { background-color: #f1dfe4; --art-ink: #8a3a56; }
+.card-art-networking { background-color: #dde4ec; --art-ink: #34567a; }
+.card-art-workshop { background-color: #ece6d3; --art-ink: #6b5a20; }
 .card-body { padding: 18px 20px 20px; display: flex; flex-direction: column; flex: 1; }
 .card-meta { display: flex; gap: 12px; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
 .card-title { font-size: 1.2rem; margin-bottom: 6px; }
@@ -487,3 +500,23 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .format-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); text-decoration: none; font-weight: 600; font-size: .92rem; }
 .format-nav a:hover { border-color: var(--accent); }
 .format-nav a[aria-current="page"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* Closed events (past / cancelled) and the admin access screen */
+.book-closed .closed-title { font-size: 1.15rem; margin: 0; }
+.book-closed p { margin: 0; overflow-wrap: anywhere; }
+.access-screen { text-align: left; }
+.access-screen h1 { overflow-wrap: anywhere; }
+.access-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+@media (max-width: 480px) { .access-actions .btn { width: 100%; white-space: normal; } }
+
+/* Touch targets: 44px minimum on phones (WCAG 2.5.8 asks 24px; 44px is the comfortable thumb size). Desktop is unchanged. */
+@media (max-width: 800px) {
+  .logo { min-height: 44px; }
+  .btn-sm { min-height: 44px; }
+  .check { min-height: 44px; align-items: center; }
+  .footer-col ul { gap: 0; }
+  .footer-col a, .footer-base a { display: inline-flex; align-items: center; min-height: 44px; }
+  .card-title a { display: flex; align-items: center; min-height: 44px; }
+  .prose p > a:only-child, .booking-list h3 a { display: inline-flex; align-items: center; min-height: 44px; }
+  .crumbs a, .link-arrow { display: inline-flex; align-items: center; min-height: 44px; }
+}
