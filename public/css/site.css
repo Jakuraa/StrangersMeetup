@@ -295,7 +295,8 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-@view-transition { navigation: auto; }
+/* Cross-page fades only for people who have not asked for reduced motion (the `*` reset above does not reach them). */
+@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }
 ::view-transition-old(root) { animation: vt-out .3s ease both; }
 ::view-transition-new(root) { animation: vt-in .5s var(--ease-cine) both; }
 @keyframes vt-out { to { opacity: 0; } }

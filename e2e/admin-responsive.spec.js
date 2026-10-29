@@ -56,6 +56,7 @@ for (const vp of VIEWPORTS) {
       const t = page.getByRole('table', { name: 'Events' });
       const r = await inspectTable(t);
       expect(r.mode).toBe(cards ? 'cards' : 'table');
+      expect(r.problems).toEqual([]);
       expect(r.headers).toEqual(['When', 'Title', 'City', 'Status', 'Price', 'Booked', 'Actions']);
       expect(r.rows).toBeGreaterThanOrEqual(8);
       // Table semantics survive the card layout (rows/columns are still exposed to assistive technology).
@@ -182,6 +183,12 @@ for (const vp of VIEWPORTS) {
       await expect(alert).toContainText('Could not load this section');
       await expect(alert).toContainText('Database is unavailable');
       await expectNoHorizontalOverflow(page);
+      if (vp.width <= 800) {
+        // A short section must not stretch the closed phone nav into an empty dark block.
+        const nav = await page.locator('.admin-nav').boundingBox();
+        const toggle = await page.locator('.admin-nav-toggle').boundingBox();
+        expect(nav.y + nav.height - (toggle.y + toggle.height), 'closed nav hugs its toggle').toBeLessThanOrEqual(24);
+      }
       await shot(page, testInfo, 'error');
       await page.unroute('**/api/admin/leads');
       const retry = alert.getByRole('button', { name: 'Try again' });
@@ -294,6 +301,82 @@ for (const vp of VIEWPORTS) {
       await page.keyboard.press('Enter');
       await expect(page.getByRole('region', { name: 'Check-in for Test: Board games night' }).getByRole('status').first()).toHaveText('1 of 1 checked in');
       await shot(page, testInfo, 'keyboard');
+    });
+
+    test('section navigation: sidebar on desktop, a full-width Sections button on phones', async ({ page }, testInfo) => {
+      await signInAs(page, 'admin');
+      await waitAdminReady(page);
+      const adminNav = page.locator('.admin-nav');
+      const toggle = page.locator('.admin-nav-toggle');
+      const nav = page.getByRole('navigation', { name: 'Admin sections' });
+      const labels = tabsFor('super_admin').map(([, label]) => label);
+      // Every section once, in order, and nothing else in the list (read from the DOM: the phone menu starts closed).
+      expect(await page.locator('#admin-sections button').allTextContents()).toEqual(labels);
+
+      if (vp.width > 800) {
+        await expect(toggle).toBeHidden();
+        await expect(nav).toBeVisible();
+        for (const label of labels) await expect(nav.getByRole('button', { name: label, exact: true })).toBeVisible();
+        expect(await adminNav.evaluate((n) => n.innerText)).not.toContain('Sections'); // no stray toggle text in the sidebar
+        await expect(page.locator('#admin-main').getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
+        // Reduced motion (set for the whole suite) must also switch off the cross-page view transition.
+        expect(await page.evaluate(() => document.activeViewTransition ?? null)).toBeNull();
+        await shot(page, testInfo, 'nav');
+      } else {
+        await expect(toggle).toBeVisible();
+        await expect(toggle).toHaveAccessibleName('Sections Overview');
+        expect(await toggle.evaluate((b) => b.innerText.replace(/\s+/g, ' ').trim())).toBe('Sections Overview');
+        await expect(nav).toBeHidden();
+        // A real button: filled, at least 44px tall, and as wide as the nav's content box.
+        const box = await adminNav.evaluate((n) => {
+          const b = n.querySelector('.admin-nav-toggle'); const cs = getComputedStyle(n); const bs = getComputedStyle(b);
+          return { width: b.getBoundingClientRect().width, height: b.getBoundingClientRect().height, bg: bs.backgroundColor, cursor: bs.cursor,
+            avail: n.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) };
+        });
+        expect(Math.abs(box.width - box.avail)).toBeLessThanOrEqual(1);
+        expect(box.height).toBeGreaterThanOrEqual(44);
+        expect(box.bg).not.toBe('rgba(0, 0, 0, 0)');
+        expect(box.cursor).toBe('pointer');
+        await shot(page, testInfo, 'nav-closed');
+
+        // Mouse: open, then close with the same button.
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        for (const label of labels) await expect(nav.getByRole('button', { name: label, exact: true })).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+        await shot(page, testInfo, 'nav-open');
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(nav).toBeHidden();
+
+        // Keyboard: Space and Enter open it, Escape closes it and returns focus to the button.
+        await toggle.focus();
+        await page.keyboard.press('Space');
+        await expect(nav).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(nav).toBeHidden();
+        await expect(toggle).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(nav).toBeVisible();
+        await page.keyboard.press('Enter'); // the same button closes it again
+        await expect(nav).toBeHidden();
+
+        // Choosing a section closes the menu and the button names the current section.
+        await openAdminTab(page, 'Events');
+        await expect(nav).toBeHidden();
+        await expect(toggle).toHaveAccessibleName('Sections Events');
+      }
+      await expectNoHorizontalOverflow(page);
+    });
+
+    test('section navigation keeps role filtering: support staff see only their sections', async ({ page }) => {
+      await signInAs(page, 'staff');
+      await waitAdminReady(page);
+      const sections = page.locator('#admin-sections button');
+      expect(await sections.allTextContents()).toEqual(tabsFor('support').map(([, label]) => label));
+      await expect(sections.filter({ hasText: 'Admins & audit' })).toHaveCount(0);
+      // The server still refuses a super-admin API to this role, whatever the layout.
+      expect((await page.request.get('/api/admin/admins')).status()).toBe(403);
     });
   });
 }

@@ -48,6 +48,29 @@ export async function inspectTable(table) {
         if (td.children.length && (r.right > vw + 1 || r.left < -1)) problems.push(`cell "${name}" outside viewport (${Math.round(r.left)}..${Math.round(r.right)} of ${vw})`);
       });
     }
+    // In table mode short values must not split mid-word ("Chenn/ai", "PRI/CE"); only .t-long and code/text cells may.
+    if (mode === 'table') {
+      for (const cell of t.querySelectorAll('th, td:not(.t-long):not(.t-actions)')) {
+        if (cell.querySelector('.t-code, .t-text')) continue;
+        const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+          for (const m of n.data.matchAll(/\S+/g)) {
+            const range = document.createRange();
+            range.setStart(n, m.index); range.setEnd(n, m.index + m[0].length);
+            if (range.getClientRects().length > 1) problems.push(`"${m[0]}" split across lines`);
+          }
+        }
+      }
+    }
+    // A select squeezed below its natural width clips its value ("conta" for "contacted").
+    for (const sel of t.querySelectorAll('select')) {
+      const probe = sel.cloneNode(true);
+      probe.style.cssText = 'position:absolute;visibility:hidden;width:auto;max-width:none;min-width:0';
+      sel.after(probe); // same parent, so the same inherited font size
+      const natural = probe.getBoundingClientRect().width;
+      probe.remove();
+      if (sel.getBoundingClientRect().width < natural - 1) problems.push(`select "${sel.getAttribute('aria-label')}" clipped (${Math.round(sel.getBoundingClientRect().width)} < ${Math.round(natural)}px)`);
+    }
     const actions = [...t.querySelectorAll('.t-actions button, .t-actions a.btn, .t-actions select')].map((e) => e.getBoundingClientRect().height);
     const panel = t.closest('.panel');
     return {

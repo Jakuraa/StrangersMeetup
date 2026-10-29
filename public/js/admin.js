@@ -52,9 +52,12 @@
           var v = c[1](r);
           var node = v instanceof Node ? v : String(v === null || v === undefined ? '—' : v);
           var none = node === '';
-          return el('td', { role: 'cell', class: (c[0] ? '' : 't-actions') + (i === primary ? ' t-primary' : '') + (none ? ' t-none' : '') }, [
+          var val = none ? null : el('div', { class: 't-val' }, [node]);
+          /* Only cells holding an unbroken run (URL, id, pasted text) may break mid-word; short values stay whole. */
+          var long = c[0] && val && /\S{21,}/.test(val.textContent);
+          return el('td', { role: 'cell', class: (c[0] ? '' : 't-actions') + (i === primary ? ' t-primary' : '') + (none ? ' t-none' : '') + (long ? ' t-long' : '') }, [
             c[0] ? el('span', { class: 't-lab', 'aria-hidden': 'true', text: c[0] }) : null,
-            none ? null : el('div', { class: 't-val' }, [node])
+            val
           ]);
         }));
       }))
