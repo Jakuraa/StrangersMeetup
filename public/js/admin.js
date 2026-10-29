@@ -130,7 +130,7 @@
         ['Members (active)', k.members], ['Users', k.users], ['Upcoming real events', k.upcoming_events], ['Upcoming sample events', k.upcoming_demo_events],
         ['Confirmed bookings', k.confirmed_bookings], ['Paid (test)', k.paid_test_paise, rupees], ['Paid (live)', k.paid_live_paise, rupees],
         ['Stars received', k.paid_stars], ['Failed payments', k.failed_payments], ['Invite failures', k.invite_failures],
-        ['Memberships expiring ≤7d', k.expiring_memberships], ['Refunds due', k.refunds_due], ['New leads', k.new_leads], ['New reports', k.new_reports],
+        ['Memberships expiring ≤7d', k.expiring_memberships], ['Unmatched SuperProfile orders', k.unmatched_orders], ['Flagged orders', k.flagged_orders], ['New leads', k.new_leads], ['New reports', k.new_reports],
         ['Alert subscribers', k.alert_subscribers]
       ];
       clear(main).append(el('h1', { text: 'Overview' }), el('div', { class: 'kpis' }, items.map(function (i) {
@@ -183,6 +183,9 @@
       input('refund_policy', 'Refund policy', 'textarea', ev.refund_policy, { wide: true, rows: 2 }),
       input('bookmyshow_url', 'BookMyShow URL (optional)', 'url', ev.bookmyshow_url),
       input('external_payment_url', 'External payment URL (optional)', 'url', ev.external_payment_url),
+      input('checkout_mode', 'Checkout', 'select', ev.checkout_mode || 'none', { options: ['none', 'superprofile', 'free'] }),
+      input('superprofile_url', 'SuperProfile product link (https://…superprofile.bio/…)', 'url', ev.superprofile_url),
+      input('superprofile_product_id', 'SuperProfile product id / name sent by the automation', 'text', ev.superprofile_product_id),
       input('telegram_chat_id', 'Telegram chat id (blank = events group)', 'text', ev.telegram_chat_id),
       input('cover_media_id', 'Cover media id (authorised media only)', 'text', ev.cover_media_id),
       input('food_available', 'Food available', 'checkbox', ev.food_available),
@@ -200,7 +203,8 @@
         capacity: Number(f.capacity.value), ticket_price_paise: price ? Math.round(Number(price) * 100) : null, organizer: f.organizer.value,
         gender_policy: f.gender_policy.value, summary: f.summary.value, description: f.description.value, inclusions: lines(f.inclusions.value),
         exclusions: lines(f.exclusions.value), refund_policy: f.refund_policy.value, bookmyshow_url: f.bookmyshow_url.value,
-        external_payment_url: f.external_payment_url.value, telegram_chat_id: f.telegram_chat_id.value.trim() || null,
+        external_payment_url: f.external_payment_url.value, checkout_mode: f.checkout_mode.value, superprofile_url: f.superprofile_url.value.trim() || null,
+        superprofile_product_id: f.superprofile_product_id.value.trim() || null, telegram_chat_id: f.telegram_chat_id.value.trim() || null,
         cover_media_id: f.cover_media_id.value.trim() || null, food_available: f.food_available.checked, stay_available: f.stay_available.checked, is_demo: f.is_demo.checked
       };
       (ev.id ? api('PATCH', '/api/admin/events/' + ev.id, body) : api('POST', '/api/admin/events', body))
@@ -289,6 +293,33 @@
           ['Stars', function (p) { return p.amount; }], ['Status', function (p) { return p.payment_status + (p.is_test ? ' · test' : ''); }],
           ['', function (p) { return finance && p.payment_status === 'paid' ? btn('Refund', refund(p.payment_id), null, 'Stars payment from ' + (p.alias || 'member')) : ''; }]
         ], r.membershipPayments, 'No membership payments.', { name: 'Membership payments (Stars)', primary: 1 })]));
+    });
+  };
+
+  /* ---------- SuperProfile orders ---------- */
+  TABS.orders = function (state, cursor) {
+    state = state || 'unmatched';
+    var q = '?state=' + encodeURIComponent(state) + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    return api('GET', '/api/admin/orders' + q).then(function (r) {
+      var finance = can(['super_admin', 'finance']);
+      var sel = el('select', { 'aria-label': 'Filter orders', onchange: function () { TABS.orders(sel.value); } }, ['unmatched', 'flagged', 'matched', 'all'].map(function (s) { return el('option', { value: s, text: s, selected: s === state }); }));
+      function link(o) {
+        return function () {
+          var id = prompt('Telegram user id of the buyer (they must have signed in once):');
+          if (!id) return;
+          api('POST', '/api/admin/orders/' + o.id + '/link', { telegramUserId: Number(id) }).then(function () { toast('Order linked and booking confirmed'); TABS.orders(state); }).catch(fail);
+        };
+      }
+      clear(main).append(el('h1', { text: 'Orders (SuperProfile)' }),
+        el('p', { class: 'muted', text: 'Every SuperProfile order we hear about. Unmatched orders wait for the buyer to /claim them in the bot; finance can link one by hand (audited). Nothing here is ever dropped.' }),
+        el('p', {}, [el('label', {}, ['Show ', sel])]),
+        el('div', { class: 'panel' }, [table([
+          ['Received', function (o) { return fmtDT(o.received_at); }], ['Order', function (o) { return o.order_id; }], ['Event', function (o) { return o.event_title || o.product_id || '—'; }],
+          ['Qty', function (o) { return o.qty; }], ['Amount', function (o) { return rupees(o.amount_paise); }],
+          ['State', function (o) { return el('span', {}, [pill(o.status), ' ', pill(o.match_state), o.flag_reason ? ' ' + o.flag_reason.replace(/_/g, ' ') : '']); }],
+          ['', function (o) { return finance && o.status === 'paid' && !o.matched_booking_id && o.event_title ? btn('Link to buyer', link(o), null, o.order_id) : ''; }]
+        ], r.orders, 'No orders in this view.', { name: 'SuperProfile orders', primary: 1 })]),
+        r.nextCursor ? el('p', {}, [btn('Older orders', function () { TABS.orders(state, r.nextCursor); })]) : '');
     });
   };
 

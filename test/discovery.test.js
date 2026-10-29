@@ -146,7 +146,7 @@ test('approve as external listing: attributed page, organiser link, never bookab
   assert.match(page.text, /Listed from/);
   assert.match(page.text, /View &amp; book on Example Events/);
   assert.match(page.text, new RegExp(c.link.replace(/[.]/g, '\\.')));
-  assert.doesNotMatch(page.text, /data-book=/, 'no internal booking button');
+  assert.doesNotMatch(page.text, /data-sp-buy=/, 'no internal booking button');
   assert.doesNotMatch(page.text, /"@type":"Event"/, 'no Event JSON-LD for events we do not run');
   assert.doesNotMatch(page.text, /Up to 0 people/);
 
@@ -155,9 +155,11 @@ test('approve as external listing: attributed page, organiser link, never bookab
   assert.match(parties.text, /Via Example Events/);
 
   const user = await signedInClient();
-  const book = await user.post('/api/bookings', { eventId: r.json.event.id });
-  assert.equal(book.status, 409);
-  assert.equal(book.json.error, 'external_event');
+  const book = await user.post(`/api/events/${r.json.event.id}/book`, { ticketTypeId: '00000000-0000-4000-8000-000000000000' });
+  assert.equal(book.status, 409, 'external listings cannot be booked here');
+  const out = await new Client().get(`/checkout/${r.json.event.slug}`);
+  assert.equal(out.status, 302);
+  assert.equal(out.headers.get('location'), `/events/${r.json.event.slug}`, 'no checkout for events we do not sell');
 
   // A second source with the same title, IST day and city is a duplicate.
   const [other] = (await owner.get('/api/admin/candidates?status=pending')).json.candidates;
