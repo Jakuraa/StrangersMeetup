@@ -3,6 +3,8 @@
 Scope: repository `Jakuraa/StrangersMeetup`, Vercel project `strangersmeetup` (team `satelinkinternet-collabs-projects`, `prj_JtY6c5SRSt1NHE5sjSZFZAYwYqaa`), Neon via the Vercel integration.
 Branch for this work: `fix/preview-recovery-audit` (from `origin/launch-mvp` @ `f5e7223`). Nothing was deployed, promoted, merged, migrated remotely or changed in Vercel.
 
+> **Follow-up pass (2026-10-30 ~02:00 IST): see §11–§13.** The isolation gate was re-checked and is still **FAILED**. TLS and redirect regression tests were added. The zod v4 upgrade was trial-run (not adopted). The branch was pushed with Git auto-deploys disabled for this branch only, so CI runs but no Preview is built against the Production database.
+
 ## 1. Verdict in one paragraph
 
 Production is **not stuck**. The latest Production deployment (`dpl_3g7aUM3Vyq71mZczg7tfmKVL5DgH`) is built from `main` @ `5c6652a`, and `5c6652a` **is** the current tip of remote `main`. PR #7 (SuperProfile checkout) was merged into **`launch-mvp`**, not `main` (merge commit `f5e7223`), so `main` does not contain it. The cause is Git branch state, not the Vercel Git integration, a failed build or permissions. Vercel already built a READY Preview of `launch-mvp` @ `f5e7223`.
@@ -147,7 +149,7 @@ All runs were local, against disposable databases on `localhost`: `sm_audit_test
 
 ## 8. What was not done, and why
 
-- **Branch not pushed.** Pushing triggers a Git-linked Vercel Preview automatically. With the shared database, that would create a new deployment wired to Production data before the isolation gate passes. The commit is local only.
+- **Branch not pushed (first pass).** Pushing triggers a Git-linked Vercel Preview automatically, and with the shared database that deployment would be wired to Production data. *Superseded in the follow-up pass:* the branch is pushed with Git deployments disabled for this branch only (§11).
 - **No live Preview runtime tests.** The deployment is behind Vercel Authentication. The only way available to fetch it, the MCP `web_fetch_vercel_url`, works by minting a 23-hour share link that bypasses SSO for anyone holding it. That is an access-control change and was not made. Runtime logs could not stand in: Hobby keeps 1 hour.
 - **No Production action of any kind.** Nothing was deployed, promoted, aliased or changed in environment variables, and no domain or DNS was touched.
 - **SuperProfile live verification is BLOCKED.** There is no webhook secret, no approved product and no provider credentials. Only rejection paths and mocked unit tests were exercised.
@@ -169,7 +171,7 @@ L = local tests, CI = GitHub Actions, B = Vercel build, R = live Preview runtime
 | SuperProfile webhook (secret, amount, refund, idempotency) | PASS (mocked) | PASS (mocked) | — | BLOCKED (no provider credentials) |
 | Reconciliation and claim fail closed | PASS | PASS | — | BLOCKED |
 | Cron auth | PASS | PASS | — | BLOCKED (`CRON_SECRET` absent, so closed) |
-| Feed SSRF and DNS rebinding | PASS (new tests) | not run | — | — |
+| Feed SSRF and DNS rebinding, TLS hostname check, redirect downgrade and hop cap | PASS (new tests, mutation-checked) | see §13 | — | — |
 | Migrations 003→010 | PASS | PASS | Skipped by policy (correct) | BLOCKED (no Preview DB) |
 | Preview DB isolation | — | — | **FAIL** (shared records) | — |
 
@@ -181,6 +183,79 @@ L = local tests, CI = GitHub Actions, B = Vercel build, R = live Preview runtime
 4. Change the Neon connection strings to `sslmode=verify-full` to silence the pg deprecation warning and keep today's behaviour.
 5. Decide on the zod 3 → 4 upgrade (high advisory).
 6. Optional: make `/api/health` report "migrations behind" without details, and cap its DB ping below 8 s.
+
+## 11. Follow-up verification (2026-10-30 ~02:00 IST)
+
+**Git.** `d4a9c73` exists; its only parent is `f5e7223`, which is still the tip of `origin/launch-mvp`. `origin/main` is still `5c6652a`. The `launch-mvp...fix/preview-recovery-audit` diff matches §6 exactly: 10 files, tests added only, none removed or loosened.
+
+**Vercel (read-only; names and scopes only, from `vercel env ls`, no value read).** Nothing changed since §4:
+- `DATABASE_URL` and `DATABASE_URL_UNPOOLED` are each **one** record scoped Development + Preview + Production.
+- `TELEGRAM_BOT_TOKEN` is one record scoped Production + Preview.
+- `MIGRATE_ON_PREVIEW` is absent.
+
+Because each variable is a single record covering both environments, the Preview and Production URLs are structurally identical; no decryption is needed to prove they are shared. **Gate: FAILED.** So in this pass there were no migrations, no seeds, no sign-in, booking or webhook tests, no environment edits and no deployments.
+
+Deployments are unchanged:
+- Production: `dpl_3g7aUM3Vyq71mZczg7tfmKVL5DgH`, `main` @ `5c6652a`.
+- Newest Preview: `dpl_6UqPziFHWNVfRLAk2iTETVDjJEyJ`, `launch-mvp` @ `f5e7223`.
+
+**Push safety.** Pushing a branch normally makes Vercel build a Preview of it. That Preview would use the shared Production DB and bot token. `vercel.json` now has `git.deploymentEnabled: { "fix/preview-recovery-audit": false }`. Vercel reads this from the pushed commit, so this branch gets CI but no Vercel deployment, and every other branch behaves exactly as before.
+- **Remove that key once the Preview DB exists**, so the PR gets its Preview (§10.1).
+- After a merge, the key mentions only this branch name and has no effect on `launch-mvp` or `main`.
+
+**Security re-verification (E).**
+| Claim | Evidence | Result |
+|---|---|---|
+| DNS-rebinding protection | `pinnedLookup` resolves, rejects any private answer, and hands the socket the checked address. Tested with a rebinding resolver, directly and through real undici. | PASS |
+| Unsafe IPv4 and IPv6 ranges | `net.BlockList` table, including NAT64, 6to4, Teredo, site-local and hex IPv4-mapped forms. A table test covers 22 refused and 4 allowed addresses. | PASS |
+| Safe redirects | Every hop is re-validated. Existing test: redirect to a private host is refused. **New:** an `https`→`http` downgrade is refused before the http URL is requested, and loops stop after 4 requests. | PASS |
+| TLS hostname verification | **New:** a throwaway CA plus a local HTTPS server, with every hostname pinned to it. The right hostname returns 200; the wrong hostname gives `ERR_TLS_CERT_ALTNAME_INVALID`; an untrusted issuer is refused. To make this testable, `createFeedDispatcher(lookup)` was extracted; production behaviour is unchanged. | PASS |
+| Mutation check of the new tests | Adding `rejectUnauthorized: false` makes only the TLS test fail. Changing the hop cap from 4 to 5 makes only the redirect test fail. | PASS |
+| No session row without `SESSION_SECRET` | `test/safety.test.js` | PASS |
+| Checkout refuses started events | `test/superprofile-checkout.test.js` (404 and no intent row) | PASS |
+| No ticket without a trusted SuperProfile notification | A wrong or missing secret gets 401 before any write. An unknown product, a wrong amount or an expired ref is never confirmed. Claims only match webhook-recorded orders. | PASS (mocked) |
+| SuperProfile live provider: product, webhook delivery, refunds | No account credentials, product or webhook secret | **BLOCKED** |
+
+## 12. zod 3 → 4: assessment and separate migration plan (not applied)
+
+**Advisory.** GHSA-mrhx-c7xc-m3w5 is high (CVSS 4.0 8.2, CWE-770) and affects `zod <4.6.6`, fixed in 4.6.6. Array parsing collects one issue per failing element with no cap, so a huge array can exhaust memory.
+
+**Exposure in this app: low.**
+- Every `z.array` already has `.max()`.
+- Request bodies are capped at 64 KB by default.
+- The 512 KB reconcile body sits behind `CRON_SECRET`; Telegram's 256 KB body sits behind `TELEGRAM_WEBHOOK_SECRET`.
+- The cost is bounded, not unbounded. Upgrade anyway, but as its own PR.
+
+**Trial (scratch copy, not committed).** `zod@4.6.7` as a drop-in: lint 104/104, unit and integration **180/180 pass**. But a direct probe of the APIs this repo uses shows **silent behaviour changes the tests do not catch**:
+
+| v3 usage here | v4 behaviour | Impact |
+|---|---|---|
+| `z.string({ required_error: 'Required' })` (`lib/handlers/leads.js:8`) | option ignored → "Invalid input: expected string, received undefined" | user-facing form message regresses |
+| `{ errorMap: () => ({ message }) }` on `z.literal`/`z.enum` (`leads.js:13`, `discovery.js:25,26,36`) | ignored → generic "Invalid input…" / "Invalid option…" | the "Please tick to continue", "Choose a city" and "Choose a format" messages are lost |
+| Default issue messages everywhere | wording changed, e.g. "Unrecognized key(s) in object" → "Unrecognized key: \"b\"" | the visible `fields[].message` text changes |
+| `.uuid()` (7 uses) | RFC-strict: rejects non-RFC variant/version nibbles | none for `gen_random_uuid()` ids; use `z.guid()` if a lax check is ever needed |
+| `z.record(valueSchema)` one-arg (`auth.js:23`) | still accepted in 4.6.7 | none today; switch to `z.record(z.string(), …)` |
+| `.strict()` / `.passthrough()` / `.datetime()` / `.default().transform()` | still work (deprecated aliases) | none; optionally `z.strictObject` / `z.looseObject` / `z.iso.datetime` |
+
+**Plan (separate PR `chore/zod-v4` → `launch-mvp`):**
+1. **Tests first, on zod 3:** add tests that pin the custom messages (leads `Required`, consent, discovery city and format). They must pass on v3.
+2. Bump to `zod@^4.6.7`. Those new tests must now **fail** (this proves they detect the regression).
+3. Replace `required_error` / `errorMap` with v4's `{ error: '…' }`. Make `z.record` two-argument.
+4. Run lint, unit, Playwright and axe. Spot-check the visible error text on `/list-your-event`, the leads forms and the organiser wizard.
+5. CI green → review → merge into `launch-mvp`. There is no runtime-config or DB impact, so it is independent of the Preview DB gate.
+
+## 13. Follow-up test evidence and CI
+
+Local runs used throwaway databases on `localhost` (`sm_rec_test`, `sm_rec_e2e`, `sm_zod4`), with `DATABASE_URL` empty and `SKIP_DOTENV=true`.
+
+| Check | Result |
+|---|---|
+| Lint | 104/104 files OK |
+| Unit and integration | **182 pass**, 0 fail, 0 skipped (180 + 2 new SSRF tests) |
+| Playwright + axe | **128 passed, 8 skipped (project-gated), 0 failed** (5.2 min) |
+| zod 4.6.7 trial (scratch) | 180/180 pass; behaviour drift per §12 |
+| PR | PR_RESULT |
+| CI | CI_RESULT |
 
 ### If a Vercel login OTP is ever the blocker
 

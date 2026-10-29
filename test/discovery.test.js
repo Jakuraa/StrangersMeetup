@@ -1,9 +1,15 @@
 // test/discovery.test.js - Feeds (parse, robots, SSRF, dedupe), submissions, moderation, external listings.
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import https from 'node:https';
+import os from 'node:os';
+import path from 'node:path';
+import tls from 'node:tls';
 import { resetDb, startServer, stopServer, Client, db, signedInClient, clearCalls, stubUrl, calls } from './helpers.js';
 import { fetch as undiciFetch } from 'undici';
-import { parseFeed, robotsAllows, assertPublicHttpsUrl, resolver, dedupeKey, isPrivateIp, pinnedLookup, feedDispatcher, safeFetch } from '../lib/services/feeds.js';
+import { parseFeed, robotsAllows, assertPublicHttpsUrl, resolver, dedupeKey, isPrivateIp, pinnedLookup, feedDispatcher, createFeedDispatcher, safeFetch } from '../lib/services/feeds.js';
 
 const FEED_URL = 'https://feeds.example.org/events.xml';
 const inDays = (n, h = 19) => {
@@ -128,6 +134,63 @@ test('SSRF guard: feed requests are sent through the pinned dispatcher', async (
     assert.equal(seen, feedDispatcher);
   } finally {
     stubUrl('https://pin.example.org/');
+  }
+});
+
+/** A throwaway CA and a leaf certificate for feeds.example.org, made with the openssl CLI. */
+function makeTestPki() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sm-tls-'));
+  const ssl = (...args) => execFileSync('openssl', args, { cwd: dir, stdio: 'ignore' });
+  ssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=SM Test CA', '-keyout', 'ca.key', '-out', 'ca.pem');
+  ssl('req', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=feeds.example.org', '-keyout', 'leaf.key', '-out', 'leaf.csr');
+  fs.writeFileSync(path.join(dir, 'ext.cnf'), 'subjectAltName=DNS:feeds.example.org\n');
+  ssl('x509', '-req', '-in', 'leaf.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key', '-CAcreateserial', '-days', '1', '-extfile', 'ext.cnf', '-out', 'leaf.pem');
+  const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
+  const pki = { ca: read('ca.pem'), key: read('leaf.key'), cert: read('leaf.pem') };
+  fs.rmSync(dir, { recursive: true, force: true });
+  return pki;
+}
+
+const hasOpenssl = (() => { try { execFileSync('openssl', ['version'], { stdio: 'ignore' }); return true; } catch { return false; } })();
+
+test('SSRF guard: a pinned connection still verifies the TLS certificate against the URL hostname', { skip: !hasOpenssl && 'openssl CLI not available' }, async () => {
+  const pki = makeTestPki();
+  const server = https.createServer({ key: pki.key, cert: pki.cert }, (req, res) => res.end('feed'));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const savedCAs = tls.getCACertificates('default');
+  // Every hostname is pinned to the local server, so only the certificate check can tell them apart.
+  const toLocal = (hostname, options, cb) => (options?.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4));
+  const dispatcher = createFeedDispatcher(toLocal);
+  try {
+    tls.setDefaultCACertificates([...savedCAs, pki.ca]);
+    const ok = await undiciFetch(`https://feeds.example.org:${port}/`, { dispatcher });
+    assert.equal(await ok.text(), 'feed');
+    await assert.rejects(undiciFetch(`https://other.example.org:${port}/`, { dispatcher }),
+      (e) => e.cause?.code === 'ERR_TLS_CERT_ALTNAME_INVALID');
+    tls.setDefaultCACertificates(savedCAs); // an untrusted issuer is refused as well
+    await assert.rejects(undiciFetch(`https://feeds.example.org:${port}/`, { dispatcher: createFeedDispatcher(toLocal) }),
+      (e) => e.cause?.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+  } finally {
+    tls.setDefaultCACertificates(savedCAs);
+    await dispatcher.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('SSRF guard: redirects may not downgrade to http and are capped at 4 hops', async () => {
+  stubUrl('https://down.example.org/', () => ({ status: 301, headers: { location: 'http://down.example.org/feed' } }));
+  stubUrl('https://loop.example.org/', (url) => ({ status: 302, headers: { location: `https://loop.example.org/${Number(new URL(url).pathname.slice(1) || 0) + 1}` } }));
+  try {
+    clearCalls();
+    await assert.rejects(safeFetch('https://down.example.org/feed'), /Only https URLs are allowed/);
+    assert.deepEqual(calls.map((c) => c.path), ['https://down.example.org/feed'], 'the http URL was never requested');
+    clearCalls();
+    await assert.rejects(safeFetch('https://loop.example.org/0'), /too many redirects/);
+    assert.equal(calls.length, 4);
+  } finally {
+    stubUrl('https://down.example.org/');
+    stubUrl('https://loop.example.org/');
   }
 });
 
