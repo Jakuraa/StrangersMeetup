@@ -1,0 +1,191 @@
+# Preview recovery and deployment audit — 2026-10-30
+
+Scope: repository `Jakuraa/StrangersMeetup`, Vercel project `strangersmeetup` (team `satelinkinternet-collabs-projects`, `prj_JtY6c5SRSt1NHE5sjSZFZAYwYqaa`), Neon via the Vercel integration.
+Branch for this work: `fix/preview-recovery-audit` (from `origin/launch-mvp` @ `f5e7223`). Nothing was deployed, promoted, merged, migrated remotely or changed in Vercel.
+
+## 1. Verdict in one paragraph
+
+Production is **not stuck**. The latest Production deployment (`dpl_3g7aUM3Vyq71mZczg7tfmKVL5DgH`) is built from `main` @ `5c6652a`, and `5c6652a` **is** the current tip of remote `main`. PR #7 (SuperProfile checkout) was merged into **`launch-mvp`**, not `main` (merge commit `f5e7223`), so `main` does not contain it. The cause is Git branch state, not the Vercel Git integration, a failed build or permissions. Vercel already built a READY Preview of `launch-mvp` @ `f5e7223`.
+
+The real blocker for end-to-end Preview testing is different: **Preview and Production share one Neon database.** Every database variable is a single record scoped to Development + Preview + Production, so no write, migration or sign-in test may run against any Preview until the owner gives Preview its own database.
+
+## 2. Git source of truth (verified 2026-10-30 ~01:20 IST)
+
+| Ref | SHA | Notes |
+|---|---|---|
+| `origin/main` | `5c6652ae11542aa2b38df323f6258d7494b2a006` | Merge of PR #2 (`launch-mvp` → `main`). Its second parent `7bc062b` brings in PRs #3–#6. |
+| `origin/launch-mvp` | `f5e7223483a750acebd137955f67992e38730446` | Merge of PR #7. Six commits ahead of `main` (PR #7 content); `main` is one commit ahead (its own merge commit). |
+| `origin/feature/superprofile-checkout` | `64cfe6f` | PR #7 head; fully contained in `launch-mvp`. |
+| `fix/preview-recovery-audit` (local, this work) | based on `f5e7223` | No upstream set on purpose, so a bare `git push` can never target `launch-mvp`. |
+
+- `git merge-base --is-ancestor f5e7223 origin/main` → **false** (main does not contain PR #7).
+- PR #7: `MERGED` 2026-10-29T19:19:07Z, base `launch-mvp`, head `feature/superprofile-checkout`.
+- Local `main` checkout (at `/Users/pradeepjakuraa/strangersmeetup`) is 36 commits behind `origin/main`. This is cosmetic; nothing was moved.
+- The working trees were clean. No user changes were touched.
+
+### CI (GitHub Actions `CI`, Node 24, postgres:16)
+
+| Run | Ref / SHA | Result |
+|---|---|---|
+| 40907567064 | PR #7 head `64cfe6f` | success |
+| 40938995707 | push `launch-mvp` `f5e7223` | **failure**: 127 passed, 8 skipped, 1 failed |
+
+The failure was `e2e/wizard-tap-targets.spec.js:78`, `TypeError: Cannot read properties of null (reading 'height')`. Root cause: the organiser wizard re-renders its whole step via `innerHTML` when the debounced autosave (900 ms) returns. The node that `toBeVisible()` saw could be detached before `boundingBox()` measured it, and `boundingBox()` returns `null` for a detached node. This is a test race, not an application bug. **Fixed** (see §6).
+
+## 3. Vercel (read-only inspection)
+
+| Item | Value |
+|---|---|
+| Framework preset | none (static `public/` + one function `api/index.js`) |
+| Node | `24.x` (project setting) |
+| Build | `vercel.json` `buildCommand: npm run vercel-build` → `node scripts/migrate.js` |
+| Production deployment | `dpl_3g7aUM3Vyq71mZczg7tfmKVL5DgH` — `main` @ `5c6652a` — READY |
+| Latest Preview | `dpl_6UqPziFHWNVfRLAk2iTETVDjJEyJ` — `launch-mvp` @ `f5e7223` — READY — https://vercel.com/satelinkinternet-collabs-projects/strangersmeetup/6UqPziFHWNVfRLAk2iTETVDjJEyJ |
+| Preview aliases | only `strangersmeetup-git-la-730dd9-satelinkinternet-collabs-projects.vercel.app` (branch alias). It is **not** a Production alias. |
+| Project domains | `strangersmeetup-virid.vercel.app` (the only domain record); no custom domain |
+| Deployment protection | Vercel Authentication (SSO) on `all_except_custom_domains`; no password protection; no trusted IPs |
+| Plan | Hobby (runtime logs are kept for 1 hour only) |
+
+**Preview build log (`f5e7223`)** is clean. Migrations were correctly skipped: `[migrate] skipping migrations — vercel preview build: set MIGRATE_ON_PREVIEW=true only if this environment has its own database`. It has two warnings:
+
+1. `engines.node ">=20"` would auto-upgrade to a future major. **Fixed:** the engine is pinned to `24.x`, which matches the Vercel project and CI.
+2. `scripts/migrate.js` runs twice per build. Vercel runs the `vercel-build` script and then the `buildCommand` (`npm run vercel-build`) again. This is harmless because migrations are ledgered and idempotent: a re-run applies 0, verified locally. It is noted rather than changed, because changing the Production build path without a Production build to verify it is not a safe repair.
+
+**Runtime errors (last 7 days):**
+- A recurring `pg` warning: sslmode `require` is treated as `verify-full` today and will become weaker libpq semantics in pg v9. Owner action: use `sslmode=verify-full` in the connection strings.
+- Stale `DB_NOT_CONFIGURED` errors from 26 Oct, from before Neon was attached.
+- No schema errors were recorded for the Preview. This is weak evidence (see §8).
+
+**Access:** the Vercel MCP and the local CLI session (user `satelink`) both worked with no OTP. Listing environment variables through the MCP returned **403 forbidden**. The CLI `vercel env ls` (names and scopes only, values never pulled) succeeded. **OTP was not a blocker for anything in this audit.**
+
+## 4. Database isolation — FAILED (hard gate)
+
+These are names and scopes only, from `vercel env ls`. No value was read or decrypted.
+
+| Variable(s) | Scope | Preview-only override? |
+|---|---|---|
+| `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | Development, Preview, Production (one record each) | **No** |
+| `PGHOST`, `PGHOST_UNPOOLED`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` | Development, Preview, Production | **No** |
+| `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL_NO_SSL`, `POSTGRES_PRISMA_URL`, `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` | Development, Preview, Production | **No** |
+| `NEON_PROJECT_ID`, `NEON_AUTH_BASE_URL`, `VITE_NEON_AUTH_URL` | Development, Preview, Production | No |
+| `NEON_REALTIME_URL`, `NEON_REALTIME_SECRET` | separate Preview and Dev+Prod records | yes, but the app does not use them for its database |
+| `TELEGRAM_BOT_TOKEN` | Production, Preview | — (the same bot token on Preview means Preview can message real users) |
+| `MIGRATE_ON_PREVIEW` | **absent** (correct) | — |
+| `SESSION_SECRET`, `CRON_SECRET`, `PUBLIC_SITE_URL`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_LOGIN_CLIENT_ID/SECRET`, `TELEGRAM_BOT_USERNAME`, `SUPERPROFILE_WEBHOOK_SECRET`, `ADMIN_BOOTSTRAP_TELEGRAM_ID` | **absent in every environment** | — |
+
+Each `DATABASE_URL*` variable is one record whose target set includes both Preview and Production, so the two **cannot** point at different databases. No branch-specific Preview override exists.
+
+Consequences:
+- No migration, seed, sign-in, booking, checkout-click or webhook test was run against any Vercel deployment.
+- The existing Preview (`launch-mvp` code) serves requests against the **Production** database. That database has only been migrated by `main` builds, so `010_superprofile_checkout.sql` has almost certainly not been applied there. Any Preview code path that reads the 010 columns may fail. This could not be confirmed without database access.
+- These Preview GET routes **write** to the shared DB:
+  - `/checkout/:slug`: `rate_limits`, `checkout_intents`, `analytics_events`
+  - `/auth/telegram/*`: nonces, user upsert, sessions
+  - admin GETs when signed in as `ADMIN_BOOTSTRAP_TELEGRAM_ID`: a one-time admin row plus an audit row. This variable is not set today, so it cannot fire.
+  - `/api/cron/*`: needs `CRON_SECRET`, which is absent, so cron is closed.
+- These routes are read-only and would be safe to smoke-test: `/`, `/events`, `/events/:slug`, `/trips`, collection and city pages, `/api/events`, `/api/health`, `/sitemap.xml`, `/robots.txt`, static assets, and HEAD `/checkout/*`.
+
+### Owner steps to unblock (no secrets need to be shared with anyone)
+
+1. In Neon, create a **branch** (for example `preview`) off the production branch with *schema only*, or create a new empty database in a separate Neon project. Do not copy customer data.
+2. In Vercel → Settings → Environment Variables, the Neon integration owns the shared records, so do not edit them. Instead:
+   - either use the Neon integration's **"Create a database branch for each preview deployment"** option, which injects branch-specific `DATABASE_URL*` for previews automatically,
+   - or add **Preview-scoped** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` records, optionally limited to the `launch-mvp` branch, pointing at the new branch, and remove Preview from the shared records' target list.
+3. Only then add `MIGRATE_ON_PREVIEW=true` **scoped to Preview (or to the `launch-mvp` branch only)**, never to Production or All.
+4. Add Preview-only values for `SESSION_SECRET` (32+ chars), `CRON_SECRET` (16+), `PUBLIC_SITE_URL`, `TELEGRAM_WEBHOOK_SECRET`, and `SUPERPROFILE_WEBHOOK_SECRET` (24+). Give Preview a **separate test bot token**, or remove Preview from `TELEGRAM_BOT_TOKEN`.
+5. Redeploy the `launch-mvp` Preview (Vercel → Deployments → Redeploy, *Preview*). The build log must then say `[migrate] done (8 applied; vercel preview with MIGRATE_ON_PREVIEW=true)`.
+
+## 5. Security and privacy review
+
+Code-level findings, with file:line evidence collected during the audit.
+
+| Area | Finding | Status |
+|---|---|---|
+| Feed fetch SSRF | `assertPublicHttpsUrl` resolved and validated the host, but `fetch()` resolved DNS **again** at connect time. That is a DNS-rebinding TOCTOU: a short-TTL record could pass the check and then connect to `127.0.0.1` or `169.254.169.254`. `isPrivateIp` also missed NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, Teredo `2001::/32`, `192.0.0.0/24`, documentation ranges, `fec0::/10` and hex IPv4-mapped forms. | **Fixed** |
+| Session creation without `SESSION_SECRET` | `createSession` inserted a `user_sessions` row before discovering the secret was missing, then returned 503, leaving an orphan row (`lib/session.js`). | **Fixed** |
+| Checkout of a started multi-day event | `/checkout/:slug` allowed purchase until `end_at`. The event page already shows `past` at `start_at`, and free tiers refuse at `start_at` (`lib/services/ticketing.js:69`), so only a hand-typed checkout URL could still sell a running trip. | **Fixed**: same rule as free tiers |
+| Paid checkout without a product | `checkoutForEvent` requires `checkout_mode='superprofile'` and a `superprofile_url`, otherwise it redirects back to the event with no insert (`lib/payments/availability.js:10`, `lib/services/checkout.js:35`). In-app paid tiers are always refused (`ticketing.js:82`). | OK |
+| SuperProfile webhook | Returns 503 when the secret is under 24 chars and 401 on a wrong secret (`lib/handlers/superprofile.js:18`, `lib/payments/superprofile.js:58`). Amount, refund and idempotency checks are covered by the existing unit suite. | OK (unit); live provider BLOCKED |
+| Cron and reconcile | Return 401 unless `CRON_SECRET` is 16+ chars and matches as a Bearer token (`lib/handlers/cron.js:36`, `:55`). | OK |
+| Telegram webhook | Returns 401 without `TELEGRAM_WEBHOOK_SECRET` (`lib/handlers/telegram.js:15`). | OK |
+| `/api/health` | Distinguishes `NOT CONFIGURED`, `error` and `ok`; returns 503 unless ok; no hostnames, DB names or error text. It does not report migration state, and an unreachable DB can hold the request for up to 8 s. | OK; improvement noted |
+| Private venue | `events.venue_private` is only serialized when `venue_privacy='public'` (`lib/services/events.js:110`, `:140-143`). JSON-LD uses the same serializer. The sitemap selects only slug, category and updated_at. Bookings show the venue only when confirmed. | OK. Note: pickup-point `location` is public by design. |
+| Dependencies | `undici` was added at **7.30.1**; the version bundled with Node 24.13 (7.18.2) has open advisories, and `npm audit` is clean for undici 7.30.1. `zod` 3.x has a **pre-existing high advisory** (fixed in 4.6.6, a major upgrade). | zod: owner decision |
+
+## 6. Changes on `fix/preview-recovery-audit`
+
+| File | Change |
+|---|---|
+| `lib/services/feeds.js` | `isPrivateIp` is rebuilt on `net.BlockList`. A new exported `pinnedLookup` and `feedDispatcher` (an undici `Agent` with `connect.lookup`) resolve, validate and hand the socket the validated IP in one step. `safeFetch` passes `dispatcher: feedDispatcher`. TLS SNI and certificate checks still use the URL's hostname. The redirect re-validation, timeout and size cap are unchanged. |
+| `lib/session.js` | `createSession` checks the secret before the INSERT. |
+| `lib/services/checkout.js` | Checkout requires `start_at > now()`. |
+| `e2e/wizard-tap-targets.spec.js` | Measurements retry with `expect.poll` until the re-render settles. The thresholds (40 px chip, 52×32 switch, Fix < 30 px) are unchanged. |
+| `package.json` / lock | `engines.node` is `24.x`; `undici@7.30.1` is added (exact pin). |
+| `test/discovery.test.js` | 3 new tests: the IP classification table; DNS rebinding refused at connect time, including through a real undici fetch; and safeFetch using the pinned dispatcher. |
+| `test/safety.test.js` | 1 new test: no orphan session row without `SESSION_SECRET`. |
+| `test/superprofile-checkout.test.js` | Added: a started multi-day event returns 404 with no intent recorded. |
+
+No test was removed or weakened. **Mutation check:** with each of the three fixes reverted, exactly 3 tests fail. With the fixes in place, all pass.
+
+## 7. Test evidence
+
+All runs were local, against disposable databases on `localhost`: `sm_audit_test`, `sm_audit_e2e`, and `sm_audit_mig` (dropped afterwards). `DATABASE_URL` was unset, `.env` was absent and `SKIP_DOTENV=true`.
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | 104/104 files OK |
+| Unit and integration (baseline `f5e7223`) | `TEST_DATABASE_URL=postgres://localhost/sm_audit_test npm test` | 176 pass, 0 fail, 0 skipped |
+| Unit and integration (this branch) | same | **180 pass, 0 fail, 0 skipped** |
+| Browser (Playwright + axe; desktop, mobile, responsive matrix) | `E2E_DATABASE_URL=postgres://localhost/sm_audit_e2e npx playwright test` | **128 passed, 8 skipped (project-gated viewport tests), 0 failed** (5.0 min) |
+| Previously flaky test | `… wizard-tap-targets.spec.js --project=desktop --repeat-each=10` | 10/10 passed |
+| Migrations from empty | `node scripts/migrate.js` on a fresh DB | 8 applied (003→010); ledger has 8 rows |
+| Migrations idempotent | second run | 0 applied |
+| Preview build policy, no DB | `VERCEL=1 VERCEL_ENV=preview npm run vercel-build` | skipped: `DATABASE_URL not set` |
+| Preview build policy, remote URL | same, with a dummy remote URL | skipped: needs `MIGRATE_ON_PREVIEW=true` |
+| Real HTTPS through the pinned dispatcher | probe against `https://example.com/` | 200; a rebound answer to 127.0.0.1 gives `EPRIVATEADDR` |
+| CI on this branch | — | **not run**: the branch is not pushed (see §8) |
+
+## 8. What was not done, and why
+
+- **Branch not pushed.** Pushing triggers a Git-linked Vercel Preview automatically. With the shared database, that would create a new deployment wired to Production data before the isolation gate passes. The commit is local only.
+- **No live Preview runtime tests.** The deployment is behind Vercel Authentication. The only way available to fetch it, the MCP `web_fetch_vercel_url`, works by minting a 23-hour share link that bypasses SSO for anyone holding it. That is an access-control change and was not made. Runtime logs could not stand in: Hobby keeps 1 hour.
+- **No Production action of any kind.** Nothing was deployed, promoted, aliased or changed in environment variables, and no domain or DNS was touched.
+- **SuperProfile live verification is BLOCKED.** There is no webhook secret, no approved product and no provider credentials. Only rejection paths and mocked unit tests were exercised.
+
+## 9. PASS / FAIL / BLOCKED matrix
+
+L = local tests, CI = GitHub Actions, B = Vercel build, R = live Preview runtime.
+
+| Flow | L | CI | B | R |
+|---|---|---|---|---|
+| Public pages, discovery, trips render (+ axe) | PASS | PASS (PR head) / FAIL on `launch-mvp` push (flaky test, fixed here) | PASS (`f5e7223`) | BLOCKED (SSO; shared DB) |
+| `/api/health` states and no leakage | PASS | PASS | — | BLOCKED |
+| Unauthenticated/unauthorized admin returns branded 401/403 | PASS | PASS | — | BLOCKED |
+| Closed or past events not bookable (incl. started multi-day) | PASS | PASS (old rule) | — | BLOCKED |
+| Private venue never public | PASS | PASS | — | BLOCKED |
+| Sessions, CSRF, Telegram login and Mini App validation, rate limits | PASS | PASS | — | BLOCKED (no `SESSION_SECRET` or Telegram login vars) |
+| Free event booking | PASS | PASS | — | BLOCKED (would write to the Production DB) |
+| Paid checkout fails closed without a product | PASS | PASS | — | BLOCKED |
+| SuperProfile webhook (secret, amount, refund, idempotency) | PASS (mocked) | PASS (mocked) | — | BLOCKED (no provider credentials) |
+| Reconciliation and claim fail closed | PASS | PASS | — | BLOCKED |
+| Cron auth | PASS | PASS | — | BLOCKED (`CRON_SECRET` absent, so closed) |
+| Feed SSRF and DNS rebinding | PASS (new tests) | not run | — | — |
+| Migrations 003→010 | PASS | PASS | Skipped by policy (correct) | BLOCKED (no Preview DB) |
+| Preview DB isolation | — | — | **FAIL** (shared records) | — |
+
+## 10. Smallest safe next actions (owner)
+
+1. **Provision a Preview database** and scope the variables as in §4, steps 1–4. This one step unblocks everything marked BLOCKED.
+2. Review this branch locally, then push it and open a PR into `launch-mvp`: `git push -u origin fix/preview-recovery-audit`. Do this **after** step 1 if you want its auto-Preview to be safe; CI needs no secrets.
+3. When `launch-mvp` is ready to ship, open a PR `launch-mvp` → `main`. Merging it is what puts SuperProfile checkout into Production. The Production build will then apply migration 010 to the Production DB.
+4. Change the Neon connection strings to `sslmode=verify-full` to silence the pg deprecation warning and keep today's behaviour.
+5. Decide on the zod 3 → 4 upgrade (high advisory).
+6. Optional: make `/api/health` report "migrations behind" without details, and cap its DB ping below 8 s.
+
+### If a Vercel login OTP is ever the blocker
+
+It was not one in this audit. If it comes up:
+- confirm the account and mailbox;
+- check spam, junk, filters and quarantine;
+- request one fresh code and use only the newest;
+- if mail still does not arrive, contact Vercel Support through the official Help Center (vercel.com/help).

@@ -59,21 +59,25 @@ for (const width of [320, 375]) {
   });
 }
 
+// The wizard re-renders its whole step (innerHTML) when a debounced autosave returns, so an element
+// can be detached between "visible" and "measured" and boundingBox() returns null. Poll the
+// measurement until it settles; the expected sizes are unchanged.
+const box = (locator) => locator.boundingBox().then((b) => (b ? [b.width, b.height] : null));
+
 test('wizard controls keep their desktop size', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'desktop only');
   await openWizard(page);
   await page.getByRole('button', { name: /Next: Tickets/ }).click();
   const chip = page.locator('.chip[data-act="add-tier"]').first();
   await expect(chip).toBeVisible();
-  expect((await chip.boundingBox()).height).toBe(40);
+  await expect.poll(async () => (await box(chip))?.[1]).toBe(40);
   await page.getByRole('button', { name: /Next: Features/ }).click();
-  await expect(page.getByRole('switch').first()).toBeVisible();
-  const b = await page.getByRole('switch').first().boundingBox();
-  expect([b.width, b.height]).toEqual([52, 32]);
+  const sw = page.getByRole('switch').first();
+  await expect(sw).toBeVisible();
+  await expect.poll(() => box(sw)).toEqual([52, 32]);
   await screenshot(page, testInfo, 'wizard-features-desktop');
   await page.getByRole('button', { name: /^Next/ }).click();
   const fix = page.getByRole('button', { name: 'Fix', exact: true }).first();
   await expect(fix).toBeVisible();
-  const fb = await fix.boundingBox();
-  expect(fb.height).toBeLessThan(30);
+  await expect.poll(async () => (await box(fix))?.[1] ?? Infinity).toBeLessThan(30);
 });

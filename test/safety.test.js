@@ -10,7 +10,7 @@ import { migrationPolicy, isLocalDatabaseUrl, databaseName } from '../lib/db.js'
 import { assertSeedAllowed, SeedRefused } from '../scripts/seed-guard.js';
 import { planReset, assertResettable } from '../scripts/db-reset-local.js';
 import { seedDemo } from '../scripts/seed-demo.js';
-import { createSessionToken } from '../lib/session.js';
+import { createSessionToken, createSession } from '../lib/session.js';
 
 const LOCAL = 'postgres://postgres@localhost:5432/sm_local';
 const REMOTE = 'postgres://u:p@ep-cool-name.aws.neon.tech/neondb?sslmode=require';
@@ -138,6 +138,20 @@ test('expired, unknown and pre-migration session cookies are rejected', async ()
   const body = Buffer.from(JSON.stringify({ u: c.userId, exp: Math.floor(Date.now() / 1000) + 3600, n: 'x' })).toString('base64url');
   legacy.cookies.sm_session = `${body}.${crypto.createHmac('sha256', process.env.SESSION_SECRET).update(body).digest('base64url')}`;
   assert.equal(await meUser(legacy), null, 'old cookie format without a session id');
+});
+
+test('without SESSION_SECRET, creating a session refuses before writing a session row', async () => {
+  const c = await signedInClient();
+  const count = async () => (await db.query('SELECT count(*)::int AS n FROM user_sessions WHERE user_id = $1', [c.userId])).rows[0].n;
+  const n = await count();
+  const saved = process.env.SESSION_SECRET;
+  delete process.env.SESSION_SECRET;
+  try {
+    await assert.rejects(createSession(c.userId), (e) => e.status === 503 && e.code === 'not_configured');
+  } finally {
+    process.env.SESSION_SECRET = saved;
+  }
+  assert.equal(await count(), n, 'no orphan user_sessions row');
 });
 
 test('cron cleanup prunes long-dead sessions only', async () => {

@@ -2,7 +2,8 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { resetDb, startServer, stopServer, Client, db, signedInClient, clearCalls, stubUrl, calls } from './helpers.js';
-import { parseFeed, robotsAllows, assertPublicHttpsUrl, resolver, dedupeKey } from '../lib/services/feeds.js';
+import { fetch as undiciFetch } from 'undici';
+import { parseFeed, robotsAllows, assertPublicHttpsUrl, resolver, dedupeKey, isPrivateIp, pinnedLookup, feedDispatcher, safeFetch } from '../lib/services/feeds.js';
 
 const FEED_URL = 'https://feeds.example.org/events.xml';
 const inDays = (n, h = 19) => {
@@ -82,6 +83,52 @@ test('SSRF guard: only public https hosts', async () => {
     await assert.rejects(assertPublicHttpsUrl(u), undefined, u);
   }
   await assertPublicHttpsUrl('https://feeds.example.org/events.xml');
+});
+
+test('SSRF guard: private, reserved and IPv6 transition addresses are refused; public ones pass', () => {
+  for (const ip of ['10.1.2.3', '127.0.0.1', '169.254.169.254', '100.64.1.1', '172.16.0.1', '192.168.1.1', '192.0.2.5', '198.18.0.1', '224.0.0.1', '255.255.255.255',
+    '::', '::1', '::ffff:127.0.0.1', '::ffff:7f00:1', '::ffff:a9fe:a9fe', '64:ff9b::a00:1', '2002:a00:1::', '2001:0:4136::', 'fe80::1', 'fec0::1', 'fd00::1', 'not-an-ip']) {
+    assert.equal(isPrivateIp(ip), true, ip);
+  }
+  for (const ip of ['93.184.215.14', '8.8.8.8', '::ffff:8.8.8.8', '2606:4700::1111']) assert.equal(isPrivateIp(ip), false, ip);
+});
+
+test('SSRF guard: DNS rebinding after validation cannot reach a private address (lookup is pinned at connect time)', async () => {
+  const before = resolver.lookup;
+  try {
+    // First answer public (passes validation), every later answer private: a rebinding attacker.
+    let n = 0;
+    resolver.lookup = async () => (n++ === 0 ? [{ address: '93.184.215.14', family: 4 }] : [{ address: '127.0.0.1', family: 4 }]);
+    await assertPublicHttpsUrl('https://rebind.example.net/feed');
+    const err = await new Promise((resolve) => pinnedLookup('rebind.example.net', {}, (e) => resolve(e)));
+    assert.equal(err?.code, 'EPRIVATEADDR');
+    // Through a real HTTP client: the connection is refused before any socket to 127.0.0.1 opens.
+    await assert.rejects(undiciFetch('https://rebind.example.net/feed', { dispatcher: feedDispatcher }), (e) => e.cause?.code === 'EPRIVATEADDR');
+
+    // A public answer is handed to the socket as-is (both lookup call shapes).
+    resolver.lookup = async () => [{ address: '93.184.215.14', family: 4 }, { address: '2606:4700::1111', family: 6 }];
+    const one = await new Promise((resolve, reject) => pinnedLookup('ok.example.net', {}, (e, address, family) => (e ? reject(e) : resolve({ address, family }))));
+    assert.deepEqual(one, { address: '93.184.215.14', family: 4 });
+    const all = await new Promise((resolve, reject) => pinnedLookup('ok.example.net', { all: true }, (e, list) => (e ? reject(e) : resolve(list))));
+    assert.equal(all.length, 2);
+    // Mixed answers (one public, one private) are refused outright rather than filtered.
+    resolver.lookup = async () => [{ address: '93.184.215.14', family: 4 }, { address: '10.0.0.5', family: 4 }];
+    const mixed = await new Promise((resolve) => pinnedLookup('mixed.example.net', {}, (e) => resolve(e)));
+    assert.equal(mixed?.code, 'EPRIVATEADDR');
+  } finally {
+    resolver.lookup = before;
+  }
+});
+
+test('SSRF guard: feed requests are sent through the pinned dispatcher', async () => {
+  let seen;
+  stubUrl('https://pin.example.org/', (url, init) => { seen = init.dispatcher; return { body: 'ok' }; });
+  try {
+    await safeFetch('https://pin.example.org/feed.xml');
+    assert.equal(seen, feedDispatcher);
+  } finally {
+    stubUrl('https://pin.example.org/');
+  }
 });
 
 test('dedupe key: same title/IST-day/city match regardless of case and punctuation', () => {
