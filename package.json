@@ -1,27 +1,41 @@
 {
   "name": "strangersmeetup",
   "version": "1.0.0",
-  "description": "StrangersMeetup — Adults-only dating & social discovery membership platform",
+  "description": "StrangersMeetup — social discovery meetups & trips across South India (21+)",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "dev": "node server.js",
+    "migrate": "node scripts/migrate.js",
+    "seed:demo": "node scripts/migrate.js --seed-demo",
+    "db:reset:local": "node scripts/db-reset-local.js",
+    "seed:local": "node scripts/seed-local.js",
+    "vercel-build": "node scripts/migrate.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "lint": "node scripts/lint.js"
+    "lint": "node scripts/lint.js",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report"
   },
   "keywords": [
     "strangersmeetup",
-    "dating",
-    "telegram-stars",
-    "adult-social"
+    "meetups",
+    "telegram"
   ],
   "author": "StrangersMeetup Team",
   "license": "UNLICENSED",
   "private": true,
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20"
   },
   "dependencies": {
-    "@vercel/analytics": "^2.0.1"
+    "@vercel/functions": "^2.2.13",
+    "fast-xml-parser": "^5.11.2",
+    "pg": "^8.23.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1"
   }
 }

@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+research_notes
+reports
+test
+.claude
+.remember
+.playwright-mcp
+migrations/legacy-sqlite
+data
+e2e
+test-results
+playwright-report
+playwright.config.js
