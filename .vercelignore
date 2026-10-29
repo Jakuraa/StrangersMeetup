@@ -9,3 +9,7 @@ test
 .playwright-mcp
 migrations/legacy-sqlite
 data
+e2e
+test-results
+playwright-report
+playwright.config.js

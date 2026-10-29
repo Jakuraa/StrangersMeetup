@@ -136,3 +136,17 @@
 .wz-dialog { border: 0; border-radius: var(--radius); padding: 24px; max-width: min(92vw, 520px); box-shadow: var(--shadow); }
 .wz-dialog::backdrop { background: rgba(35, 32, 29, .45); }
 .wz-dialog h2 { font-size: 1.3rem; }
+
+/* Touch targets on phones: 44px hit areas without changing how the controls look. Desktop is unchanged. */
+@media (max-width: 800px) {
+  /* The button is the hit area; the visible 52x32 track is drawn inside it. */
+  .switch { width: 56px; height: 44px; border: 0; background: none; }
+  .switch::before { content: ""; position: absolute; top: 6px; left: 2px; width: 52px; height: 32px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--alt); transition: background .2s; }
+  .switch span { top: 10px; left: 5px; }
+  .switch[aria-checked="true"] { background: none; }
+  .switch[aria-checked="true"]::before { background: var(--accent); border-color: var(--accent); }
+  .chip { min-height: 44px; }
+  /* "Fix" stays body-sized text; only the box around it grows. */
+  .issues .linkish { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 800px) and (prefers-reduced-motion: reduce) { .switch::before { transition: none; } }

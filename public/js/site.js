@@ -67,11 +67,17 @@
 
   /* ---------- nav ---------- */
   var toggle = $('.nav-toggle');
-  if (toggle) toggle.addEventListener('click', function () {
-    var nav = $('#site-nav');
-    var open = nav.classList.toggle('open');
+  function setMenu(open) {
+    $('#site-nav').classList.toggle('open', open);
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
+  }
+  if (toggle) {
+    toggle.addEventListener('click', function () { setMenu(toggle.getAttribute('aria-expanded') !== 'true'); });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && toggle.getAttribute('aria-expanded') === 'true') { setMenu(false); toggle.focus(); }
+    });
+    $('#site-nav').addEventListener('click', function (ev) { if (ev.target.closest('a')) setMenu(false); });
+  }
 
   /* ---------- reveals ---------- */
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -223,10 +229,15 @@
     widget.appendChild(s);
   }
 
-  /* Dev-only sign-in (server refuses it on Vercel). */
-  var dev = $('[data-dev-login]');
-  if (dev) dev.addEventListener('click', function () {
-    api('POST', '/api/auth/dev', { ageConfirmed: true }).then(function (r) { afterAuth(r, $('[data-signin-msg]')); });
+  /* Local test personas (the server returns 404 unless persona sign-in is enabled on this machine). */
+  $$('[data-dev-login]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var msg = $('[data-signin-msg]');
+      api('POST', '/api/auth/dev', { persona: btn.getAttribute('data-dev-login') }).then(function (r) {
+        if (r.ok && r.landing) { location.href = sameOriginPath(new URLSearchParams(location.search).get('next')) || r.landing; return; }
+        msg.className = 'form-msg error'; msg.textContent = r.message || 'Persona sign-in failed.';
+      });
+    });
   });
 
   function confirmAge() {
@@ -412,7 +423,12 @@
   }
 
   var signout = $('[data-signout]');
-  if (signout) signout.addEventListener('click', function () { api('POST', '/api/auth/logout', {}).then(function () { location.href = '/'; }); });
+  if (signout) signout.addEventListener('click', function () {
+    api('POST', '/api/auth/logout', {}).then(function (j) {
+      if (j.ok) { location.href = '/'; return; }
+      signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+    });
+  });
 
   /* ---------- voluntary profile ---------- */
   var LABELS = {

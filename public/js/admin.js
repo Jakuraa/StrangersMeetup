@@ -22,7 +22,7 @@
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); return n; }
   function toast(msg, err) {
-    var t = el('div', { class: 'toast' + (err ? ' err' : ''), role: 'status', text: msg });
+    var t = el('div', { class: 'toast' + (err ? ' err' : ''), role: err ? 'alert' : 'status', text: msg });
     document.body.appendChild(t);
     setTimeout(function () { t.remove(); }, 3500);
   }
@@ -35,25 +35,93 @@
   function fail(e) { toast((e && (e.message || e.error)) || 'Request failed', true); }
   var fmtDT = function (d) { return d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; };
   var rupees = function (p) { return p === null || p === undefined ? '—' : '₹' + (Number(p) / 100).toLocaleString('en-IN'); };
-  function table(cols, rows, empty) {
-    if (!rows.length) return el('p', { class: 'muted', text: empty || 'None.' });
-    return el('table', { class: 't' }, [
-      el('thead', {}, [el('tr', {}, cols.map(function (c) { return el('th', { text: c[0] }); }))]),
-      el('tbody', {}, rows.map(function (r) { return el('tr', {}, cols.map(function (c) { var v = c[1](r); return el('td', {}, [v instanceof Node ? v : String(v === null || v === undefined ? '—' : v)]); })); }))
+  /* Tables: a real <table> on wide screens; below the container breakpoint (admin.css) every row becomes a
+     labelled card. All columns are kept. Explicit ARIA roles keep table semantics when CSS changes `display`.
+     cols: [header, render(row)] — an empty header marks the actions column (still named "Actions" for AT).
+     opts: { name: accessible name of the table, primary: index of the identity column shown first on cards }. */
+  function table(cols, rows, empty, opts) {
+    opts = opts || {};
+    if (!rows.length) return el('p', { class: 'muted empty', text: empty || 'None.' });
+    var primary = opts.primary === undefined ? 0 : opts.primary;
+    return el('table', { class: 't' + (cols.length > 6 ? ' t-wide' : ''), role: 'table', 'aria-label': opts.name || null }, [
+      el('thead', { role: 'rowgroup' }, [el('tr', { role: 'row' }, cols.map(function (c) {
+        return el('th', { role: 'columnheader', scope: 'col' }, [c[0] ? c[0] : el('span', { class: 'sr-only', text: 'Actions' })]);
+      }))]),
+      el('tbody', { role: 'rowgroup' }, rows.map(function (r) {
+        return el('tr', { role: 'row' }, cols.map(function (c, i) {
+          var v = c[1](r);
+          var node = v instanceof Node ? v : String(v === null || v === undefined ? '—' : v);
+          var none = node === '';
+          var val = none ? null : el('div', { class: 't-val' }, [node]);
+          /* Only cells holding an unbroken run (URL, id, pasted text) may break mid-word; short values stay whole. */
+          var long = c[0] && val && /\S{21,}/.test(val.textContent);
+          return el('td', { role: 'cell', class: (c[0] ? '' : 't-actions') + (i === primary ? ' t-primary' : '') + (none ? ' t-none' : '') + (long ? ' t-long' : '') }, [
+            c[0] ? el('span', { class: 't-lab', 'aria-hidden': 'true', text: c[0] }) : null,
+            val
+          ]);
+        }));
+      }))
     ]);
   }
-  function btn(label, fn, cls) { return el('button', { class: 'btn btn-sm ' + (cls || 'btn-ghost'), type: 'button', onclick: fn, text: label }); }
+  /* about: what the button acts on, appended to the accessible name ("Check in Asha"). */
+  function btn(label, fn, cls, about) { return el('button', { class: 'btn btn-sm ' + (cls || 'btn-ghost'), type: 'button', onclick: fn, text: label, 'aria-label': about ? label + ' ' + about : null }); }
   function can(roles) { return roles.indexOf(ROLE) !== -1; }
 
   /* ---------- tabs ---------- */
   var TABS = {};
-  function show(name) {
-    document.querySelectorAll('[data-tab]').forEach(function (b) { if (b.getAttribute('data-tab') === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
-    clear(main).appendChild(el('p', { class: 'muted', text: 'Loading…' }));
-    try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
-    TABS[name]().catch(function (e) { clear(main).appendChild(el('p', { text: (e && e.message) || 'You do not have access to this section.' })); });
+  var statusEl = document.getElementById('admin-status');
+  var navToggle = document.querySelector('.admin-nav-toggle');
+  var sections = document.getElementById('admin-sections');
+  function announce(msg) { if (statusEl) statusEl.textContent = msg; }
+  function setMenu(open) {
+    if (!navToggle) return;
+    sections.classList.toggle('open', open);
+    navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-  document.querySelectorAll('[data-tab]').forEach(function (b) { b.addEventListener('click', function () { show(b.getAttribute('data-tab')); }); });
+  if (navToggle) {
+    navToggle.addEventListener('click', function () { setMenu(navToggle.getAttribute('aria-expanded') !== 'true'); });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && navToggle.getAttribute('aria-expanded') === 'true') { setMenu(false); navToggle.focus(); }
+    });
+  }
+  function errorPanel(e, retry) {
+    var forbidden = e && e.status === 403;
+    var offline = e instanceof TypeError;
+    var msg = forbidden ? 'Your admin role does not include this section.'
+      : offline ? 'Network problem — check your connection and try again.'
+      : (e && (e.message || e.error)) || 'Something went wrong. Try again.';
+    return el('div', { class: 'panel state', role: 'alert' }, [
+      el('h1', { text: forbidden ? 'Not available for your role' : 'Could not load this section' }), el('p', { text: msg }),
+      forbidden ? null : el('button', { class: 'btn btn-primary', type: 'button', onclick: retry, text: 'Try again' })]);
+  }
+  function focusHeading(opts) {
+    var h = main.querySelector('h1');
+    if (h) { h.setAttribute('tabindex', '-1'); h.focus(opts || {}); }
+  }
+  function show(name, opts) {
+    var label = '';
+    document.querySelectorAll('[data-tab]').forEach(function (b) {
+      if (b.getAttribute('data-tab') === name) { b.setAttribute('aria-current', 'page'); label = b.textContent; } else b.removeAttribute('aria-current');
+    });
+    var cur = document.querySelector('[data-current-tab]'); if (cur && label) cur.textContent = label;
+    clear(main).appendChild(el('p', { class: 'muted', role: 'status', text: 'Loading ' + (label || 'section') + '…' }));
+    main.setAttribute('aria-busy', 'true');
+    announce('Loading ' + label);
+    try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
+    TABS[name]().then(function () {
+      main.removeAttribute('aria-busy');
+      announce(label + ' loaded');
+      if (opts && opts.focus) focusHeading();
+    }).catch(function (e) {
+      main.removeAttribute('aria-busy');
+      clear(main).appendChild(errorPanel(e, function () { show(name, { focus: true }); }));
+      announce('Could not load ' + label);
+      if (opts && opts.focus) focusHeading();
+    });
+  }
+  document.querySelectorAll('[data-tab]').forEach(function (b) {
+    b.addEventListener('click', function () { setMenu(false); show(b.getAttribute('data-tab'), { focus: true }); });
+  });
 
   TABS.overview = function () {
     return api('GET', '/api/admin/overview').then(function (r) {
@@ -142,12 +210,32 @@
     return form;
   }
 
-  function attendeesPanel(ev) {
+  var pill = function (text) { return el('span', { class: 'pill pill-' + String(text).replace(/\W+/g, '-'), text: String(text).replace(/_/g, ' ') }); };
+
+  /* Renders the check-in list for one event into `holder`. After a check-in it refreshes in place, so
+     door staff keep the list open instead of reopening it for every guest. */
+  function loadAttendees(ev, holder, opts) {
+    opts = opts || {};
     return api('GET', '/api/admin/events/' + ev.id + '/attendees').then(function (r) {
-      return el('div', { class: 'panel' }, [el('h2', { text: 'Check-in — ' + ev.title }), table([
-        ['Name', function (a) { return a.alias; }], ['Ref', function (a) { return a.ref; }], ['Status', function (a) { return a.status; }],
-        ['', function (a) { return a.status === 'confirmed' && can(['super_admin', 'event_manager', 'support']) ? btn('Check in', function () { api('POST', '/api/admin/bookings/' + a.id + '/check-in', {}).then(function () { toast('Checked in'); TABS.events(); }).catch(fail); }) : ''; }]
-      ], r.attendees, 'No confirmed attendees yet.')]);
+      var canCheck = can(['super_admin', 'event_manager', 'support']);
+      var done = r.attendees.filter(function (a) { return a.status === 'checked_in'; }).length;
+      var heading = el('h2', { text: 'Check-in — ' + ev.title, tabindex: '-1' });
+      var panel = el('div', { class: 'panel', role: 'region', 'aria-label': 'Check-in for ' + ev.title }, [heading,
+        el('p', { class: 'muted', role: 'status', text: r.attendees.length ? done + ' of ' + r.attendees.length + ' checked in' : '' }),
+        table([
+          ['Name', function (a) { return a.alias || 'Unnamed guest'; }], ['Ref', function (a) { return a.ref; }], ['Status', function (a) { return pill(a.status); }],
+          ['', function (a) {
+            return a.status === 'confirmed' && canCheck ? btn('Check in', function (e) {
+              var b = e.currentTarget; b.disabled = true;
+              api('POST', '/api/admin/bookings/' + a.id + '/check-in', {}).then(function () {
+                toast('Checked in ' + (a.alias || a.ref));
+                return loadAttendees(ev, holder, { keepScroll: true });
+              }).catch(function (err) { b.disabled = false; fail(err); });
+            }, null, a.alias || a.ref) : '';
+          }]
+        ], r.attendees, 'No confirmed attendees yet.', { name: 'Attendees of ' + ev.title })]);
+      clear(holder).appendChild(panel);
+      heading.focus({ preventScroll: Boolean(opts.keepScroll) });
     });
   }
 
@@ -161,22 +249,22 @@
         holder,
         el('div', { class: 'panel' }, [table([
           ['When', function (e) { return fmtDT(e.start_at); }],
-          ['Title', function (e) { return el('span', {}, [e.title, e.is_demo ? el('span', { class: 'pill', text: ' Sample' }) : '']); }],
-          ['City', function (e) { return e.city; }], ['Status', function (e) { return e.status; }],
+          ['Title', function (e) { return el('span', {}, [e.title, e.is_demo ? el('span', { class: 'pill', text: 'Sample' }) : '']); }],
+          ['City', function (e) { return e.city; }], ['Status', function (e) { return pill(e.status); }],
           ['Price', function (e) { return e.price_status === 'set' ? rupees(e.ticket_price_paise) : 'TBD'; }],
           ['Booked', function (e) { return e.confirmed + ' / ' + e.capacity; }],
           ['', function (e) {
             return el('div', { class: 'row-actions' }, [
-              el('a', { class: 'btn btn-sm btn-ghost', href: '/admin/preview/' + e.id, target: '_blank', rel: 'noopener', text: 'Preview' }),
-              btn('Attendees', function () { attendeesPanel(e).then(function (p) { clear(holder).appendChild(p); }).catch(fail); }),
-              writer ? btn('Edit', function () { api('GET', '/api/admin/events/' + e.id).then(function (x) { clear(holder).appendChild(eventForm(x.event, TABS.events)); window.scrollTo(0, 0); }).catch(fail); }) : '',
-              writer && e.status !== 'published' && e.status !== 'cancelled' ? btn('Publish', status(e, 'published')) : '',
-              writer && e.status === 'published' ? btn('Unpublish', status(e, 'draft')) : '',
-              writer && e.status !== 'cancelled' ? btn('Cancel', status(e, 'cancelled')) : '',
-              writer && e.status !== 'archived' ? btn('Archive', status(e, 'archived')) : ''
+              el('a', { class: 'btn btn-sm btn-ghost', href: '/admin/preview/' + e.id, target: '_blank', rel: 'noopener', text: 'Preview', 'aria-label': 'Preview ' + e.title + ' (opens in a new tab)' }),
+              btn('Attendees', function () { loadAttendees(e, holder).catch(fail); }, null, 'for ' + e.title),
+              writer ? btn('Edit', function () { api('GET', '/api/admin/events/' + e.id).then(function (x) { clear(holder).appendChild(eventForm(x.event, TABS.events)); window.scrollTo(0, 0); }).catch(fail); }, null, e.title) : '',
+              writer && e.status !== 'published' && e.status !== 'cancelled' ? btn('Publish', status(e, 'published'), null, e.title) : '',
+              writer && e.status === 'published' ? btn('Unpublish', status(e, 'draft'), null, e.title) : '',
+              writer && e.status !== 'cancelled' ? btn('Cancel', status(e, 'cancelled'), null, e.title) : '',
+              writer && e.status !== 'archived' ? btn('Archive', status(e, 'archived'), null, e.title) : ''
             ]);
           }]
-        ], r.events, 'No events yet. Create the first real event.')]));
+        ], r.events, 'No events yet. Create the first real event.', { name: 'Events', primary: 1 })]));
     });
   };
 
@@ -185,42 +273,42 @@
     var q = filter ? '?status=' + encodeURIComponent(filter) : '';
     return api('GET', '/api/admin/bookings' + q).then(function (r) {
       var finance = can(['super_admin', 'finance']);
-      var sel = el('select', { onchange: function () { TABS.bookings(sel.value); } }, ['', 'pending_payment', 'confirmed', 'checked_in', 'cancelled', 'refunded', 'refund_due'].map(function (s) { return el('option', { value: s, text: s || 'All', selected: s === (filter || '') }); }));
+      var sel = el('select', { 'aria-label': 'Filter bookings by status', onchange: function () { TABS.bookings(sel.value); } }, ['', 'pending_payment', 'confirmed', 'checked_in', 'cancelled', 'refunded', 'refund_due'].map(function (s) { return el('option', { value: s, text: s || 'All', selected: s === (filter || '') }); }));
       function refund(pid) { return function () { if (!confirm('Issue a full refund for this payment?')) return; api('POST', '/api/admin/payments/' + pid + '/refund', {}).then(function () { toast('Refund issued'); TABS.bookings(filter); }).catch(fail); }; }
       clear(main).append(el('h1', { text: 'Bookings & payments' }), el('p', {}, [el('label', {}, ['Filter ', sel])]),
         el('div', { class: 'panel' }, [table([
           ['Created', function (b) { return fmtDT(b.created_at); }], ['Event', function (b) { return b.title; }], ['Member', function (b) { return b.alias; }],
-          ['Booking', function (b) { return b.status + (b.cancel_reason ? ' (' + b.cancel_reason + ')' : ''); }],
+          ['Booking', function (b) { return el('span', {}, [pill(b.status), b.cancel_reason ? ' ' + b.cancel_reason : '']); }],
           ['Payment', function (b) { return b.payment_id ? b.provider + ' · ' + b.payment_status + (b.is_test ? ' · test' : '') : '—'; }],
           ['Provider txn', function (b) { return b.provider_txn_id || '—'; }], ['Amount', function (b) { return rupees(b.amount); }],
-          ['', function (b) { return finance && b.payment_status === 'paid' ? btn('Refund', refund(b.payment_id)) : ''; }]
-        ], r.bookings)]),
+          ['', function (b) { return finance && b.payment_status === 'paid' ? btn('Refund', refund(b.payment_id), null, (b.alias || 'member') + ', ' + b.title) : ''; }]
+        ], r.bookings, 'No bookings match this filter.', { name: 'Bookings', primary: 2 })]),
         el('h2', { text: 'Membership payments (Stars)' }),
         el('div', { class: 'panel' }, [table([
           ['When', function (p) { return fmtDT(p.created_at); }], ['Member', function (p) { return p.alias; }], ['Charge id', function (p) { return p.provider_txn_id; }],
           ['Stars', function (p) { return p.amount; }], ['Status', function (p) { return p.payment_status + (p.is_test ? ' · test' : ''); }],
-          ['', function (p) { return finance && p.payment_status === 'paid' ? btn('Refund', refund(p.payment_id)) : ''; }]
-        ], r.membershipPayments)]));
+          ['', function (p) { return finance && p.payment_status === 'paid' ? btn('Refund', refund(p.payment_id), null, 'Stars payment from ' + (p.alias || 'member')) : ''; }]
+        ], r.membershipPayments, 'No membership payments.', { name: 'Membership payments (Stars)', primary: 1 })]));
     });
   };
 
   /* ---------- memberships ---------- */
   TABS.memberships = function (q) {
     return api('GET', '/api/admin/memberships' + (q ? '?q=' + encodeURIComponent(q) : '')).then(function (r) {
-      var search = el('input', { type: 'search', placeholder: 'Telegram id or name', value: q || '' });
+      var search = el('input', { type: 'search', placeholder: 'Telegram id or name', 'aria-label': 'Search members by Telegram id or name', value: q || '' });
       var form = el('form', { class: 'row-actions' }, [search, el('button', { class: 'btn btn-sm btn-ghost', type: 'submit', text: 'Search' })]);
       form.addEventListener('submit', function (e) { e.preventDefault(); TABS.memberships(search.value); });
       clear(main).append(el('h1', { text: 'Memberships' }), form, el('div', { class: 'panel' }, [table([
         ['Member', function (m) { return m.alias; }], ['Telegram id', function (m) { return m.telegram_user_id; }], ['Tier', function (m) { return m.tier; }],
-        ['Status', function (m) { return m.status; }], ['Expires', function (m) { return fmtDT(m.expires_at); }],
-        ['', function (m) { return can(['super_admin', 'moderator']) && ['active', 'grace', 'cancelled', 'expired'].indexOf(m.status) !== -1 ? btn('Revoke', function () { if (!confirm('Remove this member from the tier group now?')) return; api('POST', '/api/admin/entitlements/' + m.id + '/revoke', {}).then(function () { toast('Revoked'); TABS.memberships(q); }).catch(fail); }) : ''; }]
-      ], r.memberships)]));
+        ['Status', function (m) { return pill(m.status); }], ['Expires', function (m) { return fmtDT(m.expires_at); }],
+        ['', function (m) { return can(['super_admin', 'moderator']) && ['active', 'grace', 'cancelled', 'expired'].indexOf(m.status) !== -1 ? btn('Revoke', function () { if (!confirm('Remove this member from the tier group now?')) return; api('POST', '/api/admin/entitlements/' + m.id + '/revoke', {}).then(function () { toast('Revoked'); TABS.memberships(q); }).catch(fail); }, null, m.alias || m.telegram_user_id) : ''; }]
+      ], r.memberships, q ? 'No members match \u201c' + q + '\u201d.' : 'No memberships yet.', { name: 'Memberships' })]));
     });
   };
 
   /* ---------- leads & reports ---------- */
-  function statusSelect(current, options, onChange) {
-    var s = el('select', { onchange: function () { onChange(s.value); } }, options.map(function (o) { return el('option', { value: o, text: o, selected: o === current }); }));
+  function statusSelect(current, options, onChange, label) {
+    var s = el('select', { 'aria-label': label || 'Status', onchange: function () { onChange(s.value); } }, options.map(function (o) { return el('option', { value: o, text: o, selected: o === current }); }));
     return s;
   }
   TABS.leads = function () {
@@ -228,14 +316,14 @@
       clear(main).append(el('h1', { text: 'Leads' }), el('div', { class: 'panel' }, [table([
         ['When', function (l) { return fmtDT(l.created_at); }], ['Type', function (l) { return l.type; }],
         ['Details', function (l) { return el('div', {}, Object.keys(l.payload).map(function (k) { return el('div', {}, [el('strong', { text: k + ': ' }), String(l.payload[k])]); })); }],
-        ['Status', function (l) { return statusSelect(l.status, ['new', 'contacted', 'closed', 'spam'], function (v) { api('PATCH', '/api/admin/leads/' + l.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }); }]
-      ], r.leads)]));
+        ['Status', function (l) { return statusSelect(l.status, ['new', 'contacted', 'closed', 'spam'], function (v) { api('PATCH', '/api/admin/leads/' + l.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }, 'Status of ' + l.type + ' lead from ' + fmtDT(l.created_at)); }]
+      ], r.leads, 'No leads yet.', { name: 'Leads', primary: 1 })]));
       if (can(['super_admin', 'moderator'])) {
         main.append(el('h2', { text: 'Safety reports' }), el('div', { class: 'panel' }, [table([
           ['When', function (x) { return fmtDT(x.created_at); }], ['From', function (x) { return (x.alias || '') + ' (' + x.telegram_user_id + ')'; }],
-          ['Report', function (x) { return x.body; }],
-          ['Status', function (x) { return statusSelect(x.status, ['new', 'reviewing', 'actioned', 'dismissed'], function (v) { api('PATCH', '/api/admin/reports/' + x.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }); }]
-        ], r.reports, 'No reports.')]));
+          ['Report', function (x) { return el('div', { class: 't-text', text: x.body }); }],
+          ['Status', function (x) { return statusSelect(x.status, ['new', 'reviewing', 'actioned', 'dismissed'], function (v) { api('PATCH', '/api/admin/reports/' + x.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }, 'Status of safety report from ' + fmtDT(x.created_at)); }]
+        ], r.reports, 'No reports.', { name: 'Safety reports', primary: 2 })]));
       }
     });
   };
@@ -258,13 +346,13 @@
         el('div', { class: 'panel' }, [table([
           ['Type', function (m) { return m.type; }], ['Content', function (m) { return m.url ? el('a', { href: m.url, target: '_blank', rel: 'noopener', text: m.url }) : m.caption; }],
           ['Authorised', function (m) { return m.authorized_by_owner ? 'yes' : 'no'; }], ['Visible', function (m) { return m.visible ? 'yes' : 'no'; }],
-          ['', function (m) { return el('div', { class: 'row-actions' }, [
-            owner && !m.authorized_by_owner ? btn('Authorise', patch(m, { authorized_by_owner: true })) : '',
-            owner && m.authorized_by_owner ? btn('Withdraw', patch(m, { authorized_by_owner: false })) : '',
-            m.authorized_by_owner && !m.visible ? btn('Show', patch(m, { visible: true })) : '',
-            m.visible ? btn('Hide', patch(m, { visible: false })) : ''
+          ['', function (m) { var what = m.type + ' ' + (m.caption || m.url || '').slice(0, 40); return el('div', { class: 'row-actions' }, [
+            owner && !m.authorized_by_owner ? btn('Authorise', patch(m, { authorized_by_owner: true }), null, what) : '',
+            owner && m.authorized_by_owner ? btn('Withdraw', patch(m, { authorized_by_owner: false }), null, what) : '',
+            m.authorized_by_owner && !m.visible ? btn('Show', patch(m, { visible: true }), null, what) : '',
+            m.visible ? btn('Hide', patch(m, { visible: false }), null, what) : ''
           ]); }]
-        ], r.media)]));
+        ], r.media, 'No media yet. Nothing is shown on the site.', { name: 'Media', primary: 1 })]));
     });
   };
 
@@ -354,7 +442,7 @@
         return el('span', { class: 'col', title: r.day + ': ' + r[key] + ' ' + label.toLowerCase() }, [r[key] ? el('span', { class: 'col-fill', style: 'height:' + Math.max(2, Math.round((r[key] / max) * 100)) + '%' }) : null]);
       })),
       el('div', { class: 'cols-axis muted small' }, [el('span', { text: rows[0].day }), el('span', { text: rows[rows.length - 1].day })]),
-      el('details', {}, [el('summary', { text: 'Table view' }), table([['Day', function (r) { return r.day; }], [label, function (r) { return r[key]; }]], data)])
+      el('details', {}, [el('summary', { text: 'Table view' }), table([['Day', function (r) { return r.day; }], [label, function (r) { return r[key]; }]], data, null, { name: label + ' per day' })])
     ]);
   }
   function section(title, kids, note) {
@@ -402,7 +490,7 @@
           ]),
           block('Confirmed bookings by format', b.confirmedByCategory, function (rows) { return bars(rows, { label: human }); }),
           block('Upcoming event fill', b.upcomingFill, function (rows) {
-            return table([['Event', function (e) { return e.title; }], ['Starts', function (e) { return fmtDT(e.start_at); }], ['Confirmed', function (e) { return e.confirmed + ' / ' + e.capacity; }], ['Live holds', function (e) { return e.holds; }]], rows, 'No upcoming events of ours (0).');
+            return table([['Event', function (e) { return e.title; }], ['Starts', function (e) { return fmtDT(e.start_at); }], ['Confirmed', function (e) { return e.confirmed + ' / ' + e.capacity; }], ['Live holds', function (e) { return e.holds; }]], rows, 'No upcoming events of ours (0).', { name: 'Upcoming event fill' });
           })
         ]),
         section('Audience (voluntary)', [el('div', { class: 'two' }, [
@@ -415,7 +503,7 @@
           block('Feeds', x.discovery.feeds, function (rows) {
             return table([['Feed', function (q) { return q.name; }], ['Health', function (q) { return el('span', { class: 'pill pill-' + q.health, text: q.health.replace('_', ' ') }); }],
               ['Last fetch', function (q) { return fmtDT(q.last_fetched_at); }], ['Last success', function (q) { return fmtDT(q.last_success_at); }], ['Fails in a row', function (q) { return q.consecutive_failures; }],
-              ['Items', function (q) { return q.last_item_count; }], ['Pending', function (q) { return q.pending; }], ['Error', function (q) { return q.last_error; }]], rows, 'No feeds added yet.');
+              ['Items', function (q) { return q.last_item_count; }], ['Pending', function (q) { return q.pending; }], ['Error', function (q) { return q.last_error; }]], rows, 'No feeds added yet.', { name: 'Discovery feed health' });
           }),
           block('Moderation queue', x.discovery.queue, function (q) { return el('div', { class: 'kpis' }, [tile('Pending', { available: true, value: q.pending }), tile('Pending submissions', { available: true, value: q.pending_submissions }), tile('Pending without a date', { available: true, value: q.pending_without_date }), tile('Flagged duplicates', { available: true, value: q.duplicate })]); })
         ]),
@@ -423,9 +511,9 @@
           el('div', { class: 'kpis' }, [tile('Overdue notifications', f.overdueNotifications), tile('Unprocessed webhooks (>10 min)', f.unprocessedWebhooks), tile('Refunds due', f.refundsDue)]),
           el('div', { class: 'two' }, [
             block('Failed payments by reason', f.failedPayments, function (rows) { return bars(rows); }),
-            block('Failed Telegram notifications by kind', f.failedNotifications, function (rows) { return table([['Kind', function (q) { return q.label; }], ['Count', function (q) { return q.count; }], ['Latest error', function (q) { return q.sampleError; }]], rows, 'None in this window (0).'); })
+            block('Failed Telegram notifications by kind', f.failedNotifications, function (rows) { return table([['Kind', function (q) { return q.label; }], ['Count', function (q) { return q.count; }], ['Latest error', function (q) { return q.sampleError; }]], rows, 'None in this window (0).', { name: 'Failed Telegram notifications' }); })
           ]),
-          block('Integration errors', f.integrationErrors, function (rows) { return table([['Source', function (q) { return q.source; }], ['Kind', function (q) { return q.kind; }], ['Count', function (q) { return q.n; }], ['Last', function (q) { return fmtDT(q.last_at); }], ['Latest detail', function (q) { return q.last_detail; }]], rows, 'None in this window (0).'); })
+          block('Integration errors', f.integrationErrors, function (rows) { return table([['Source', function (q) { return q.source; }], ['Kind', function (q) { return q.kind; }], ['Count', function (q) { return q.n; }], ['Last', function (q) { return fmtDT(q.last_at); }], ['Latest detail', function (q) { return q.last_detail; }]], rows, 'None in this window (0).', { name: 'Integration errors' }); })
         ]),
         section('Configuration (names only)', [el('ul', { class: 'config-list' }, Object.keys(x.config).map(function (key) { return el('li', {}, [el('strong', { text: key + ': ' }), String(x.config[key])]); }))])
       );
@@ -463,13 +551,13 @@
         ['Permission', function (f) { return f.permission_basis; }],
         ['', function (f) {
           return el('div', { class: 'row-actions' }, [
-            btn('Fetch now', function () { api('POST', '/api/admin/feeds/' + f.id + '/fetch', {}).then(function (r) { toast(r.result.status + ' · ' + r.result.new + ' new · ' + r.result.dup + ' duplicate'); show('discovery'); }).catch(fail); }),
+            btn('Fetch now', function () { api('POST', '/api/admin/feeds/' + f.id + '/fetch', {}).then(function (r) { toast(r.result.status + ' · ' + r.result.new + ' new · ' + r.result.dup + ' duplicate'); show('discovery'); }).catch(fail); }, null, f.name),
             btn(f.active ? 'Pause' : 'Resume', function () {
               api('PATCH', '/api/admin/feeds/' + f.id, { name: f.name, url: f.url, site_url: f.site_url, attribution: f.attribution, permission_basis: f.permission_basis, default_category: f.default_category, default_city: f.default_city, active: !f.active }).then(function () { show('discovery'); }).catch(fail);
-            })
+            }, null, f.name)
           ]);
         }]
-      ], feeds, 'No feeds yet.');
+      ], feeds, 'No feeds yet.', { name: 'Feeds' });
 
       var statusTabs = el('div', { class: 'row-actions' }, ['pending', 'duplicate', 'approved', 'rejected'].map(function (s) {
         return el('button', { class: 'btn btn-sm ' + (s === CAND_STATUS ? 'btn-primary' : 'btn-ghost'), type: 'button', text: s, onclick: function () { CAND_STATUS = s; show('discovery'); } });
@@ -545,11 +633,11 @@
         if (t.webhook) rows.push(['Webhook URL', t.webhook.ok ? (t.webhook.url || '(none set)') + (t.webhook.matchesThisDeployment ? ' ✓ this deployment' : ' — expected ' + t.expectedWebhook) : 'FAILED: ' + t.webhook.error]);
         if (t.webhook && t.webhook.ok) rows.push(['Pending updates', String(t.webhook.pendingUpdates)], ['Last webhook error', t.webhook.lastError ? fmtDT(t.webhook.lastErrorAt) + ' — ' + t.webhook.lastError : 'none']);
         out.push(el('div', { class: 'panel' }, [el('h2', { text: 'Telegram (live check)' }), t.available ? null : unavailable({ reason: t.reason }),
-          table([['Check', function (r) { return r[0]; }], ['Result', function (r) { return r[1]; }]], rows),
+          table([['Check', function (r) { return r[0]; }], ['Result', function (r) { return r[1]; }]], rows, null, { name: 'Telegram checks' }),
           t.available ? el('h3', { text: 'Chats (bot must be admin with invite + ban rights)' }) : null,
           t.available ? table([['Chat', function (c) { return c.name; }], ['Id', function (c) { return c.chatId; }], ['Title', function (c) { return c.title; }],
             ['Bot status', function (c) { return c.skipped || c.botStatus || c.memberError || c.chatError || c.error; }], ['Invite', function (c) { return c.canInvite === null || c.canInvite === undefined ? '—' : yes(c.canInvite); }],
-            ['Ban/remove', function (c) { return c.canRestrict === null || c.canRestrict === undefined ? '—' : yes(c.canRestrict); }], ['OK', function (c) { return c.skipped ? 'n/a' : yes(c.ok); }]], t.chats) : null]));
+            ['Ban/remove', function (c) { return c.canRestrict === null || c.canRestrict === undefined ? '—' : yes(c.canRestrict); }], ['OK', function (c) { return c.skipped ? 'n/a' : yes(c.ok); }]], t.chats, null, { name: 'Telegram chats' }) : null]));
       }
       var s = rs[1];
       if (s.error) out.push(el('div', { class: 'panel' }, [el('h2', { text: 'SuperProfile' }), el('p', { text: s.error.message || 'Not available for your role' })]));
@@ -558,7 +646,7 @@
         el('p', { text: s.configured ? 'Webhook secret is set. Point a Zapier/Pabbly “Webhook” step at ' + location.origin + s.webhookPath + ' with header X-Webhook-Secret.' : 'Not connected: SUPERPROFILE_WEBHOOK_SECRET is not set on this deployment.' }),
         el('p', { class: 'muted small', text: 'Map each SuperProfile product to a tier in “Membership tiers” (product reference). Buyer emails are stored only as keyed hashes.' }),
         table([['Received', function (e) { return fmtDT(e.received_at); }], ['Event', function (e) { return e.event_type; }], ['Product', function (e) { return e.product_ref; }], ['Tier', function (e) { return e.tier || 'unmapped'; }],
-          ['Amount', function (e) { return e.amount_paise === null ? '—' : rupees(e.amount_paise); }], ['Email?', function (e) { return e.has_email ? 'hashed' : 'none'; }]], s.events, 'No SuperProfile events received.')
+          ['Amount', function (e) { return e.amount_paise === null ? '—' : rupees(e.amount_paise); }], ['Email?', function (e) { return e.has_email ? 'hashed' : 'none'; }]], s.events, 'No SuperProfile events received.', { name: 'SuperProfile events' })
       ]));
       clear(main).append.apply(main, out);
     });
@@ -567,21 +655,21 @@
   /* ---------- admins & audit ---------- */
   TABS.admins = function () {
     return Promise.all([api('GET', '/api/admin/admins'), api('GET', '/api/admin/audit')]).then(function (rs) {
-      var tgid = el('input', { type: 'number', placeholder: 'Telegram user id', required: true });
-      var role = el('select', {}, ['event_manager', 'moderator', 'finance', 'support', 'super_admin'].map(function (x) { return el('option', { value: x, text: x }); }));
+      var tgid = el('input', { type: 'number', placeholder: 'Telegram user id', 'aria-label': 'Telegram user id', required: true });
+      var role = el('select', { 'aria-label': 'Role' }, ['event_manager', 'moderator', 'finance', 'support', 'super_admin'].map(function (x) { return el('option', { value: x, text: x }); }));
       var form = el('form', { class: 'row-actions panel' }, [tgid, role, el('button', { class: 'btn btn-primary btn-sm', type: 'submit', text: 'Add / update admin' })]);
       form.addEventListener('submit', function (e) { e.preventDefault(); api('POST', '/api/admin/admins', { telegram_user_id: Number(tgid.value), role: role.value, active: true }).then(function () { toast('Saved'); TABS.admins(); }).catch(fail); });
       clear(main).append(el('h1', { text: 'Admins' }), form, el('div', { class: 'panel' }, [table([
         ['Telegram id', function (a) { return a.telegram_user_id; }], ['Role', function (a) { return a.role; }], ['Active', function (a) { return a.active ? 'yes' : 'no'; }],
-        ['', function (a) { return a.active ? btn('Deactivate', function () { api('POST', '/api/admin/admins', { telegram_user_id: a.telegram_user_id, role: a.role, active: false }).then(function () { TABS.admins(); }).catch(fail); }) : ''; }]
-      ], rs[0].admins)]), el('h2', { text: 'Audit log' }), el('div', { class: 'panel' }, [table([
+        ['', function (a) { return a.active ? btn('Deactivate', function () { api('POST', '/api/admin/admins', { telegram_user_id: a.telegram_user_id, role: a.role, active: false }).then(function () { TABS.admins(); }).catch(fail); }, null, 'admin ' + a.telegram_user_id) : ''; }]
+      ], rs[0].admins, 'No admins.', { name: 'Admins' })]), el('h2', { text: 'Audit log' }), el('div', { class: 'panel' }, [table([
         ['When', function (x) { return fmtDT(x.at); }], ['Actor', function (x) { return x.actor; }], ['Action', function (x) { return x.action; }], ['Target', function (x) { return x.target; }],
-        ['Details', function (x) { return JSON.stringify(x.details); }]
-      ], rs[1].audit)]));
+        ['Details', function (x) { return el('code', { class: 't-code', text: JSON.stringify(x.details) }); }]
+      ], rs[1].audit, 'No audit entries yet.', { name: 'Audit log', primary: 2 })]));
     });
   };
 
-  window.addEventListener('hashchange', function () { var t = location.hash.slice(1); if (TABS[t]) show(t); });
+  window.addEventListener('hashchange', function () { var t = location.hash.slice(1); if (TABS[t]) show(t, { focus: true }); });
   var initial = (location.hash || '#overview').slice(1);
   show(TABS[initial] ? initial : 'overview');
 })();

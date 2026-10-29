@@ -9,9 +9,13 @@
     "dev": "node server.js",
     "migrate": "node scripts/migrate.js",
     "seed:demo": "node scripts/migrate.js --seed-demo",
+    "db:reset:local": "node scripts/db-reset-local.js",
+    "seed:local": "node scripts/seed-local.js",
     "vercel-build": "node scripts/migrate.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "lint": "node scripts/lint.js"
+    "lint": "node scripts/lint.js",
+    "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report"
   },
   "keywords": [
     "strangersmeetup",
@@ -29,5 +33,9 @@
     "fast-xml-parser": "^5.11.2",
     "pg": "^8.23.1",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1"
   }
 }

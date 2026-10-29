@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SKIP = new Set(['node_modules', '.git', '.vercel', 'research_notes', 'reports', '.claude']);
+const SKIP = new Set(['node_modules', '.git', '.vercel', 'research_notes', 'reports', '.claude', 'test-results', 'playwright-report']);
 const files = [];
 (function walk(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

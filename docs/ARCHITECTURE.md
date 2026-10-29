@@ -10,11 +10,11 @@
 
 ## Decision
 1. **Keep zero-build.** All server code is one Vercel function `api/index.js` → `lib/router.js`. `vercel.json` rewrites `/api/*`, `/events/*`, `/trips/*`, `/admin*`, city pages, `sitemap.xml` to it. Static CSS/JS/images served from `public/`. `server.js` runs the same router locally.
-2. **Postgres** via `pg` Pool (`DATABASE_URL`, Neon/Supabase from Vercel Marketplace). Tracked migrations (`schema_migrations`) run by `npm run migrate` (and in the Vercel build). No SQLite anywhere.
+2. **Postgres** via `pg` Pool (`DATABASE_URL`, Neon/Supabase from Vercel Marketplace). Tracked migrations (`schema_migrations`) run by `npm run migrate` (and in the Vercel Production build; previews only with `MIGRATE_ON_PREVIEW=true`). No SQLite anywhere.
 3. **Server is source of truth.** Booking/entitlement transitions happen only inside webhook handlers or crons, in one DB transaction, after signature verification and `webhook_events` insert (unique) for idempotency.
 4. **Side effects after commit** via a `notifications` outbox row (DM + invite). Sent inline right after commit; failures retried by cron. Invite failures are a KPI.
 5. **Holds expire lazily**: capacity query counts `pending_payment` only while `hold_expires_at > now()`; daily cron flips stale holds to `cancelled` (Hobby constraint). On Pro, cron frequency can increase with no code change.
-6. **Sessions**: stateless HMAC-signed cookie (`sm_session`, httpOnly, Secure, SameSite=Lax, 7 days) containing `uid` + `exp`; user status re-checked per request. CSRF token = HMAC(session, "csrf") sent in `X-CSRF-Token` for all mutating session-authenticated calls.
+6. **Sessions**: HMAC-signed cookie (`sm_session`, httpOnly, Secure, SameSite=Lax, 7 days) carrying the user id, a session id and `exp`, backed by a `user_sessions` row (migration 009) so sign-out revokes it server-side; user status and the session row are re-checked per request. CSRF token = HMAC(session, "csrf") sent in `X-CSRF-Token` for all mutating session-authenticated calls.
 7. **Rate limiting** in Postgres (`rate_limits` fixed window). Good enough at launch volume; swap for Upstash if needed.
 
 ## Options considered

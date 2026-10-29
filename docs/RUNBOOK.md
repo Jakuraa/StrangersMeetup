@@ -49,5 +49,6 @@ Health first: `GET /api/health` → `database: ok` and each config item `configu
 `/api/cron/daily` runs: `expire-holds`, `reconcile`, `memberships` (3-day reminders, expiry + removal), `notifications` (retries), `cleanup` (nonces, rate limits). Each is idempotent and can be called individually with the bearer secret.
 
 ## Database
-- Migrations: `npm run migrate` (also runs in the Vercel build). Never edit an applied migration — add a new numbered file.
+- Migrations: `npm run migrate` (also runs in the Vercel **Production** build; Preview builds skip unless `MIGRATE_ON_PREVIEW=true` with a separate DB). Never edit an applied migration — add a new numbered file.
+- Revoke a user's sessions (compromised account): set `revoked_at = now(), revoke_reason = 'admin'` on that user's live `user_sessions` rows (an admin UI action is planned in M6). Users can do it themselves with `POST /api/auth/logout-all`.
 - Demo data: `npm run seed:demo` upserts only `is_demo` rows. Remove before launch: `UPDATE events SET status = 'archived' WHERE is_demo;`

@@ -89,10 +89,17 @@ p { margin: 0 0 1em; }
   .header-actions { margin-left: auto; }
 }
 @media (max-width: 480px) {
-  .header-auth.btn-tg { width: 40px; min-height: 40px; padding: 0; font-size: 0; gap: 0; }
+  .header-auth.btn-tg { width: 44px; min-height: 44px; padding: 0; font-size: 0; gap: 0; }
   .header-auth.btn-tg::before { width: 18px; height: 18px; }
-  .header-auth.btn-ghost { padding: 6px 12px; font-size: .8rem; }
-  .logo-soft { display: none; }
+  .header-auth.btn-ghost { padding: 6px 12px; font-size: .8rem; min-height: 44px; }
+  /* Visually hidden, still part of the link's accessible name (visible label must start the name). */
+  .site-header .logo-soft { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  /* Signed-in header (logo, My bookings, menu) must fit a 320px phone; 21+ is stated on every event and on sign-in. */
+  .header-inner { gap: 8px; }
+  .header-actions { gap: 6px; }
+  .age-chip { display: none; }
 }
 
 /* Sections */
@@ -144,8 +151,21 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   radial-gradient(circle at 38% 55%, transparent 33%, rgba(35, 32, 29, .55) 33.4%, rgba(35, 32, 29, .55) 34%, transparent 34.4%),
   radial-gradient(circle at 62% 45%, transparent 33%, rgba(163, 71, 58, .7) 33.4%, rgba(163, 71, 58, .7) 34%, transparent 34.4%),
   var(--alt); }
-.card-art-dating_mixer, .card-art-nightlife { background-color: #efe2dc; }
-.card-art-weekend_trip, .card-art-resort_getaway { background-color: #e9e6dc; }
+/* Category tints: a quiet palette per format so a row of cards without photos doesn't read as one repeated tile. */
+.card-art { display: grid; place-items: center; color: var(--art-ink, var(--ink-2)); }
+.card-glyph { width: 72px; height: 72px; opacity: .85; }
+.card-art-meetup { background-color: #e8e4da; --art-ink: #5b5a3f; }
+.card-art-dating_mixer { background-color: #f1ded9; --art-ink: #8d3c31; }
+.card-art-nightlife { background-color: #e3dde9; --art-ink: #4d3f6b; }
+.card-art-dinner_club { background-color: #f1e5d3; --art-ink: #8a5a1f; }
+.card-art-movie { background-color: #dde3e8; --art-ink: #34495e; }
+.card-art-board_games { background-color: #dfe8dd; --art-ink: #3e6a47; }
+.card-art-weekend_trip { background-color: #e0e7dc; --art-ink: #3f6247; }
+.card-art-resort_getaway { background-color: #dae8e8; --art-ink: #2f6a6d; }
+.card-art-weekend_party { background-color: #f3e2d6; --art-ink: #a2502b; }
+.card-art-matchmaking { background-color: #f1dfe4; --art-ink: #8a3a56; }
+.card-art-networking { background-color: #dde4ec; --art-ink: #34567a; }
+.card-art-workshop { background-color: #ece6d3; --art-ink: #6b5a20; }
 .card-body { padding: 18px 20px 20px; display: flex; flex-direction: column; flex: 1; }
 .card-meta { display: flex; gap: 12px; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
 .card-title { font-size: 1.2rem; margin-bottom: 6px; }
@@ -216,10 +236,10 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .crumbs a { text-decoration: none; }
 .sample-note { background: #fff6d6; border: 1px solid #ead9a0; color: #6a5410; padding: 10px 14px; border-radius: var(--radius-sm); font-size: .92rem; max-width: 46em; }
 .event-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 40px; align-items: start; padding-bottom: 80px; }
-.facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0; margin: 0 0 32px; border-top: 1px solid var(--line); }
+.facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 28px; margin: 0 0 32px; border-top: 1px solid var(--line); }
 .facts div { padding: 14px 0; border-bottom: 1px solid var(--line); }
 .facts dt { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
-.facts dd { margin: 2px 0 0; }
+.facts dd { margin: 2px 0 0; overflow-wrap: anywhere; }
 .prose h2 { font-size: 1.3rem; margin-top: 1.8em; }
 .prose ul { padding-left: 1.2em; }
 .ticks li::marker { content: "✓  "; color: var(--ok); }
@@ -230,7 +250,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .test-note { font-size: .82rem; color: var(--muted); margin: 0; text-align: center; }
 .book-msg:empty, .form-msg:empty { display: none; }
 .book-msg, .form-msg { font-size: .92rem; margin: 0; }
-@media (max-width: 900px) { .event-grid { grid-template-columns: 1fr; } .book-box { position: static; order: -1; } .facts { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .event-grid { grid-template-columns: minmax(0, 1fr); } .book-box { position: static; order: -1; } .facts { grid-template-columns: minmax(0, 1fr); } }
 
 /* Forms */
 .lead-form { display: grid; gap: 16px; }
@@ -248,6 +268,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 
 /* Member */
 .booking-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.profile-block { margin-top: 40px; }
 .booking-list li, .booking-status { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
 
 /* Footer */
@@ -287,7 +308,8 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-@view-transition { navigation: auto; }
+/* Cross-page fades only for people who have not asked for reduced motion (the `*` reset above does not reach them). */
+@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }
 ::view-transition-old(root) { animation: vt-out .3s ease both; }
 ::view-transition-new(root) { animation: vt-in .5s var(--ease-cine) both; }
 @keyframes vt-out { to { opacity: 0; } }
@@ -442,11 +464,11 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .event-cover { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--radius); margin: 0 0 28px; }
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; margin: 0 0 24px; }
 .gallery img { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: var(--radius-sm); }
-.tier-form { display: grid; gap: 14px; }
+.tier-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .tier-form [hidden] { display: none; }
-.tiers { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.tiers { min-width: 0; grid-template-columns: minmax(0, 1fr); border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
 .tiers legend, .q-head { font-weight: 600; font-size: .92rem; margin-bottom: 6px; padding: 0; }
-.tier-opt { display: grid; grid-template-columns: 20px 1fr; gap: 2px 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; background: var(--surface); }
+.tier-opt { display: grid; grid-template-columns: 20px minmax(0, 1fr); min-width: 0; gap: 2px 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; background: var(--surface); }
 .tier-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .tier-opt:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tier-opt input { grid-row: span 3; width: 20px; height: 20px; min-height: 0; margin: 2px 0 0; padding: 0; accent-color: var(--accent); }
@@ -465,3 +487,36 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .booking-status dl { display: grid; gap: 6px; margin: 12px 0; }
 .booking-status dt { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
 .booking-status dd { margin: 0 0 6px; }
+
+/* Local test personas on /signin (development only) */
+.dev-personas { margin-top: 24px; padding: 16px; border: 1px dashed var(--line); border-radius: var(--radius-sm); }
+.dev-personas h2 { font-size: 1rem; margin: 0 0 4px; }
+.dev-persona-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.dev-persona-list .btn { width: 100%; height: auto; min-height: 44px; justify-content: space-between; flex-wrap: wrap; gap: 2px 8px; text-align: left; white-space: normal; }
+
+/* Format links under the listing headers: pills, not a raw bullet list */
+.format-nav { margin-bottom: 24px; }
+.format-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.format-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); text-decoration: none; font-weight: 600; font-size: .92rem; }
+.format-nav a:hover { border-color: var(--accent); }
+.format-nav a[aria-current="page"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* Closed events (past / cancelled) and the admin access screen */
+.book-closed .closed-title { font-size: 1.15rem; margin: 0; }
+.book-closed p { margin: 0; overflow-wrap: anywhere; }
+.access-screen { text-align: left; }
+.access-screen h1 { overflow-wrap: anywhere; }
+.access-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+@media (max-width: 480px) { .access-actions .btn { width: 100%; white-space: normal; } }
+
+/* Touch targets: 44px minimum on phones (WCAG 2.5.8 asks 24px; 44px is the comfortable thumb size). Desktop is unchanged. */
+@media (max-width: 800px) {
+  .logo { min-height: 44px; }
+  .btn-sm { min-height: 44px; }
+  .check { min-height: 44px; align-items: center; }
+  .footer-col ul { gap: 0; }
+  .footer-col a, .footer-base a { display: inline-flex; align-items: center; min-height: 44px; }
+  .card-title a { display: flex; align-items: center; min-height: 44px; }
+  .prose p > a:only-child, .booking-list h3 a { display: inline-flex; align-items: center; min-height: 44px; }
+  .crumbs a, .link-arrow { display: inline-flex; align-items: center; min-height: 44px; }
+}

@@ -1,11 +1,13 @@
 // scripts/seed-demo.js - Sample events for previews. Every row is is_demo=true and renders a
 // visible "Sample" label. No bookings, no sold counts, no prices (price_status = 'tbd').
-// Never run against production once real events exist: `npm run seed:demo` only.
+// Guarded by seed-guard.js: never in production, remote DBs only with SEED_ALLOW_REMOTE=true, and
+// never into a remote DB that already holds real (non-demo) events. `npm run seed:demo` only.
 import { db } from '../lib/db.js';
+import { assertSeedAllowed, SeedRefused } from './seed-guard.js';
 
 const DAY = 86_400_000;
 
-function at(daysFromNow, hourIst, minute = 0) {
+export function at(daysFromNow, hourIst, minute = 0) {
   const d = new Date(Date.now() + daysFromNow * DAY);
   // Build the date in IST (UTC+5:30) at the given local hour.
   const ymd = new Date(d.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
@@ -56,7 +58,12 @@ export const DEMO_EVENTS = [
   }
 ];
 
-export async function seedDemo() {
+export async function seedDemo({ e = process.env } = {}) {
+  const { local } = assertSeedAllowed({ kind: 'demo', e });
+  if (!local) {
+    const real = await db.one('SELECT count(*)::int AS n FROM events WHERE NOT is_demo');
+    if (real.n) throw new SeedRefused(`refusing to seed: this database already has ${real.n} real event(s)`);
+  }
   let n = 0;
   for (const e of DEMO_EVENTS) {
     const start = at(...e.start);
