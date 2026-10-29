@@ -15,6 +15,7 @@ import { at } from './seed-demo.js';
 const HOUR = 3_600_000;
 
 // owner: persona key. tiers: [name, kind, price_paise, quantity, max_per_booking]. All is_demo=true.
+// single: { price, spUrl? } = a standard one-price event; with spUrl it is sold through SuperProfile.
 export const LOCAL_EVENTS = [
   {
     slug: 'local-board-games-night', owner: 'organiser', category: 'board_games', city: 'Chennai', area: 'Besant Nagar',
@@ -36,6 +37,16 @@ export const LOCAL_EVENTS = [
     slug: 'local-paid-workshop', owner: 'organiser', category: 'workshop', city: 'Kochi', area: 'Fort Kochi',
     title: 'Test: Pottery workshop (paid — payments off)', venue: 'Test venue — Studio 5, Princess St (private)',
     start: [13, 16, 0], hours: 2, capacity: 10, tiers: [['Workshop seat', 'paid', 149900, 10, 2]]
+  },
+  {
+    slug: 'local-sp-social', owner: 'organiser', category: 'meetup', city: 'Chennai', area: 'Alwarpet',
+    title: 'Test: Social meetup (tickets on SuperProfile)', venue: 'Test venue — 8 TTK Rd, Alwarpet (private)',
+    start: [12, 18, 0], hours: 3, capacity: 25, single: { price: 49900, spUrl: 'https://superprofile.bio/meetup_host/local-sp-social', productId: 'local-sp-social-prod' }
+  },
+  {
+    slug: 'local-sp-unlinked', owner: 'organiser', category: 'meetup', city: 'Chennai', area: 'Mylapore',
+    title: 'Test: Paid meetup (no SuperProfile product yet)', venue: 'Test venue — Mylapore tank (private)',
+    start: [14, 18, 0], hours: 3, capacity: 25, single: { price: 39900 }
   },
   {
     slug: 'local-low-seats-trek', owner: 'organiser2', category: 'weekend_trip', city: 'Bengaluru', area: 'Nandi Hills',
@@ -94,6 +105,8 @@ async function clearPersonaData(c) {
   await c.query(`DELETE FROM notifications WHERE user_id IN (SELECT id FROM _pu) OR booking_id IN (SELECT id FROM _pb)
     OR event_id IN (SELECT id FROM _pe) OR entitlement_id IN (SELECT id FROM entitlements WHERE user_id IN (SELECT id FROM _pu))`);
   await c.query(`DELETE FROM entitlements WHERE user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM external_orders WHERE event_id IN (SELECT id FROM _pe) OR matched_booking_id IN (SELECT id FROM _pb)`);
+  await c.query(`DELETE FROM checkout_intents WHERE event_id IN (SELECT id FROM _pe) OR user_id IN (SELECT id FROM _pu)`);
   await c.query(`UPDATE bookings SET payment_id = NULL WHERE id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM payments WHERE user_id IN (SELECT id FROM _pu) OR booking_id IN (SELECT id FROM _pb)`);
   await c.query(`UPDATE bookings SET decided_by = NULL WHERE decided_by IN (SELECT id FROM _pu) AND id NOT IN (SELECT id FROM _pb)`);
@@ -140,14 +153,17 @@ async function insertEvents(c, users) {
     const row = (await c.query(
       `INSERT INTO events (slug, category, title, summary, description, city, area_public, venue_private, venue_privacy,
          start_at, end_at, capacity, price_status, organizer, organiser_user_id, ticketing, requires_approval,
-         booking_questions, refund_policy, status, is_demo, published_at)
-       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'disclosed_after_booking', $8, $9, $10, 'tbd', $11, $12, 'tiers', $13,
-         $14, 'Local test data — no money changes hands.', $15, true, now())
+         booking_questions, refund_policy, status, is_demo, published_at, ticket_price_paise,
+         superprofile_url, superprofile_product_id, checkout_mode)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'disclosed_after_booking', $8, $9, $10, $16, $11, $12, $17, $13,
+         $14, 'Local test data — no money changes hands.', $15, true, now(), $18, $19, $20, $21::checkout_mode)
        RETURNING id`,
       [e.slug, e.category, e.title, 'Local test event created by npm run seed:local.', e.city, e.area, e.venue, start, end,
-        e.capacity, PERSONAS[e.owner].alias, users[e.owner], Boolean(e.approval), JSON.stringify(e.questions || []), status])).rows[0];
+        e.capacity, PERSONAS[e.owner].alias, users[e.owner], Boolean(e.approval), JSON.stringify(e.questions || []), status,
+        e.single ? 'set' : 'tbd', e.single ? 'single' : 'tiers', e.single?.price ?? null, e.single?.spUrl ?? null,
+        e.single?.productId ?? null, e.single?.spUrl ? 'superprofile' : 'none'])).rows[0];
     const tiers = [];
-    for (const [i, [name, kind, price, quantity, max]] of e.tiers.entries()) {
+    for (const [i, [name, kind, price, quantity, max]] of (e.tiers || []).entries()) {
       tiers.push((await c.query(
         `INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking, sort_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [row.id, name, kind, price, quantity, max, i])).rows[0].id);

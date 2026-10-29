@@ -27,7 +27,7 @@ test('guest books a free ticket and gets the private venue on the confirmed book
   await screenshot(page, testInfo, 'guest-my-bookings');
 });
 
-test('paid tickets cannot be booked while online payment is off', async ({ page }) => {
+test('paid tickets without a SuperProfile product cannot be booked', async ({ page }) => {
   await signInAs(page, 'guest2');
   await page.goto('/events/local-paid-workshop');
   await expect(page.locator('main')).toContainText('Online booking not available yet');

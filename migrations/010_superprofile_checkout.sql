@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS external_orders (
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT uq_external_orders_order UNIQUE (order_id)
 );
+CREATE INDEX IF NOT EXISTS idx_external_orders_order_lower ON external_orders (lower(order_id));  -- claim lookup is case-insensitive
 CREATE INDEX IF NOT EXISTS idx_external_orders_product ON external_orders (product_id);
 CREATE INDEX IF NOT EXISTS idx_external_orders_state ON external_orders (match_state, received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_external_orders_email ON external_orders (buyer_email_hash) WHERE buyer_email_hash IS NOT NULL;

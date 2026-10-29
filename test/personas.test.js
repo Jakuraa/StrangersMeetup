@@ -106,7 +106,7 @@ test('seed:local refuses before touching the database when the target is not loc
 
 test('seed:local is idempotent and resets what tests changed', async () => {
   const first = await countLocal();
-  assert.deepEqual(first, { users: 6, admins: 2, events: LOCAL_EVENTS.length, ticket_types: 8, bookings: 7, drafts: 2, analytics: 40, leads: 2, reports: 1 });
+  assert.deepEqual(first, { users: 6, admins: 2, events: LOCAL_EVENTS.length, ticket_types: 8, bookings: 7, drafts: 2, analytics: 50, leads: 2, reports: 1 });
   const c = await as('guest2');
   assert.equal((await c.post(`/api/events/${ev['local-sunday-picnic'].id}/book`, { ticketTypeId: await tierId('local-sunday-picnic') })).status, 200);
   assert.equal((await countLocal()).bookings, 8);

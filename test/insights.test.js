@@ -134,7 +134,7 @@ test('SuperProfile webhook: 503 until configured, secret enforced, payload valid
   assert.equal((await sp({ event: 'purchase', id: '1', product: 'Insider' }, 'wrong-secret-wrong-secret-xx')).status, 401);
   assert.equal((await sp({ event: 'purchase', id: '1', product: 'Insider' }, null)).status, 401);
   assert.equal((await sp({ event: 'bogus', id: '1', product: 'Insider' })).status, 400);
-  assert.equal((await sp({ event: 'purchase', id: '1' })).status, 400, 'product required for purchases');
+  assert.equal((await sp({ event: 'purchase', id: '1' })).json.result, 'unmatched', 'a purchase without a product is stored, not dropped');
 });
 
 test('SuperProfile: tier mapping, lifecycle, idempotency, email never stored', async () => {
