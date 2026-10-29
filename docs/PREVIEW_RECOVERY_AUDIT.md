@@ -310,7 +310,7 @@ All changes were implemented using the smallest appropriate modifications with z
 |---|---|---|---|
 | `origin/main` | `5c6652a` | `5c6652a` | Authoritative Production baseline; unchanged |
 | `origin/launch-mvp` | `f5e7223` | `f5e7223` | Release integration branch; unchanged |
-| PR #8 (`fix/preview-recovery-audit`) | `02d2e8d` | *Pending push* | CI passing on `02d2e8d` (Run 40950432801); ready for safeguard commit |
+| PR #8 (`fix/preview-recovery-audit`) | `02d2e8d` | `d238792` | CI passing on latest commit `d238792` (Run 40958014582); all checks green |
 
 ### 14.4 CI and Local Verification Results
 All tests executed locally against throwaway databases on `localhost:5432` with zero shared state:
@@ -326,7 +326,7 @@ All tests executed locally against throwaway databases on `localhost:5432` with 
 | Vercel build: DB without opt-in | `VERCEL=1 VERCEL_ENV=preview DATABASE_URL=... npm run vercel-build` | `skipping migrations — vercel preview build: set MIGRATE_ON_PREVIEW=true only if this environment has its own database` |
 | Vercel build: premature MIGRATE_ON_PREVIEW | `... MIGRATE_ON_PREVIEW=true npm run vercel-build` | `skipping migrations — refusing preview migrations: ISOLATED_PREVIEW_DB=true is required to prove database isolation` |
 | Vercel build: verified isolated DB | `... MIGRATE_ON_PREVIEW=true ISOLATED_PREVIEW_DB=true npm run vercel-build` | `done (0 applied; vercel preview with MIGRATE_ON_PREVIEW=true and confirmed isolated database)` |
-| GitHub CI (PR #8) | Run 40950432801 on `02d2e8d` | **SUCCESS** (4m 50s) |
+| GitHub CI (PR #8) | Run 40958014582 on `d238792` | **SUCCESS** (3m 25s): Lint 104/104, Unit 186/186, Playwright 128 passed / 8 skipped |
 
 ### 14.5 Environment Variable Audit & Scoping Matrix
 Inspection performed via read-only metadata (`vercel env ls`). Secret values were never read or printed.
@@ -358,8 +358,8 @@ Inspection performed via read-only metadata (`vercel env ls`). Secret values wer
 | Redirect Limits & HTTPS Downgrade Refusal | Fully Verified | Fully Verified | — | — | **VERIFIED** |
 | Session Creation Fail-Closed (no secret) | Fully Verified | Fully Verified | — | — | **VERIFIED** |
 | Multi-Day Event Checkout Boundary | Fully Verified | Fully Verified | — | — | **VERIFIED** |
-| Preview DB Write Refusal (unverified DB) | Fully Verified | To be pushed | — | — | **VERIFIED** |
-| Preview Migration Gate (`ISOLATED_PREVIEW_DB`) | Fully Verified | To be pushed | — | — | **VERIFIED** |
+| Preview DB Write Refusal (unverified DB) | Fully Verified | Fully Verified | — | — | **VERIFIED** |
+| Preview Migration Gate (`ISOLATED_PREVIEW_DB`) | Fully Verified | Fully Verified | — | — | **VERIFIED** |
 | Free Event Booking (app-managed) | Fully Verified | Fully Verified | Blocked by DB Gate | Untouched | **VERIFIED** |
 | SuperProfile Webhook (signature & parsing) | Mocked (fixtures) | Mocked (fixtures) | Blocked (no secret) | Blocked | **MOCKED** |
 | SuperProfile Sales Reconciliation | Mocked (fixtures) | Mocked (fixtures) | Blocked (no secret) | Blocked | **MOCKED** |
