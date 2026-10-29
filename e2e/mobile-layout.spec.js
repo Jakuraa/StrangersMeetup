@@ -29,7 +29,7 @@ for (const [persona, path] of SIGNED_IN) {
 
 test('no sideways scrolling at 320px', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
-  for (const path of [...PUBLIC, '/events/local-approval-dinner']) {
+  for (const path of [...PUBLIC, '/events/local-approval-dinner', '/events/local-paid-workshop', '/events/local-sold-out-mixer', '/events/local-cancelled-movie', '/events/local-past-meetup']) {
     await page.goto(path);
     await expectNoHorizontalOverflow(page);
   }
