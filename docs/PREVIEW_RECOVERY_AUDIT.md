@@ -254,8 +254,10 @@ Local runs used throwaway databases on `localhost` (`sm_rec_test`, `sm_rec_e2e`,
 | Unit and integration | **182 pass**, 0 fail, 0 skipped (180 + 2 new SSRF tests) |
 | Playwright + axe | **128 passed, 8 skipped (project-gated), 0 failed** (5.2 min) |
 | zod 4.6.7 trial (scratch) | 180/180 pass; behaviour drift per §12 |
-| PR | PR_RESULT |
-| CI | CI_RESULT |
+| PR | https://github.com/Jakuraa/StrangersMeetup/pull/8 (`fix/preview-recovery-audit` → `launch-mvp`). **Not merged**; it needs review. |
+| CI | Run 40949643679 on `a596c5c`: **success**. Lint 104/104, unit 182/182, Playwright 128 passed / 8 skipped / 0 failed. https://github.com/Jakuraa/StrangersMeetup/actions/runs/40949643679 |
+| Vercel deployment of this branch | **None**: by design, verified with a deployment list filtered by branch. Production is still `dpl_3g7aUM3Vyq71mZczg7tfmKVL5DgH` @ `5c6652a`. |
+| Preview deploy, Preview migrations, live runtime tests (D) | **BLOCKED** by the §11 gate. Not attempted. |
 
 ### If a Vercel login OTP is ever the blocker
 
