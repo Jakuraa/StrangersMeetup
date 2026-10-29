@@ -18,7 +18,7 @@ main (b13d927, PR #1)
 
 ## Standing constraints
 No merges, production deploys, DNS changes, env changes on Vercel, or live payments without explicit approval.
-Razorpay (suspended) and Cashfree (KYC pending) stay disabled; paid tiers remain draft-only. No fabricated data;
+SuperProfile is the only checkout; paid tickets are bookable only on events linked to a SuperProfile product. No fabricated data;
 demo/seed rows are always marked. Existing tests are never weakened or removed.
 
 ---

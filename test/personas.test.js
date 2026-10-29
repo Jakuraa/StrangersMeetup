@@ -106,7 +106,7 @@ test('seed:local refuses before touching the database when the target is not loc
 
 test('seed:local is idempotent and resets what tests changed', async () => {
   const first = await countLocal();
-  assert.deepEqual(first, { users: 6, admins: 2, events: LOCAL_EVENTS.length, ticket_types: 8, bookings: 7, drafts: 2, analytics: 40, leads: 2, reports: 1 });
+  assert.deepEqual(first, { users: 6, admins: 2, events: LOCAL_EVENTS.length, ticket_types: 8, bookings: 7, drafts: 2, analytics: 50, leads: 2, reports: 1 });
   const c = await as('guest2');
   assert.equal((await c.post(`/api/events/${ev['local-sunday-picnic'].id}/book`, { ticketTypeId: await tierId('local-sunday-picnic') })).status, 200);
   assert.equal((await countLocal()).bookings, 8);
@@ -180,7 +180,7 @@ test('guest: denied — another guest’s booking, paid tickets while payments a
   assert.equal((await c.get(`/api/bookings/${bk['guest2:local-low-seats-trek']}`)).status, 404);
   const paid = await c.post(`/api/events/${ev['local-paid-workshop'].id}/book`, { ticketTypeId: await tierId('local-paid-workshop') });
   assert.equal(paid.status, 409);
-  assert.equal(paid.json.error, 'payment_unavailable');
+  assert.equal(paid.json.error, 'paid_on_superprofile');
   assert.equal((await c.get('/api/organiser/drafts')).status, 403);
   assert.equal((await c.get(`/api/organiser/events/${ev['local-board-games-night'].id}/guests`)).status, 404, 'object route: existence not leaked');
   assert.equal((await c.get('/api/admin/session')).status, 403);
@@ -308,7 +308,7 @@ test('admin: denied — demoting themselves, writes without CSRF', async () => {
 test('admin console renders only the tabs each role can load', async () => {
   const tabs = async (p) => [...(await (await as(p)).get('/admin')).text.matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(await tabs('admin'),
-    ['overview', 'insights', 'discovery', 'events', 'bookings', 'memberships', 'leads', 'media', 'tiers', 'integrations', 'admins']);
-  assert.deepEqual(await tabs('staff'), ['overview', 'events', 'bookings', 'memberships', 'leads', 'tiers']);
+    ['overview', 'insights', 'discovery', 'events', 'bookings', 'orders', 'memberships', 'leads', 'media', 'tiers', 'integrations', 'admins']);
+  assert.deepEqual(await tabs('staff'), ['overview', 'events', 'bookings', 'orders', 'memberships', 'leads', 'tiers']);
   assert.deepEqual(await tabs('organiser'), [], 'not an admin: no console');
 });

@@ -151,38 +151,6 @@ test('cron cleanup prunes long-dead sessions only', async () => {
   assert.ok(await meUser(live));
 });
 
-// ---------- payments ----------
-
-function rzpPaid({ linkId, amount }) {
-  const body = JSON.stringify({
-    entity: 'event', event: 'payment_link.paid',
-    payload: {
-      payment_link: { entity: { id: linkId, amount, amount_paid: amount, status: 'paid', currency: 'INR' } },
-      payment: { entity: { id: `pay_${crypto.randomBytes(5).toString('hex')}`, amount, currency: 'INR', status: 'captured' } }
-    }
-  });
-  const sig = crypto.createHmac('sha256', 'test_rzp_webhook_secret').update(body).digest('hex');
-  return new Client().req('POST', '/api/payments/webhook/razorpay', body,
-    { 'content-type': 'application/json', 'x-razorpay-signature': sig, 'x-razorpay-event-id': `evt_${crypto.randomBytes(6).toString('hex')}` });
-}
-
-test('a signed "paid" webhook without a usable amount never confirms a booking (fail closed)', async () => {
-  const ev = await createEvent();
-  const c = await signedInClient();
-  const r = await c.post('/api/bookings', { eventId: ev.id });
-  assert.equal(r.status, 200, r.text);
-  const pay = await db.one('SELECT * FROM payments WHERE booking_id = $1', [r.json.bookingId]);
-  for (const amount of [undefined, 'abc']) {
-    const w = await rzpPaid({ linkId: pay.provider_txn_id, amount });
-    assert.equal(w.json.result, 'amount_mismatch', `amount=${amount}`);
-  }
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [r.json.bookingId])).status, 'pending_payment');
-  assert.equal((await db.one('SELECT status FROM payments WHERE id = $1', [pay.id])).status, 'created');
-  const ok = await rzpPaid({ linkId: pay.provider_txn_id, amount: Number(pay.amount) });
-  assert.notEqual(ok.json.result, 'amount_mismatch', 'the correct amount still confirms');
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [r.json.bookingId])).status, 'confirmed');
-});
-
 // ---------- insights ----------
 
 test('admin upcoming fill counts tickets (quantity), not booking rows', async () => {

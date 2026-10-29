@@ -15,12 +15,7 @@ Object.assign(process.env, {
   TG_CHAT_ID_TIER_1: '-1002222222221',
   TG_CHAT_ID_TIER_2: '-1002222222222',
   TG_CHAT_ID_TIER_3: '-1002222222223',
-  PAYMENT_PROVIDER: 'razorpay',
-  RAZORPAY_KEY_ID: 'rzp_test_TESTKEY',
-  RAZORPAY_KEY_SECRET: 'test_key_secret',
-  RAZORPAY_WEBHOOK_SECRET: 'test_rzp_webhook_secret',
-  CASHFREE_APP_ID: 'TEST_APP',
-  CASHFREE_SECRET_KEY: 'test_cf_secret',
+  SUPERPROFILE_WEBHOOK_SECRET: 'test_sp_webhook_secret_0123456789',
   ENABLE_LIVE_PAYMENTS: 'false',
   PUBLIC_SITE_URL: 'https://sm.test',
   ADMIN_BOOTSTRAP_TELEGRAM_ID: '900000001',
@@ -86,28 +81,6 @@ globalThis.fetch = async (input, init = {}) => {
       }
     }
     return jsonResponse({ ok: true, result: telegramResult(method, body) });
-  }
-  if (url.startsWith('https://api.razorpay.com/')) {
-    const path = url.replace('https://api.razorpay.com', '');
-    calls.push({ api: 'razorpay', method: init.method || 'GET', path, params: body, auth: init.headers?.Authorization });
-    const o = overrides.get(`rzp:${init.method || 'GET'} ${path.replace(/\/[A-Za-z0-9_]+$/, '/:id')}`) || overrides.get(`rzp:${init.method || 'GET'} ${path}`);
-    if (o) {
-      overrides.delete([...overrides.keys()].find((k) => overrides.get(k) === o));
-      const r = await o(body, path);
-      return r && r.__http ? jsonResponse(r.body, r.status) : jsonResponse(r);
-    }
-    if (path === '/v1/payment_links' && init.method === 'POST') {
-      const id = `plink_${crypto.randomBytes(6).toString('hex')}`;
-      return jsonResponse({ id, short_url: `https://rzp.io/rzp/${id}`, status: 'created', amount: body.amount, reference_id: body.reference_id });
-    }
-    if (/\/v1\/payments\/[^/]+\/refund$/.test(path)) return jsonResponse({ id: `rfnd_${++linkSeq}`, status: 'processed', amount: body?.amount });
-    if (path.startsWith('/v1/payment_links/')) return jsonResponse({ id: path.split('/').pop(), status: 'created', payments: [] });
-  }
-  if (url.startsWith('https://sandbox.cashfree.com/')) {
-    calls.push({ api: 'cashfree', method: init.method || 'GET', path: url, params: body });
-    if (url.endsWith('/pg/orders') && init.method === 'POST') {
-      return jsonResponse({ order_id: body.order_id, cf_order_id: 1, payment_session_id: 'session_test', order_status: 'ACTIVE' });
-    }
   }
   for (const [prefix, fn] of urlStubs) {
     if (url.startsWith(prefix)) {

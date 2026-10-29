@@ -246,27 +246,13 @@
   }
 
   /* ---------- booking ---------- */
-  function book(btn) {
-    var msg = $('[data-book-msg]');
-    var eventId = btn.getAttribute('data-book');
-    track('book_click', eventId);
-    if (!state.me) return goSignin();
-    btn.disabled = true;
-    msg.className = 'book-msg'; msg.textContent = 'Preparing secure checkout…';
-    api('POST', '/api/bookings', { eventId: eventId }).then(function (r) {
-      if (r.status === 403 && r.error === 'age_required') {
-        return confirmAge().then(function (ok) { btn.disabled = false; msg.textContent = ''; if (ok) book(btn); });
-      }
-      if (r.ok && /^https:\/\//.test(r.checkoutUrl || '')) { track('checkout_start', eventId); location.href = r.checkoutUrl; return; }
-      if (r.ok && r.bookingId) { location.href = '/bookings/' + r.bookingId; return; }
-      if (r.status === 401) return goSignin();
-      btn.disabled = false;
-      msg.className = 'book-msg error';
-      msg.textContent = r.message || 'Could not start checkout. Please try again.';
-    });
-  }
-  $$('[data-book]').forEach(function (b) { b.addEventListener('click', function () { book(b); }); });
-  if ($('[data-book]')) track('event_view', $('[data-book]').getAttribute('data-book'));
+  /* Paid tickets are bought on SuperProfile, on the website only: the buy link carries data-web-only and
+     is hidden inside the Telegram Mini App (see "inside Telegram?" above). */
+  $$('[data-sp-buy]').forEach(function (a) {
+    var id = a.getAttribute('data-sp-buy');
+    track('event_view', id);
+    a.addEventListener('click', function () { track('checkout_start', id); });
+  });
 
   /* ---------- organiser events: choose a ticket tier ---------- */
   $$('[data-tier-form]').forEach(function (form) {
@@ -295,6 +281,14 @@
       $$('.field-error', form).forEach(function (f) { f.classList.remove('field-error'); });
       if (!r) { msg.className = 'book-msg error'; msg.textContent = 'Choose a ticket first.'; return; }
       track('book_click', eventId);
+      if (r.getAttribute('data-paid')) {
+        /* Paid tier: hand over to SuperProfile (works signed out). Not available inside the Mini App. */
+        var path = form.getAttribute('data-checkout-path');
+        if (inTelegram || !path) { msg.className = 'book-msg error'; msg.textContent = 'Paid tickets are sold on our website. Open StrangersMeetup in your browser to book.'; return; }
+        track('checkout_start', eventId);
+        location.href = path + '?tier=' + encodeURIComponent(r.value) + '&qty=' + encodeURIComponent(parseInt(qty.value, 10) || 1);
+        return;
+      }
       if (!state.me) return goSignin();
       var body = { ticketTypeId: r.value, quantity: parseInt(qty.value, 10) || 1, answers: {} };
       if (!eligWrap.hidden) body.eligibilityConfirmed = $('input[name="eligibilityConfirmed"]', form).checked;
@@ -323,7 +317,6 @@
           });
           return;
         }
-        if (/^https:\/\//.test(res.checkoutUrl || '')) { track('checkout_start', eventId); location.href = res.checkoutUrl; return; }
         location.href = '/bookings/' + encodeURIComponent(res.bookingId);
       });
     }
@@ -391,7 +384,7 @@
         if (r.status === 401) return goSignin();
         if (!r.ok) { el.innerHTML = '<p>We could not find that booking.</p>'; return; }
         var b = r.booking;
-        var html = '<p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span>' + (b.isTest ? '<span>Test mode</span>' : '') + '</p>' +
+        var html = '<p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span>' + '</p>' +
           '<h2>' + esc(b.title) + '</h2><p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>';
         var facts = '';
         if (b.ticket) facts += '<div><dt>Ticket</dt><dd>' + esc(b.ticket.name) + ' × ' + esc(b.ticket.quantity) + (b.amountLabel ? ' · ' + esc(b.amountLabel) : '') + '</dd></div>';
@@ -405,9 +398,7 @@
         } else if (b.status === 'declined') {
           html += '<p>The host couldn’t accept your request this time. You have not been charged.</p>';
         } else if (b.status === 'pending_payment') {
-          html += '<p>We are waiting for the payment provider to confirm your payment. This page updates automatically.</p>';
-          if (b.checkoutUrl && b.holdActive) html += '<p><a class="btn btn-primary" href="' + safeUrl(b.checkoutUrl) + '">Return to checkout</a></p>';
-          if (!b.holdActive) html += '<p class="muted">Your seat hold has expired. If you already paid, we will confirm or refund it automatically.</p>';
+          html += '<p>We are waiting for SuperProfile to confirm your payment. If you already paid, send <strong>/claim</strong> to our Telegram bot with your SuperProfile order ID.</p>';
         } else if (b.status === 'confirmed' || b.status === 'checked_in') {
           html += '<p><strong>You are in.</strong> ' + (b.venue ? 'Venue: ' + esc(b.venue) + '. ' : '') + (b.ticket ? 'Your confirmation is sent by our Telegram bot.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
           if (b.invite) html += '<p><a class="btn btn-tg" href="' + safeUrl(b.invite.link) + '" rel="noopener">Join the private group</a></p><p class="muted">Single-use invite, valid until ' + esc(fmt(b.invite.expiresAt)) + '.</p>';
