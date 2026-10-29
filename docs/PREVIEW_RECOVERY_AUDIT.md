@@ -266,3 +266,165 @@ It was not one in this audit. If it comes up:
 - check spam, junk, filters and quarantine;
 - request one fresh code and use only the newest;
 - if mail still does not arrive, contact Vercel Support through the official Help Center (vercel.com/help).
+
+## 14. Safe Preview Implementation, Single Source of Truth & Production Readiness (2026-10-30 ~02:50 IST)
+
+### 14.1 Executive Summary: Is Production Safe?
+- **Production is 100% untouched and safe.** Production remains running commit `5c6652a` on deployment `dpl_3g7aUM3Vyq71mZczg7tfmKVL5DgH`.
+- **No changes were made to Production** environment variables, DNS, database, or deployments.
+- **Preview deployment suppression remains active** (`vercel.json`: `deploymentEnabled: { "fix/preview-recovery-audit": false }`).
+- **Preview code is now fail-closed by default**: even if a Preview deployment were triggered against the shared database, code-level safeguards strictly block database writes, refuse migrations, disable Telegram messaging, and disable paid checkouts.
+
+### 14.2 Code Changes Implemented in this Pass
+All changes were implemented using the smallest appropriate modifications with zero disruption to Production or local development:
+
+1. **Fail-Closed Database Write Guard (`lib/db.js`, `lib/router.js`):**
+   - Added `PreviewWriteBlockedError` (503), `isWriteQuery`, `isPreviewWriteAllowed`, and `assertPreviewWriteAllowed`.
+   - In Preview (`VERCEL_ENV === 'preview'`), all SQL mutations (`INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `ALTER`, `DROP`, `CREATE`, etc.) and transactions (`db.tx`) throw a `PreviewWriteBlockedError` (503) unless database isolation is explicitly confirmed via `ISOLATED_PREVIEW_DB=true` or `PREVIEW_DATABASE_URL`.
+   - Production (`VERCEL_ENV === 'production'`) and local/CI environments (`!VERCEL`) are unaffected.
+2. **Hardened Migration Policy (`lib/db.js`):**
+   - `migrationPolicy()` now enforces that Preview builds refuse migrations unless **both** `MIGRATE_ON_PREVIEW=true` AND `ISOLATED_PREVIEW_DB=true` (or `PREVIEW_DATABASE_URL`) are configured. Setting `MIGRATE_ON_PREVIEW=true` alone is now rejected with a clear safety warning: `refusing preview migrations: ISOLATED_PREVIEW_DB=true is required to prove database isolation`.
+3. **Dedicated Preview Database Support (`lib/db.js`):**
+   - In Preview, `getPool()` and `isDbConfigured()` seamlessly prioritize `PREVIEW_DATABASE_URL` over `DATABASE_URL` if configured.
+4. **Disabled Real Telegram Sending in Preview (`lib/config.js`):**
+   - `botToken()` in Preview returns an empty token (`''`) by default unless a dedicated test bot token (`PREVIEW_TELEGRAM_BOT_TOKEN` or `TELEGRAM_TEST_BOT_TOKEN`) or explicit `ALLOW_PREVIEW_TELEGRAM=true` is set.
+   - Any attempt by Preview code to send Telegram messages throws `TelegramNotConfiguredError`, ensuring Preview cannot message real users even if Vercel still holds the shared production token.
+5. **Cron Notification Suppression in Preview (`lib/handlers/cron.js`):**
+   - `notifications`, `memberships`, and `reconcileSuperprofile` cron jobs skip delivery of notifications when `VERCEL_ENV === 'preview'`, preventing any real customer notification from scheduled or invoked jobs.
+6. **Disabled Paid Checkout in Preview (`lib/payments/availability.js`):**
+   - `checkoutForEvent()` returns `available: false` (`preview_paid_checkout_disabled`) in Preview deployments unless `ALLOW_PREVIEW_PAID_CHECKOUT=true` is explicitly set. Free event booking remains 100% testable.
+7. **Isolated Preview Site URL (`lib/config.js`):**
+   - `siteUrl()` in Preview prioritizes `PREVIEW_PUBLIC_SITE_URL` and `VERCEL_URL` over a shared production `PUBLIC_SITE_URL`.
+8. **Documented Configuration (`.env.example`):**
+   - Documented `ISOLATED_PREVIEW_DB`, `PREVIEW_DATABASE_URL`, `PREVIEW_TELEGRAM_BOT_TOKEN`, `ALLOW_PREVIEW_TELEGRAM`, `ALLOW_PREVIEW_PAID_CHECKOUT`, and `PREVIEW_PUBLIC_SITE_URL`.
+9. **Automated Safety Regression Tests (`test/safety.test.js`):**
+   - Added 4 test suites verifying:
+     - Migration policy isolation requirements.
+     - Write query blocking and transaction refusal in unverified preview.
+     - Telegram bot token silencing in preview without dedicated test credentials.
+     - Paid checkout disabling in preview and test mode opt-in.
+     - Preview URL resolution preference.
+
+### 14.3 Starting and Final Git Status
+| Ref | Starting SHA | Final SHA | Status |
+|---|---|---|---|
+| `origin/main` | `5c6652a` | `5c6652a` | Authoritative Production baseline; unchanged |
+| `origin/launch-mvp` | `f5e7223` | `f5e7223` | Release integration branch; unchanged |
+| PR #8 (`fix/preview-recovery-audit`) | `02d2e8d` | *Pending push* | CI passing on `02d2e8d` (Run 40950432801); ready for safeguard commit |
+
+### 14.4 CI and Local Verification Results
+All tests executed locally against throwaway databases on `localhost:5432` with zero shared state:
+
+| Check | Command | Result |
+|---|---|---|
+| Lint | `npm run lint` | **104/104 files OK** |
+| Unit & Integration Suite | `TEST_DATABASE_URL=postgres://localhost/sm_safe_test npm test` | **186 passed, 0 failed, 0 skipped** (182 baseline + 4 new preview safety tests) |
+| Playwright E2E + Axe Accessibility | `E2E_DATABASE_URL=postgres://localhost/sm_safe_e2e npx playwright test` | **128 passed, 8 skipped (project-gated viewports), 0 failed** (5.3 min) |
+| Migrations from scratch | `node scripts/migrate.js` on fresh DB | **8 applied (003→010)** |
+| Migration idempotency | second run on migrated DB | **0 applied** |
+| Vercel build: no DB | `VERCEL=1 VERCEL_ENV=preview npm run vercel-build` | `skipping migrations — DATABASE_URL not set` |
+| Vercel build: DB without opt-in | `VERCEL=1 VERCEL_ENV=preview DATABASE_URL=... npm run vercel-build` | `skipping migrations — vercel preview build: set MIGRATE_ON_PREVIEW=true only if this environment has its own database` |
+| Vercel build: premature MIGRATE_ON_PREVIEW | `... MIGRATE_ON_PREVIEW=true npm run vercel-build` | `skipping migrations — refusing preview migrations: ISOLATED_PREVIEW_DB=true is required to prove database isolation` |
+| Vercel build: verified isolated DB | `... MIGRATE_ON_PREVIEW=true ISOLATED_PREVIEW_DB=true npm run vercel-build` | `done (0 applied; vercel preview with MIGRATE_ON_PREVIEW=true and confirmed isolated database)` |
+| GitHub CI (PR #8) | Run 40950432801 on `02d2e8d` | **SUCCESS** (4m 50s) |
+
+### 14.5 Environment Variable Audit & Scoping Matrix
+Inspection performed via read-only metadata (`vercel env ls`). Secret values were never read or printed.
+
+| Variable Name | Required Environments | Current Vercel Scope | Risk / Isolation Status | Required Remediation |
+|---|---|---|---|---|
+| `DATABASE_URL` | Production, Preview (isolated) | Development, Preview, Production (1 record) | **SHARED WITH PROD** | Provide Preview-scoped record pointing to isolated Neon branch |
+| `DATABASE_URL_UNPOOLED` | Production, Preview (isolated) | Development, Preview, Production (1 record) | **SHARED WITH PROD** | Provide Preview-scoped record pointing to isolated Neon branch |
+| `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` | Production, Preview (isolated) | Development, Preview, Production | **SHARED WITH PROD** | Neon integration defaults; Preview uses its own branch credentials |
+| `POSTGRES_*` (all variants) | Production, Preview (isolated) | Development, Preview, Production | **SHARED WITH PROD** | Same as above |
+| `TELEGRAM_BOT_TOKEN` | Production, Preview (isolated test bot) | Production, Preview (1 record) | **SHARED WITH PROD** | Set `PREVIEW_TELEGRAM_BOT_TOKEN` or separate Preview scope |
+| `MIGRATE_ON_PREVIEW` | Preview only | Absent | **SAFE (Not set)** | Set to `true` ONLY after database isolation confirmed |
+| `ISOLATED_PREVIEW_DB` | Preview only | Absent | **SAFE (Not set)** | Set to `true` ONLY after database isolation confirmed |
+| `SESSION_SECRET` | Production, Preview (separate) | Absent | **FAIL-CLOSED (Missing)** | Set 32+ char secret for Production and separate secret for Preview |
+| `CRON_SECRET` | Production, Preview (separate) | Absent | **FAIL-CLOSED (Missing)** | Set 16+ char secret for Production and separate secret for Preview |
+| `PUBLIC_SITE_URL` | Production, Preview | Absent | Defaults to `VERCEL_URL` | Set production domain for Prod; Preview auto-resolves |
+| `TELEGRAM_WEBHOOK_SECRET`| Production, Preview (separate) | Absent | **FAIL-CLOSED (Missing)** | Set 16+ char secret for Production and separate secret for Preview |
+| `SUPERPROFILE_WEBHOOK_SECRET` | Production, Preview | Absent | **FAIL-CLOSED (Missing)** | Set 24+ char secret once SuperProfile account is approved |
+| `TELEGRAM_LOGIN_CLIENT_ID/SECRET` | Production, Preview | Absent | Optional / sign-in fallback | Set if Telegram OIDC is configured |
+| `ADMIN_BOOTSTRAP_TELEGRAM_ID` | Production, Preview | Absent | Inactive | Set to owner Telegram ID for initial admin bootstrap |
+
+### 14.6 Verified vs. Mocked vs. Unverified Matrix
+| Feature / Flow | Local Tests | Automated CI | Preview Deployment | Production | Status |
+|---|---|---|---|---|---|
+| Public Discovery, Trips, Events, Art | Fully Verified | Fully Verified | Blocked by SSO | Verified live on `5c6652a` | **VERIFIED** |
+| Accessibility (Axe-core WCAG 2.1 AA) | Fully Verified | Fully Verified | Blocked by SSO | — | **VERIFIED** |
+| Feed SSRF & DNS Pinning (connect-time) | Fully Verified | Fully Verified | — | — | **VERIFIED** |
+| TLS Hostname Validation & Cert Check | Fully Verified | Fully Verified | — | — | **VERIFIED** |
+| Redirect Limits & HTTPS Downgrade Refusal | Fully Verified | Fully Verified | — | — | **VERIFIED** |
+| Session Creation Fail-Closed (no secret) | Fully Verified | Fully Verified | — | — | **VERIFIED** |
+| Multi-Day Event Checkout Boundary | Fully Verified | Fully Verified | — | — | **VERIFIED** |
+| Preview DB Write Refusal (unverified DB) | Fully Verified | To be pushed | — | — | **VERIFIED** |
+| Preview Migration Gate (`ISOLATED_PREVIEW_DB`) | Fully Verified | To be pushed | — | — | **VERIFIED** |
+| Free Event Booking (app-managed) | Fully Verified | Fully Verified | Blocked by DB Gate | Untouched | **VERIFIED** |
+| SuperProfile Webhook (signature & parsing) | Mocked (fixtures) | Mocked (fixtures) | Blocked (no secret) | Blocked | **MOCKED** |
+| SuperProfile Sales Reconciliation | Mocked (fixtures) | Mocked (fixtures) | Blocked (no secret) | Blocked | **MOCKED** |
+| SuperProfile Live Payment Processing | Unverified | Unverified | Unverified | Unverified | **UNVERIFIED** (No provider setup) |
+| Live Preview Runtime Verification | Local simulated | — | Blocked by DB Gate | — | **BLOCKED** |
+
+### 14.7 Release Gate Status
+| Gate | Status | Reason / Evidence |
+|---|---|---|
+| **1. Application Code & Tests** | **PASS** | 104/104 lint OK, 186/186 unit/integration pass, 128/128 Playwright passed, CI green. |
+| **2. Production Safety** | **PASS** | Commit `5c6652a` running untouched. No writes, migrations, or variable changes. |
+| **3. Code-Level Preview Safeguards** | **PASS** | Writes blocked, migrations fail closed, Telegram silenced, paid checkout disabled. |
+| **4. Database Isolation Gate** | **FAIL / BLOCKED** | Vercel environment variables currently share single records across Preview & Prod. |
+| **5. Live SuperProfile Verification** | **BLOCKED** | No live provider credentials, webhook secret, or approved live product. |
+| **6. Production Release Gate** | **HOLD** | Merge into `main` and production release hold awaiting owner approval. |
+
+---
+
+### 14.8 Plain-English Owner Action Guide (To Unblock Preview Testing)
+
+Follow these exact steps when you are ready to enable testing in Preview. You do not need to share any secret values:
+
+#### Step 1: Create an Isolated Database Branch in Neon
+1. Log in to your **Neon Console** (https://console.neon.tech).
+2. Select the **StrangersMeetup** project.
+3. In the left navigation, click **Branches**.
+4. Click **New Branch**.
+   - **Name**: `preview`
+   - **Parent branch**: `main`
+   - **Data**: Select **Schema only** (do **not** copy real user data).
+5. Click **Create Branch**.
+6. On the branch dashboard, copy the **Connection string** (both pooled and unpooled).
+
+#### Step 2: Configure Preview-Scoped Variables in Vercel
+1. Log in to your **Vercel Dashboard** (https://vercel.com).
+2. Go to project **strangersmeetup** → **Settings** → **Environment Variables**.
+3. Locate the existing `DATABASE_URL` and `DATABASE_URL_UNPOOLED` variables. Click **Edit** on each, and **uncheck Preview** so they only apply to **Production** (and Development if desired).
+4. Click **Add New Variable**:
+   - Key: `DATABASE_URL`
+   - Value: Paste the new pooled connection string from Step 1.
+   - Environments: Check **Preview** ONLY.
+5. Click **Add New Variable**:
+   - Key: `DATABASE_URL_UNPOOLED`
+   - Value: Paste the new unpooled connection string from Step 1.
+   - Environments: Check **Preview** ONLY.
+6. Click **Add New Variable**:
+   - Key: `ISOLATED_PREVIEW_DB`
+   - Value: `true`
+   - Environments: Check **Preview** ONLY.
+7. Click **Add New Variable**:
+   - Key: `MIGRATE_ON_PREVIEW`
+   - Value: `true`
+   - Environments: Check **Preview** ONLY.
+8. (Optional Test Bot): Add `PREVIEW_TELEGRAM_BOT_TOKEN` with a dedicated test bot token from @BotFather, checked for **Preview** ONLY.
+
+#### Step 3: Enable Preview Deployment in Git
+Once Steps 1 and 2 are complete, the branch-specific deployment block in `vercel.json` can be removed so Vercel can build a preview deployment against your isolated Neon branch.
+
+---
+
+### 14.9 Single-Source-of-Truth Release Process
+To maintain strict hygiene and prevent future drift:
+1. **`main` is Production.** Only tested, approved code from `launch-mvp` merges into `main`.
+2. **`launch-mvp` is the Integration Candidate.** Feature branches merge into `launch-mvp` via PR with passing CI.
+3. **Isolated Preview Verification.** Release candidates must be tested end-to-end in Preview with isolated test data before merging to `main`.
+4. **No Direct Production Database Edits.** All schema changes must be versioned migrations in `migrations/`.
+5. **No Blind Auto-Merges.** Green CI is a prerequisite, not a release trigger. Manual owner approval is required for every production release.
+

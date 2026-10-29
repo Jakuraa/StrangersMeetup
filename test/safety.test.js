@@ -6,7 +6,12 @@ import crypto from 'node:crypto';
 import {
   resetDb, startServer, stopServer, Client, db, clearCalls, createEvent, signedInClient
 } from './helpers.js';
-import { migrationPolicy, isLocalDatabaseUrl, databaseName } from '../lib/db.js';
+import {
+  migrationPolicy, isLocalDatabaseUrl, databaseName,
+  isPreviewWriteAllowed, isWriteQuery, assertPreviewWriteAllowed, PreviewWriteBlockedError
+} from '../lib/db.js';
+import { botToken, siteUrl } from '../lib/config.js';
+import { checkoutForEvent } from '../lib/payments/availability.js';
 import { assertSeedAllowed, SeedRefused } from '../scripts/seed-guard.js';
 import { planReset, assertResettable } from '../scripts/db-reset-local.js';
 import { seedDemo } from '../scripts/seed-demo.js';
@@ -21,7 +26,7 @@ beforeEach(clearCalls);
 
 // ---------- migrations on Vercel ----------
 
-test('migration policy: Vercel previews never migrate unless explicitly given their own DB', () => {
+test('migration policy: Vercel previews never migrate unless explicitly given their own DB and verified isolated', () => {
   assert.equal(migrationPolicy({}).run, false, 'no DATABASE_URL');
   assert.equal(migrationPolicy({ DATABASE_URL: LOCAL }).run, true, 'local dev migrates');
   assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'production' }).run, true);
@@ -30,8 +35,90 @@ test('migration policy: Vercel previews never migrate unless explicitly given th
   assert.match(preview.reason, /MIGRATE_ON_PREVIEW/);
   assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'development' }).run, false);
   assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1' }).run, false, 'unknown Vercel env is not production');
-  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true' }).run, true);
-  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: '1' }).run, false, 'only the literal "true" opts in');
+  // MIGRATE_ON_PREVIEW alone is not enough: database isolation must be proven with ISOLATED_PREVIEW_DB or PREVIEW_DATABASE_URL
+  const unisolated = migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true' });
+  assert.equal(unisolated.run, false, 'refuses without confirmed isolation');
+  assert.match(unisolated.reason, /ISOLATED_PREVIEW_DB=true is required/);
+  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true', ISOLATED_PREVIEW_DB: 'true' }).run, true);
+  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true', PREVIEW_DATABASE_URL: REMOTE }).run, true);
+  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: '1', ISOLATED_PREVIEW_DB: 'true' }).run, false, 'only the literal "true" opts in');
+});
+
+test('preview database safety: writes blocked in preview without confirmed isolated database', async () => {
+  assert.equal(isPreviewWriteAllowed({}), true, 'local dev allows writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'production' }), true, 'production allows writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview' }), false, 'preview without isolated DB blocks writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview', ISOLATED_PREVIEW_DB: 'true' }), true, 'preview with isolated DB allows writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview', PREVIEW_DATABASE_URL: REMOTE }), true, 'preview with PREVIEW_DATABASE_URL allows writes');
+
+  assert.equal(isWriteQuery('SELECT * FROM events'), false);
+  assert.equal(isWriteQuery('INSERT INTO events (title) VALUES (\'test\')'), true);
+  assert.equal(isWriteQuery('UPDATE users SET role = \'admin\''), true);
+  assert.equal(isWriteQuery('DELETE FROM bookings WHERE id = 1'), true);
+
+  assert.throws(() => assertPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview' }), PreviewWriteBlockedError);
+  assert.doesNotThrow(() => assertPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview', ISOLATED_PREVIEW_DB: 'true' }));
+});
+
+test('preview telegram safety: bot token disabled in preview unless dedicated token or explicit permission', () => {
+  const origEnv = { ...process.env };
+  try {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_ENV = 'preview';
+    process.env.TELEGRAM_BOT_TOKEN = '123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678';
+    delete process.env.PREVIEW_TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_TEST_BOT_TOKEN;
+    delete process.env.ALLOW_PREVIEW_TELEGRAM;
+
+    assert.equal(botToken(), '', 'shared production token returns empty in preview');
+
+    process.env.PREVIEW_TELEGRAM_BOT_TOKEN = '987654321:PREVIEW_defGHIjklMNOpqrsTUVwxyz012345';
+    assert.equal(botToken(), '987654321:PREVIEW_defGHIjklMNOpqrsTUVwxyz012345', 'dedicated preview token is used');
+
+    delete process.env.PREVIEW_TELEGRAM_BOT_TOKEN;
+    process.env.ALLOW_PREVIEW_TELEGRAM = 'true';
+    assert.equal(botToken(), '123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678', 'explicit permission uses token');
+  } finally {
+    process.env = origEnv;
+  }
+});
+
+test('preview checkout safety: paid checkout disabled in preview unless approved test mode', () => {
+  const origEnv = { ...process.env };
+  const event = { checkout_mode: 'superprofile', superprofile_url: 'https://superprofile.bio/vp/event1' };
+  try {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_ENV = 'preview';
+    delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
+
+    const r = checkoutForEvent(event);
+    assert.equal(r.available, false, 'paid checkout disabled in preview by default');
+    assert.equal(r.reason, 'preview_paid_checkout_disabled');
+
+    process.env.ALLOW_PREVIEW_PAID_CHECKOUT = 'true';
+    const approved = checkoutForEvent(event);
+    assert.equal(approved.available, true, 'paid checkout enabled when approved test mode set');
+  } finally {
+    process.env = origEnv;
+  }
+});
+
+test('preview site url: uses VERCEL_URL or PREVIEW_PUBLIC_SITE_URL instead of shared PUBLIC_SITE_URL', () => {
+  const origEnv = { ...process.env };
+  try {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_ENV = 'preview';
+    process.env.PUBLIC_SITE_URL = 'https://strangersmeetup-virid.vercel.app';
+    process.env.VERCEL_URL = 'strangersmeetup-preview-xyz.vercel.app';
+    delete process.env.PREVIEW_PUBLIC_SITE_URL;
+
+    assert.equal(siteUrl(), 'https://strangersmeetup-preview-xyz.vercel.app', 'prefers VERCEL_URL in preview');
+
+    process.env.PREVIEW_PUBLIC_SITE_URL = 'https://preview.strangersmeetup.com';
+    assert.equal(siteUrl(), 'https://preview.strangersmeetup.com', 'prefers explicit preview url');
+  } finally {
+    process.env = origEnv;
+  }
 });
 
 test('local database detection only accepts loopback hosts and Unix sockets', () => {
