@@ -137,3 +137,10 @@ test('discovery homepage: content is server-rendered, readable without JS, and i
   assert.match(r.text, /class="promo-carousel"/);
   assert.doesNotMatch(r.text, /gsap/i); // no third-party animation runtime
 });
+
+test('accessibility contrast: .linkish in organiser tools meets WCAG AA on dark theme', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/organiser.css'), 'utf8');
+  // .linkish must use neon-cyan or high-contrast token on dark surfaces, not low-contrast blue
+  assert.match(css, /\.linkish\s*\{[^}]*color:\s*var\(--neon-cyan/);
+  assert.doesNotMatch(css, /\.linkish\s*\{[^}]*color:\s*var\(--accent\)/);
+});
