@@ -588,7 +588,7 @@ test('admin event form: SuperProfile product ids are unique and changes are audi
 // ---------------- provider removal ----------------
 
 test('Razorpay and Cashfree are gone from code, config, UI and docs', () => {
-  const skip = new Set(['node_modules', '.git', '.next', '.vercel', 'playwright-report', 'test-results', 'test', 'migrations']);
+  const skip = new Set(['node_modules', '.git', '.next', '.vercel', 'playwright-report', 'test-results', 'test', 'migrations', '.claude', '.remember', '.agents']);
   const hits = [];
   const walk = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

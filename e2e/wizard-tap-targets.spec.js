@@ -13,11 +13,21 @@ async function openWizard(page) {
   await expect(page.getByLabel('Event name')).toBeVisible();
 }
 
-for (const width of [320, 375]) {
-  test(`wizard switches, Fix link and + ticket buttons are 44px @ ${width}`, async ({ page }, testInfo) => {
+for (const width of [320, 360, 375, 390, 430]) {
+  test(`wizard header and controls are 44px @ ${width}`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'phone widths only');
     await page.setViewportSize({ width, height: 700 });
     await openWizard(page);
+
+    // Wizard header: 4 compact horizontal step badges with >= 44px tap targets
+    const stepBtns = page.locator('.wz-steps button');
+    expect(await stepBtns.count()).toBe(4);
+    for (const btn of await stepBtns.all()) {
+      const b = await btn.boundingBox();
+      expect(b.height).toBeGreaterThanOrEqual(44);
+      const dir = await btn.evaluate((el) => getComputedStyle(el).flexDirection);
+      expect(dir).toBe('row');
+    }
 
     // Tickets step: every "+ ticket" button (presets and "+ Add another ticket type").
     await page.getByRole('button', { name: /Next: Tickets/ }).click();

@@ -1,0 +1,46 @@
+# Render deployment blueprint for StrangersMeetup Control MCP service
+# Documentation: https://render.com/docs/blueprint-spec
+#
+# Option A (Active): Native Node.js service (recommended for 9 project, test & audit tools)
+# Option B (Docker alternative below): Full Playwright Chromium container for live screenshots
+services:
+  - type: web
+    name: strangersmeetup-control-mcp
+    runtime: node
+    plan: starter
+    region: oregon
+    autoDeploy: false
+    buildCommand: npm ci
+    startCommand: node mcp/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.13.0
+      - key: NODE_ENV
+        value: production
+      - key: MCP_HOST
+        value: 0.0.0.0
+      - key: MCP_API_KEY
+        sync: false
+      - key: WEBSITE_URL
+        value: https://strangersmeetup-virid.vercel.app
+      - key: MCP_LOG_STDOUT
+        value: "true"
+
+# --- Docker Alternative (Option B) ---
+# To enable full Playwright headless Chromium screenshot capture on Render, switch runtime to Docker:
+#
+# services:
+#   - type: web
+#     name: strangersmeetup-control-mcp-docker
+#     runtime: docker
+#     dockerfilePath: ./Dockerfile.mcp
+#     plan: starter
+#     region: oregon
+#     autoDeploy: false
+#     healthCheckPath: /health
+#     envVars:
+#       - key: MCP_API_KEY
+#         sync: false
+#       - key: WEBSITE_URL
+#         value: https://strangersmeetup-virid.vercel.app

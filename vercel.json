@@ -4,9 +4,7 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
-  "git": {
-    "deploymentEnabled": { "fix/preview-recovery-audit": false }
-  },
+  "ignoreCommand": "node scripts/vercel-ignore.js",
   "functions": {
     "api/index.js": { "maxDuration": 30 }
   },
