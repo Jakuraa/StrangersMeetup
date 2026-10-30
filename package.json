@@ -15,7 +15,9 @@
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "lint": "node scripts/lint.js",
     "test:e2e": "playwright test",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "mcp": "node mcp/server.js",
+    "mcp:stdio": "node mcp/server.js --stdio"
   },
   "keywords": [
     "strangersmeetup",
@@ -29,6 +31,7 @@
     "node": "24.x"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@vercel/functions": "^2.2.13",
     "fast-xml-parser": "^5.11.2",
     "pg": "^8.23.1",
