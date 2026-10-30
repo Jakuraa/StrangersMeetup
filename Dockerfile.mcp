@@ -1,6 +1,6 @@
 # Dockerfile.mcp - Container runtime for StrangersMeetup Control MCP with Playwright Chromium support
 # Base image includes all Linux dependencies for headless Chromium, Firefox and WebKit
-FROM mcr.microsoft.com/playwright:v1.50.0-noble
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 WORKDIR /app
 
