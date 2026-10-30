@@ -212,11 +212,29 @@
   if (widget) {
     var age = $('[data-age-confirm]');
     var msg = $('[data-signin-msg]');
-    var sync = function () { widget.setAttribute('aria-disabled', age.checked ? 'false' : 'true'); };
+    var pendingUser = null;
+    var doAuth = function (u) {
+      msg.className = 'form-msg';
+      msg.textContent = 'Verifying Telegram sign-in…';
+      api('POST', '/api/auth/telegram', { widget: u, ageConfirmed: true }).then(function (r) { afterAuth(r, msg); });
+    };
+    var sync = function () {
+      widget.setAttribute('aria-disabled', age.checked ? 'false' : 'true');
+      if (age.checked && pendingUser) {
+        var u = pendingUser;
+        pendingUser = null;
+        doAuth(u);
+      }
+    };
     age.addEventListener('change', sync); sync();
     window.smTelegramAuth = function (user) {
-      if (!age.checked) { msg.className = 'form-msg error'; msg.textContent = 'Please confirm you are 21 or older first.'; return; }
-      api('POST', '/api/auth/telegram', { widget: user, ageConfirmed: true }).then(function (r) { afterAuth(r, msg); });
+      if (!age.checked) {
+        pendingUser = user;
+        msg.className = 'form-msg error';
+        msg.textContent = 'Please confirm you are 21 or older above to complete sign-in.';
+        return;
+      }
+      doAuth(user);
     };
     var s = document.createElement('script');
     s.async = true;
@@ -455,6 +473,52 @@
         });
       });
     });
+  }
+
+  /* ---------- header location selector ---------- */
+  var citySelect = $('[data-header-city]');
+  if (citySelect) {
+    var curCity = new URLSearchParams(location.search).get('city');
+    if (curCity) citySelect.value = curCity;
+    citySelect.addEventListener('change', function () {
+      var val = citySelect.value;
+      var url = new URL(location.href);
+      if (val) url.searchParams.set('city', val);
+      else url.searchParams.delete('city');
+      location.href = url.pathname + url.search;
+    });
+  }
+
+  /* ---------- promotional carousel ---------- */
+  var carousel = $('[data-promo-carousel]');
+  if (carousel) {
+    var slides = $$('.carousel-slide', carousel);
+    var dots = $$('[data-carousel-dot]', carousel);
+    var prevBtn = $('[data-carousel-prev]', carousel);
+    var nextBtn = $('[data-carousel-next]', carousel);
+    var currentSlide = 0;
+    var timer = null;
+
+    function showSlide(idx) {
+      if (!slides.length) return;
+      currentSlide = (idx + slides.length) % slides.length;
+      slides.forEach(function (s, i) { s.classList.toggle('is-active', i === currentSlide); });
+      dots.forEach(function (d, i) { d.classList.toggle('active', i === currentSlide); });
+    }
+
+    function autoNext() { showSlide(currentSlide + 1); }
+    function startTimer() { if (!timer) timer = setInterval(autoNext, 6000); }
+    function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+
+    if (prevBtn) prevBtn.addEventListener('click', function () { stopTimer(); showSlide(currentSlide - 1); startTimer(); });
+    if (nextBtn) nextBtn.addEventListener('click', function () { stopTimer(); showSlide(currentSlide + 1); startTimer(); });
+    dots.forEach(function (dot, i) {
+      dot.addEventListener('click', function () { stopTimer(); showSlide(i); startTimer(); });
+    });
+
+    carousel.addEventListener('mouseenter', stopTimer);
+    carousel.addEventListener('mouseleave', startTimer);
+    startTimer();
   }
 
   miniApp().then(refreshMe).then(function () {
