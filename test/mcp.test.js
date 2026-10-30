@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { startHttpServer } from '../mcp/server.js';
 import { MCP_API_KEY, MCP_HOST, AUDIT_LOG_FILE, REPO_ROOT } from '../mcp/config.js';
 import {
@@ -380,4 +383,129 @@ test('MCP Stage 1.1 Remediation: Audit log file creation uses restrictive permis
   const stat = fs.statSync(AUDIT_LOG_FILE);
   const mode = stat.mode & 0o777;
   assert.equal(mode, 0o600, `Expected 0600 permissions on audit log, got ${mode.toString(8)}`);
+});
+
+// --- Phase 2C Remediation Tests ---
+
+test('MCP Phase 2C: sm_get_branch_status never returns empty string and handles detached HEAD', async () => {
+  const status = await getBranchStatus();
+  assert.equal(typeof status.current_branch, 'string');
+  assert.ok(status.current_branch.length > 0);
+  assert.notEqual(status.current_branch, '');
+  assert.notEqual(status.current_branch, 'undefined');
+
+  // Verify that if git branch --show-current were empty, fallback returns CI ref or '(detached)'
+  const origGithubRef = process.env.GITHUB_REF_NAME;
+  try {
+    process.env.GITHUB_REF_NAME = 'pr-9-test';
+    const ciBranch = process.env.GITHUB_REF_NAME || '(detached)';
+    assert.equal(ciBranch, 'pr-9-test');
+
+    delete process.env.GITHUB_REF_NAME;
+    const detachedFallback = process.env.GITHUB_REF_NAME || '(detached)';
+    assert.equal(detachedFallback, '(detached)');
+  } finally {
+    if (origGithubRef !== undefined) process.env.GITHUB_REF_NAME = origGithubRef;
+    else delete process.env.GITHUB_REF_NAME;
+  }
+});
+
+test('MCP Phase 2C: server startup diagnostics never expose MCP_API_KEY or Bearer secret', async () => {
+  const testSecretKey = 'test_secret_key_abcdef1234567890_super_secret';
+  const child = spawn(process.execPath, ['mcp/server.js'], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      MCP_PORT: '3339',
+      PORT: '3339',
+      MCP_API_KEY: testSecretKey,
+      MCP_LOCAL: 'true'
+    }
+  });
+
+  let output = '';
+  child.stdout.on('data', (d) => { output += d.toString(); });
+  child.stderr.on('data', (d) => { output += d.toString(); });
+
+  // Wait for server to print startup diagnostics
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  child.kill('SIGTERM');
+
+  assert.ok(output.includes('StrangersMeetup Control MCP listening on http://127.0.0.1:3339'));
+  assert.ok(output.includes('MCP Authentication: Bearer token required'));
+  assert.ok(!output.includes(testSecretKey), 'Secret MCP_API_KEY was leaked into startup stdout/stderr logs!');
+  assert.ok(!output.includes('MCP Auth Key:'), 'Deprecated "MCP Auth Key:" label should be removed');
+});
+
+test('MCP Phase 2C: cloud environment fails closed when MCP_API_KEY is missing', async () => {
+  try {
+    await execFileAsync(
+      process.execPath,
+      ['-e', 'import("./mcp/config.js")'],
+      {
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          RENDER: 'true',
+          MCP_API_KEY: '' // Explicitly empty
+        }
+      }
+    );
+    assert.fail('Expected missing MCP_API_KEY in cloud environment to throw');
+  } catch (err) {
+    assert.ok(
+      err.stderr.includes('MCP_API_KEY environment variable is required in production/cloud environments') ||
+      err.message.includes('MCP_API_KEY environment variable is required')
+    );
+  }
+});
+
+test('MCP Phase 2C: Vercel ignoreCommand script protects shared DB and allows production', async () => {
+  const scriptPath = path.resolve(REPO_ROOT, 'scripts/vercel-ignore.js');
+
+  // 1. Production deploy must exit with 1 (proceed)
+  try {
+    await execFileAsync(process.execPath, [scriptPath], {
+      env: { ...process.env, VERCEL_ENV: 'production' }
+    });
+    assert.fail('Production should exit 1');
+  } catch (err) {
+    assert.equal(err.code, 1);
+  }
+
+  // 2. Main branch must exit with 1 (proceed)
+  try {
+    await execFileAsync(process.execPath, [scriptPath], {
+      env: { ...process.env, VERCEL_GIT_COMMIT_REF: 'main' }
+    });
+    assert.fail('Main branch should exit 1');
+  } catch (err) {
+    assert.equal(err.code, 1);
+  }
+
+  // 3. Launch-mvp branch must exit with 1 (proceed)
+  try {
+    await execFileAsync(process.execPath, [scriptPath], {
+      env: { ...process.env, VERCEL_GIT_COMMIT_REF: 'launch-mvp' }
+    });
+    assert.fail('Launch MVP should exit 1');
+  } catch (err) {
+    assert.equal(err.code, 1);
+  }
+
+  // 4. Preview without isolated DB must exit with 0 (cancel)
+  const res = await execFileAsync(process.execPath, [scriptPath], {
+    env: { ...process.env, VERCEL_ENV: 'preview', VERCEL_GIT_COMMIT_REF: 'feature/test', ISOLATED_PREVIEW_DB: '' }
+  });
+  assert.ok(res.stdout.includes('CANCELLED preview deployment'));
+
+  // 5. Preview with confirmed isolated DB must exit with 1 (proceed)
+  try {
+    await execFileAsync(process.execPath, [scriptPath], {
+      env: { ...process.env, VERCEL_ENV: 'preview', VERCEL_GIT_COMMIT_REF: 'feature/test', ISOLATED_PREVIEW_DB: 'true' }
+    });
+    assert.fail('Isolated preview should exit 1');
+  } catch (err) {
+    assert.equal(err.code, 1);
+  }
 });

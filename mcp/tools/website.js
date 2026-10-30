@@ -1,9 +1,29 @@
 // mcp/tools/website.js - Read-only website inspection, route auditing, responsiveness checks, and screenshots.
-import { chromium } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
 import { APP_ORIGIN, APP_PORT, SCREENSHOTS_DIR, REPO_ROOT } from '../config.js';
 import { isSafeLocalPath, isAllowedPublicScreenshotPath, redactSecrets } from '../security.js';
+
+let _chromium = null;
+async function loadChromium() {
+  if (_chromium) return _chromium;
+  try {
+    const pw = await import('@playwright/test');
+    _chromium = pw.chromium;
+    return _chromium;
+  } catch (err) {
+    try {
+      const pw = await import('playwright');
+      _chromium = pw.chromium;
+      return _chromium;
+    } catch {
+      throw new Error(
+        `Playwright browser runtime is unavailable in this environment (${err.message}). ` +
+        'Screenshot and browser inspection tools require Playwright with Chromium installed.'
+      );
+    }
+  }
+}
 
 const ALLOWED_VIEWPORT_WIDTHS = [320, 360, 375, 390, 412, 430, 768, 1280];
 
@@ -196,6 +216,7 @@ export async function captureScreenshot({ path: targetPath, width = 1280, person
   }
 
   const normalizedPath = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+  const chromium = await loadChromium();
   const browser = await chromium.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
@@ -256,6 +277,7 @@ export async function auditResponsive({ path: targetPath, widths = ALLOWED_VIEWP
   const testWidths = widths.filter(w => ALLOWED_VIEWPORT_WIDTHS.includes(w));
   const fullUrl = `${APP_ORIGIN}${normalizedPath}`;
 
+  const chromium = await loadChromium();
   const browser = await chromium.launch({
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
