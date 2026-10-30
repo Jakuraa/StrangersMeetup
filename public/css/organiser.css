@@ -24,7 +24,9 @@
 .pill-confirmed, .pill-checked_in { background: rgba(0, 217, 255, 0.15); border-color: rgba(0, 217, 255, 0.4); color: var(--neon-cyan, #00D9FF); }
 .pill-pending_approval, .pill-pending_payment { background: rgba(255, 200, 0, 0.15); border-color: rgba(255, 200, 0, 0.4); color: #ffd15c; }
 .pill-declined { background: var(--alt); color: var(--muted); }
-.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 0; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; color: var(--neon-cyan, #00D9FF); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; min-height: 0; }
+.linkish:hover { color: #fff; text-decoration: underline; }
+.linkish:focus-visible { outline: 2px solid var(--neon-cyan, #00D9FF); outline-offset: 2px; border-radius: 2px; }
 
 /* Wizard shell */
 .wz-wrap { max-width: 820px; padding-top: 28px; padding-bottom: 120px; }

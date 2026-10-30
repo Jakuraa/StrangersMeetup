@@ -61,7 +61,13 @@ export async function getBranchStatus() {
       execFileAsync('git', ['status', '--porcelain'], { cwd: REPO_ROOT })
     ]);
 
-    const currentBranch = branchRes.stdout.trim();
+    // In detached HEAD checkouts (e.g. CI environments), git branch --show-current is empty.
+    // Fall back to CI ref env vars or explicit '(detached)' — never return empty or undefined.
+    let currentBranch = branchRes.stdout.trim();
+    if (!currentBranch) {
+      currentBranch = process.env.GITHUB_REF_NAME || process.env.VERCEL_GIT_COMMIT_REF || '(detached)';
+    }
+    currentBranch = currentBranch.trim() || '(detached)';
     const statusLines = statusRes.stdout.split('\n').filter(Boolean);
 
     const modified = [];

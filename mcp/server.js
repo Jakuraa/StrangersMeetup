@@ -5,7 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { MCP_PORT, MCP_HOST, MCP_API_KEY, IS_CLOUD_HOSTED } from './config.js';
+import { MCP_PORT, MCP_HOST, IS_CLOUD_HOSTED } from './config.js';
 import { validateBearerToken, RateLimiter } from './security.js';
 import { logMcpAudit } from './audit.js';
 import { registerAllTools, REGISTERED_TOOL_NAMES } from './tools/index.js';
@@ -230,7 +230,7 @@ if (process.argv[1] && process.argv[1].endsWith('server.js')) {
   } else {
     startHttpServer(MCP_PORT).then((server) => {
       console.log(`StrangersMeetup Control MCP listening on http://${MCP_HOST}:${MCP_PORT}`);
-      console.log(`MCP Auth Key: ${MCP_API_KEY}`);
+      console.log('MCP Authentication: Bearer token required on all operational endpoints');
       console.log(`Streamable HTTP endpoint: http://${MCP_HOST}:${MCP_PORT}/mcp`);
       console.log(`SSE endpoint: http://${MCP_HOST}:${MCP_PORT}/sse`);
     }).catch((err) => {
