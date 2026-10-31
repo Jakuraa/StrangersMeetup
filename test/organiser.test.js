@@ -517,3 +517,62 @@ test('organiser pages: dashboard and manage page shells, preview of the wizard c
   assert.deepEqual(Object.keys(cfg.ticketPresets), ['general', 'early_bird', 'couple', 'vip', 'free']);
   assert.equal(cfg.checkout.available, false);
 });
+
+test('host onboarding: /become-a-host page renders benefits, safety rules, and application form', async () => {
+  const visitor = new Client();
+  const page = await visitor.get('/become-a-host');
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Become an Organiser (?:&amp;|&) Host/);
+  assert.match(page.text, /Curated 21\+ Community/);
+  assert.match(page.text, /Secret Venue Privacy/);
+  assert.match(page.text, /Full Event Control/);
+  assert.match(page.text, /Platform Safety &amp; Quality Standards/);
+  assert.match(page.text, /Adults 21\+ Only/);
+  assert.match(page.text, /host-cities/);
+  assert.match(page.text, /Submit Host Application/);
+
+  // When submitted, success page renders clear next steps
+  const thanks = await visitor.get('/become-a-host?sent=1');
+  assert.equal(thanks.status, 200);
+  assert.match(thanks.text, /Application Received!/);
+  assert.match(thanks.text, /Curation &amp; Safety Review/);
+  assert.match(thanks.text, /Host Privilege Activation/);
+  assert.match(thanks.text, /Explore Current Events/);
+});
+
+test('host onboarding: approved organiser visiting /become-a-host sees active access notice', async () => {
+  const org = await organiserClient();
+  const res = await org.get('/become-a-host');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Host Access Active/);
+  assert.match(res.text, /You already have host privileges!/);
+  assert.match(res.text, /Go to Organiser Dashboard/);
+});
+
+test('mystery venue secrecy: private venue address is never leaked to public or unconfirmed visitors', async () => {
+  const c = await organiserClient();
+  const pub = await publish(c, validData({
+    title: 'Secret Speakeasy Supper',
+    privateVenue: true,
+    area: 'Alwarpet',
+    city: 'Chennai',
+    venue: '42 Underground Vault, TTK Road'
+  }));
+
+  // Public event page
+  const anon = new Client();
+  const page = await anon.get(pub.path);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Secret Speakeasy Supper/);
+  assert.match(page.text, /Alwarpet/);
+  assert.match(page.text, /Chennai/);
+  assert.doesNotMatch(page.text, /42 Underground Vault/);
+  assert.doesNotMatch(page.text, /TTK Road/);
+
+  // Public API query
+  const slugRes = await anon.get(`/api/events/${pub.slug}`);
+  if (slugRes.status === 200 && slugRes.json?.event) {
+    assert.equal(slugRes.json.event.venue_private, undefined);
+    assert.equal(slugRes.json.event.venue, 'Secret Location');
+  }
+});
