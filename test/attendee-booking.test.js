@@ -136,6 +136,7 @@ test('attendee booking journey: free tier booking, confirmation, ticket pass, an
     // Clean up any previous test booking and notifications for this user and event
     const userRow = await db.one(`SELECT id FROM users WHERE telegram_user_id = $1`, [REVIEWER_TG_ID]);
     await db.query(`DELETE FROM notifications WHERE booking_id IN (SELECT id FROM bookings WHERE user_id = $1 AND event_id = $2)`, [userRow.id, eventRow.id]);
+    await db.query(`DELETE FROM invite_links WHERE booking_id IN (SELECT id FROM bookings WHERE user_id = $1 AND event_id = $2)`, [userRow.id, eventRow.id]);
     await db.query(`DELETE FROM bookings WHERE user_id = $1 AND event_id = $2`, [userRow.id, eventRow.id]);
 
     // 3. Initiate and place free booking
@@ -197,6 +198,111 @@ test('preview reviewer auth: rate limiting enforced after 30 requests per IP', a
   } finally {
     process.env.IS_PREVIEW = origIsPreview;
     await db.query(`DELETE FROM rate_limits WHERE key LIKE 'reviewer:%'`);
+  }
+});
+
+test('re-booking an event returns existing: true and slug in booking detail', async () => {
+  const origIsPreview = process.env.IS_PREVIEW;
+  try {
+    process.env.IS_PREVIEW = 'true';
+    const c = new Client();
+    await seedDemo({ e: { DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost/sm_e2e' } });
+    const loginRes = await c.post('/api/auth/preview-reviewer', { next: '/me' }, { 'accept': 'application/json' });
+    c.csrf = loginRes.json.csrf;
+
+    const eventRow = await db.one(`SELECT id, slug FROM events WHERE slug = 'sample-bengaluru-indiranagar-rooftop-mixer'`);
+    const tierRow = await db.one(`SELECT id FROM ticket_types WHERE event_id = $1 AND kind = 'free'`, [eventRow.id]);
+
+    // First booking
+    const book1 = await c.post(`/api/events/${eventRow.id}/book`, { ticketTypeId: tierRow.id, quantity: 1, answers: {} });
+    assert.equal(book1.status, 200);
+    assert.equal(book1.json.ok, true);
+
+    // Re-booking the same event returns existing: true
+    const book2 = await c.post(`/api/events/${eventRow.id}/book`, { ticketTypeId: tierRow.id, quantity: 1, answers: {} });
+    assert.equal(book2.status, 200);
+    assert.equal(book2.json.ok, true);
+    assert.equal(book2.json.existing, true, 're-booking returns existing: true');
+    assert.equal(book2.json.bookingId, book1.json.bookingId, 'returns same booking id');
+
+    // Retrieve booking: slug must be returned so UI can link back to event
+    const getRes = await c.get(`/api/bookings/${book2.json.bookingId}`);
+    assert.equal(getRes.status, 200);
+    assert.equal(getRes.json.booking.slug, eventRow.slug, 'slug is provided for back-navigation');
+  } finally {
+    process.env.IS_PREVIEW = origIsPreview;
+  }
+});
+
+test('attendee booking authorization isolation: user A cannot access user B booking pass', async () => {
+  const origIsPreview = process.env.IS_PREVIEW;
+  try {
+    process.env.IS_PREVIEW = 'true';
+    // User A: preview reviewer
+    const clientA = new Client();
+    await seedDemo({ e: { DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost/sm_e2e' } });
+    const loginA = await clientA.post('/api/auth/preview-reviewer', { next: '/me' }, { 'accept': 'application/json' });
+    clientA.csrf = loginA.json.csrf;
+
+    const eventRow = await db.one(`SELECT id, slug FROM events WHERE slug = 'sample-bengaluru-indiranagar-rooftop-mixer'`);
+    const tierRow = await db.one(`SELECT id FROM ticket_types WHERE event_id = $1 AND kind = 'free'`, [eventRow.id]);
+    const bookA = await clientA.post(`/api/events/${eventRow.id}/book`, { ticketTypeId: tierRow.id, quantity: 1, answers: {} });
+    const bookingIdA = bookA.json.bookingId;
+
+    // User B: distinct user via signedInClient
+    const { signedInClient } = await import('./helpers.js');
+    const clientB = await signedInClient({ ageConfirmed: true });
+
+    // User B attempts to view User A's booking
+    const stolen = await clientB.get(`/api/bookings/${bookingIdA}`);
+    assert.equal(stolen.status, 404, 'returns 404 to isolate cross-user booking data');
+  } finally {
+    process.env.IS_PREVIEW = origIsPreview;
+  }
+});
+
+test('sold-out event renders clear sold-out notice and rejects bookings', async () => {
+  const origIsPreview = process.env.IS_PREVIEW;
+  const slug = `test-sold-out-${Date.now()}`;
+  try {
+    process.env.IS_PREVIEW = 'true';
+    const { signedInClient } = await import('./helpers.js');
+
+    // Create an event with capacity 1 and a free tier of quantity 1
+    const ev = (await db.query(
+      `INSERT INTO events (slug, category, title, city, start_at, end_at, capacity, ticketing, status, published_at, venue_private, venue_privacy)
+       VALUES ($1, 'meetup', 'Sold Out Test Meetup', 'Chennai', now() + interval '5 days', now() + interval '5 days 2 hours', 1, 'tiers', 'published', now(), 'Secret Room', 'disclosed_after_booking')
+       RETURNING id, slug`, [slug])).rows[0];
+
+    const tier = (await db.query(
+      `INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking, active)
+       VALUES ($1, 'Limited Free RSVP', 'free', 0, 1, 1, true)
+       RETURNING id`, [ev.id])).rows[0];
+
+    // User 1 books the only seat
+    const user1 = await signedInClient({ ageConfirmed: true });
+    const b1 = await user1.post(`/api/events/${ev.id}/book`, { ticketTypeId: tier.id, quantity: 1, answers: {} });
+    assert.equal(b1.status, 200);
+
+    // Event is now sold out: public page shows sold-out notice
+    const anon = new Client();
+    const pageHtml = await anon.get(`/events/${ev.slug}`);
+    assert.equal(pageHtml.status, 200);
+    assert.match(pageHtml.text, /notice-sold-out/, 'renders sold-out notice banner');
+    assert.match(pageHtml.text, /This event is sold out/, 'renders clear sold-out copy');
+
+    // User 2 attempts to book: fails due to capacity
+    const user2 = await signedInClient({ ageConfirmed: true });
+    const b2 = await user2.post(`/api/events/${ev.id}/book`, { ticketTypeId: tier.id, quantity: 1, answers: {} });
+    assert.equal(b2.status, 409, 'returns 409 for sold out event');
+    assert.equal(b2.json.error, 'sold_out');
+  } finally {
+    process.env.IS_PREVIEW = origIsPreview;
+    await db.query(`DELETE FROM notifications WHERE booking_id IN (SELECT id FROM bookings WHERE event_id IN (SELECT id FROM events WHERE slug LIKE 'test-sold-out%')) OR event_id IN (SELECT id FROM events WHERE slug LIKE 'test-sold-out%')`);
+    await db.query(`DELETE FROM invite_links WHERE booking_id IN (SELECT id FROM bookings WHERE event_id IN (SELECT id FROM events WHERE slug LIKE 'test-sold-out%'))`);
+    await db.query(`DELETE FROM bookings WHERE event_id IN (SELECT id FROM events WHERE slug LIKE 'test-sold-out%')`);
+    await db.query(`DELETE FROM ticket_types WHERE event_id IN (SELECT id FROM events WHERE slug LIKE 'test-sold-out%')`);
+    await db.query(`DELETE FROM events WHERE slug LIKE 'test-sold-out%'`);
   }
 });
 

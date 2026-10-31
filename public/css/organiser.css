@@ -193,6 +193,16 @@
 .org-kpi-num.highlight { color: #ffd15c; }
 .org-kpi-lbl { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin: 0; }
 
+/* Organiser Manage Guest Management Bar & Filter Pills */
+.org-stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 16px 0 20px; }
+.org-stat-item { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; display: flex; flex-direction: column; gap: 4px; }
+.org-stat-val { font-size: clamp(1.3rem, 3vw, 1.6rem); font-weight: 700; color: #fff; margin: 0; }
+.org-stat-lbl { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin: 0; }
+.org-guest-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 20px; }
+.org-filter-btn { padding: 6px 14px; min-height: 40px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+.org-filter-btn:hover { border-color: var(--neon-cyan); color: #fff; }
+.org-filter-btn.active { background: var(--neon-cyan); border-color: var(--neon-cyan); color: #000; font-weight: 700; }
+
 /* Touch targets on phones: 44px hit areas without changing how the controls look. Desktop is unchanged. */
 @media (max-width: 800px) {
   /* The button is the hit area; the visible 52x32 track is drawn inside it. */

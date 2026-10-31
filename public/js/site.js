@@ -162,8 +162,21 @@
     return api('GET', '/api/me').then(function (r) {
       state.me = r.user || null;
       state.csrf = r.csrf || null;
-      $$('[data-auth-button]').forEach(function (a) {
-        if (state.me) { a.textContent = 'My bookings'; a.setAttribute('aria-label', 'My bookings'); a.setAttribute('href', '/me'); a.classList.remove('btn-tg'); a.classList.add('btn-ghost'); }
+      $$('[data-auth-button], [data-nav-auth-link]').forEach(function (a) {
+        if (state.me) {
+          a.textContent = 'My bookings';
+          a.setAttribute('aria-label', 'My bookings');
+          a.setAttribute('href', '/me');
+          if (a.hasAttribute('data-auth-button')) {
+            a.classList.remove('btn-tg');
+            a.classList.add('btn-ghost');
+          }
+        } else {
+          if (a.hasAttribute('data-nav-auth-link')) {
+            a.textContent = 'Sign in with Telegram';
+            a.setAttribute('href', '/signin');
+          }
+        }
       });
       return state.me;
     }).catch(function () { return null; });
@@ -335,7 +348,7 @@
           });
           return;
         }
-        location.href = '/bookings/' + encodeURIComponent(res.bookingId);
+        location.href = '/bookings/' + encodeURIComponent(res.bookingId) + (res.existing ? '?existing=1' : '');
       });
     }
     form.addEventListener('submit', function (ev) { ev.preventDefault(); submit(); });
@@ -386,31 +399,74 @@
     api('GET', '/api/me/bookings').then(function (r) {
       if (r.status === 401) return goSignin();
       var list = r.bookings || [];
-      if (!list.length) { el.innerHTML = '<p>No bookings yet.</p><p><a class="link-arrow" href="/#upcoming">Find an event</a></p>'; return; }
+      if (!list.length) {
+        el.innerHTML = '<div class="empty-state bookings-empty-state">' +
+          '<div class="empty-state-icon" aria-hidden="true">🎟️</div>' +
+          '<p class="empty-state-title">No bookings yet</p>' +
+          '<p class="muted">When you reserve a spot for a meetup, dinner, party or trip, your digital passes and secret venue locations will be saved here.</p>' +
+          '<p><a class="btn btn-primary btn-sm" href="/events">Explore upcoming events</a></p>' +
+          '</div>';
+        return;
+      }
       el.innerHTML = '<ul class="booking-list">' + list.map(function (b) {
-        return '<li><p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span><span>' + esc(b.city) + '</span></p>' +
-          '<h3><a href="/bookings/' + esc(b.id) + '">' + esc(b.title) + '</a></h3><p class="muted">' + esc(fmt(b.startAt)) + '</p></li>';
+        var shortRef = b.id ? b.id.slice(0, 8).toUpperCase() : '';
+        return '<li class="booking-card-item">' +
+          '<div class="booking-card-top">' +
+          '<span class="pill pill-' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span>' +
+          '<span class="muted small">#SM-' + esc(shortRef) + '</span>' +
+          '</div>' +
+          '<h3><a href="/bookings/' + esc(b.id) + '">' + esc(b.title) + '</a></h3>' +
+          '<p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>' +
+          '<div class="booking-card-actions">' +
+          '<a class="btn btn-outline-cyan btn-sm" href="/bookings/' + esc(b.id) + '">View Pass &amp; Venue →</a>' +
+          (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Event Details</a>' : '') +
+          '</div>' +
+          '</li>';
       }).join('') + '</ul>';
     });
   }
 
   function renderStatus(el) {
     var id = el.getAttribute('data-booking-status');
+    var isExistingRedirect = new URLSearchParams(location.search).get('existing') === '1';
     var tries = 0;
     var tick = function () {
       api('GET', '/api/bookings/' + encodeURIComponent(id)).then(function (r) {
         if (r.status === 401) return goSignin();
-        if (!r.ok) { el.innerHTML = '<p>We could not find that booking.</p>'; return; }
+        if (!r.ok) {
+          el.innerHTML = '<div class="empty-state"><p class="empty-state-title">Booking not found</p><p class="muted">We could not find this booking. It may belong to another account or have expired.</p><p><a class="btn btn-primary btn-sm" href="/me">View your bookings</a> <a class="btn btn-ghost btn-sm" href="/events">Explore events</a></p></div>';
+          return;
+        }
         var b = r.booking;
-        var html = '<p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span>' + '</p>' +
-          '<h2>' + esc(b.title) + '</h2><p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>';
+        var shortRef = b.id ? b.id.slice(0, 8).toUpperCase() : '';
+        var statusLabel = STATUS[b.status] || b.status;
+        var html = '';
+        if (isExistingRedirect) {
+          html += '<div class="booking-notice booking-notice-info" role="status">' +
+            '<span class="notice-icon" aria-hidden="true">ℹ️</span>' +
+            '<div class="booking-notice-content">' +
+            '<strong>You already hold a pass for this event</strong>' +
+            '<p class="muted">Your existing booking pass and entry details are shown below.</p>' +
+            '</div></div>';
+        }
+
+        html += '<div class="digital-pass-card">' +
+          '<div class="digital-pass-header">' +
+          '<div class="pass-brand"><span class="pass-badge-icon" aria-hidden="true">🎟️</span> <span>StrangersMeetup Pass</span></div>' +
+          '<span class="pill pill-' + esc(b.status) + '">' + esc(statusLabel) + '</span>' +
+          '</div>' +
+          '<div class="pass-ref"><span class="pass-label">Pass Reference</span><span class="pass-code">#SM-' + esc(shortRef) + '</span></div>' +
+          '<h2 class="pass-title">' + esc(b.title) + '</h2>' +
+          '<p class="pass-datetime">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>';
+
         var facts = '';
         if (b.ticket) facts += '<div><dt>Ticket</dt><dd>' + esc(b.ticket.name) + ' × ' + esc(b.ticket.quantity) + (b.amountLabel ? ' · ' + esc(b.amountLabel) : '') + '</dd></div>';
         if (b.paymentStatus && PAYMENT[b.paymentStatus]) facts += '<div><dt>Payment</dt><dd>' + esc(PAYMENT[b.paymentStatus]) + '</dd></div>';
         if (b.pickup) facts += '<div><dt>Pickup</dt><dd>' + esc(b.pickup.name) + (b.pickup.location ? ' — ' + esc(b.pickup.location) : '') + (b.pickup.time ? ' · ' + esc(new Date(b.pickup.time + ':00Z').toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })) : '') + '</dd></div>';
         if (b.contact) facts += '<div><dt>On-ground contact</dt><dd>' + esc(b.contact.name || '') + ' · <a href="' + safeUrl(b.contact.whatsappUrl) + '" rel="noopener">WhatsApp ' + esc(b.contact.phone) + '</a></dd></div>';
         if (b.mapsUrl) facts += '<div><dt>Map</dt><dd><a href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener nofollow">Open in Maps</a></dd></div>';
-        if (facts) html += '<dl>' + facts + '</dl>';
+        if (facts) html += '<dl class="pass-facts">' + facts + '</dl>';
+
         if (b.status === 'pending_approval') {
           html += '<div class="mystery-venue-card"><p><span class="mystery-badge-icon" aria-hidden="true">🔒</span> <strong>Mystery Venue:</strong> The exact address will be unlocked here once your booking is approved by the host.</p></div>';
           html += '<p>The host reviews each request. You’ll get a Telegram message when they decide — nothing is charged before then.</p>';
@@ -428,6 +484,15 @@
         } else if (b.status === 'refunded') {
           html += '<p>This booking was refunded to your original payment method.</p>';
         }
+        html += '<div class="pass-footer-note"><p class="muted small">Show this digital pass at the entrance for verification.</p></div>' +
+          '</div>';
+
+        html += '<div class="booking-nav-actions">' +
+          '<a class="btn btn-primary btn-sm" href="/me">View All My Bookings</a>' +
+          '<a class="btn btn-outline-cyan btn-sm" href="/events">Explore More Events</a>' +
+          (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Back to Event</a>' : '') +
+          '</div>';
+
         el.innerHTML = html;
         if (b.status === 'pending_payment' && tries++ < 40) setTimeout(tick, 3000);
       });
@@ -704,5 +769,25 @@
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
     var mb = $('[data-my-bookings]'); if (mb) renderBookings(mb);
     var bs = $('[data-booking-status]'); if (bs) renderStatus(bs);
+    var tf = $('form[data-tier-form]');
+    if (tf && state.me) {
+      api('GET', '/api/me/bookings').then(function (r) {
+        if (!r.ok || !r.bookings) return;
+        var existing = r.bookings.find(function (b) {
+          return b.slug && location.pathname.indexOf('/events/' + b.slug) === 0;
+        });
+        if (existing && !$('.already-booked-banner', tf.parentNode)) {
+          var bnr = document.createElement('div');
+          bnr.className = 'already-booked-banner';
+          bnr.setAttribute('role', 'status');
+          bnr.innerHTML = '<span class="already-booked-icon" aria-hidden="true">🎟️</span>' +
+            '<div class="already-booked-text">' +
+            '<p><strong>You have a pass for this event (' + esc(STATUS[existing.status] || existing.status) + ').</strong></p>' +
+            '<p><a class="link-arrow" href="/bookings/' + esc(existing.id) + '">View your digital ticket pass &amp; venue details →</a></p>' +
+            '</div>';
+          tf.parentNode.insertBefore(bnr, tf);
+        }
+      });
+    }
   });
 })();
