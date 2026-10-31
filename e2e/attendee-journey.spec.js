@@ -4,7 +4,7 @@ import { expectAccessible, expectNoHorizontalOverflow } from './helpers.js';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const SHOT_DIR = process.env.ARTIFACT_IMG_DIR || path.resolve('/Users/pradeepjakuraa/.gemini/antigravity-cli/brain/7f74d945-b586-4b54-8d34-633de3b778cf/screenshots');
+const SHOT_DIR = process.env.ARTIFACT_IMG_DIR || path.resolve('test-results/screenshots');
 fs.mkdirSync(SHOT_DIR, { recursive: true });
 
 test.describe('Phase 3D Attendee Discovery, Booking & Mystery Venue Journey', () => {

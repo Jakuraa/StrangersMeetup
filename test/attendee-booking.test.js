@@ -12,17 +12,17 @@ test('seedDemo: seeds 4 synthetic preview events across nightlife, dinners, meet
   const n1 = await seedDemo({ e: { DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost/sm_e2e' } });
   assert.equal(n1, 4, 'first seed upserts 4 demo events');
 
-  // Verify all 4 categories exist
-  const cats = await db.query(`SELECT DISTINCT category FROM events WHERE is_demo = true`);
+  // Verify all 4 categories exist for sample preview events
+  const cats = await db.query(`SELECT DISTINCT category FROM events WHERE slug LIKE 'sample-%'`);
   const catList = cats.rows.map((r) => r.category);
   assert.ok(catList.includes('nightlife'), 'includes nightlife');
   assert.ok(catList.includes('dinner_club'), 'includes dinner_club');
   assert.ok(catList.includes('meetup'), 'includes meetup');
   assert.ok(catList.includes('weekend_trip'), 'includes weekend_trip');
 
-  // Verify free tiers exist for each
-  const tiers = await db.query(`SELECT t.* FROM ticket_types t JOIN events e ON e.id = t.event_id WHERE e.is_demo = true`);
-  assert.equal(tiers.rows.length, 4, 'all 4 demo events have active ticket tiers');
+  // Verify free tiers exist for each sample preview event
+  const tiers = await db.query(`SELECT t.* FROM ticket_types t JOIN events e ON e.id = t.event_id WHERE e.slug LIKE 'sample-%'`);
+  assert.equal(tiers.rows.length, 4, 'all 4 sample demo events have active ticket tiers');
   for (const t of tiers.rows) {
     assert.equal(t.kind, 'free', 'tier is free');
     assert.equal(t.price_paise, 0, 'free tier has 0 paise');
@@ -32,9 +32,9 @@ test('seedDemo: seeds 4 synthetic preview events across nightlife, dinners, meet
   // Idempotency check: running seed again does not duplicate events or tiers
   const n2 = await seedDemo({ e: { DATABASE_URL: process.env.DATABASE_URL || 'postgres://localhost/sm_e2e' } });
   assert.equal(n2, 4, 'second seed upserts 4 demo events idempotently');
-  const countAfter = await db.query(`SELECT count(*)::int AS n FROM events WHERE is_demo = true`);
+  const countAfter = await db.query(`SELECT count(*)::int AS n FROM events WHERE slug LIKE 'sample-%'`);
   assert.equal(countAfter.rows[0].n, 4, 'event count remains exactly 4');
-  const tiersAfter = await db.query(`SELECT count(*)::int AS n FROM ticket_types t JOIN events e ON e.id = t.event_id WHERE e.is_demo = true`);
+  const tiersAfter = await db.query(`SELECT count(*)::int AS n FROM ticket_types t JOIN events e ON e.id = t.event_id WHERE e.slug LIKE 'sample-%'`);
   assert.equal(tiersAfter.rows[0].n, 4, 'tier count remains exactly 4');
 });
 
@@ -133,8 +133,9 @@ test('attendee booking journey: free tier booking, confirmation, ticket pass, an
     const eventRow = await db.one(`SELECT id, slug FROM events WHERE slug = 'sample-bengaluru-indiranagar-rooftop-mixer'`);
     const tierRow = await db.one(`SELECT id FROM ticket_types WHERE event_id = $1 AND kind = 'free'`, [eventRow.id]);
 
-    // Clean up any previous test booking for this user and event
+    // Clean up any previous test booking and notifications for this user and event
     const userRow = await db.one(`SELECT id FROM users WHERE telegram_user_id = $1`, [REVIEWER_TG_ID]);
+    await db.query(`DELETE FROM notifications WHERE booking_id IN (SELECT id FROM bookings WHERE user_id = $1 AND event_id = $2)`, [userRow.id, eventRow.id]);
     await db.query(`DELETE FROM bookings WHERE user_id = $1 AND event_id = $2`, [userRow.id, eventRow.id]);
 
     // 3. Initiate and place free booking
@@ -175,3 +176,27 @@ test('attendee booking journey: free tier booking, confirmation, ticket pass, an
     process.env.IS_PREVIEW = origIsPreview;
   }
 });
+
+test('preview reviewer auth: rate limiting enforced after 30 requests per IP', async () => {
+  const c = new Client();
+  const origIsPreview = process.env.IS_PREVIEW;
+  try {
+    process.env.IS_PREVIEW = 'true';
+    await db.query(`DELETE FROM rate_limits WHERE key LIKE 'reviewer:%'`);
+
+    for (let i = 0; i < 30; i++) {
+      const res = await c.post('/api/auth/preview-reviewer', { next: '/events' }, { 'accept': 'application/json' });
+      assert.equal(res.status, 200, `request ${i + 1} succeeds`);
+    }
+
+    // 31st request triggers rate limiting (HTTP 429)
+    const rateLimitedRes = await c.post('/api/auth/preview-reviewer', { next: '/events' }, { 'accept': 'application/json' });
+    assert.equal(rateLimitedRes.status, 429, '31st request returns 429');
+    assert.equal(rateLimitedRes.json.error, 'rate_limited');
+    assert.ok(rateLimitedRes.headers.get('retry-after'), 'includes Retry-After header');
+  } finally {
+    process.env.IS_PREVIEW = origIsPreview;
+    await db.query(`DELETE FROM rate_limits WHERE key LIKE 'reviewer:%'`);
+  }
+});
+
