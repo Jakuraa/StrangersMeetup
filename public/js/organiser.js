@@ -119,34 +119,71 @@
      ===================================================================================== */
   function initManage(el) {
     var id = el.getAttribute('data-org-manage');
+    var activeFilter = 'all';
     function load() {
       api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/guests').then(function (r) {
         if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load this event.') + '</p>'; return; }
         var e = r.event;
         var url = absolute(e.path);
-        var seats = 0, reqs = 0;
-        r.guests.forEach(function (g) { if (g.status === 'confirmed' || g.status === 'checked_in') seats += g.quantity; if (g.status === 'pending_approval') reqs++; });
+        var seats = 0, reqs = 0, declined = 0;
+        r.guests.forEach(function (g) {
+          if (g.status === 'confirmed' || g.status === 'checked_in') seats += g.quantity;
+          if (g.status === 'pending_approval') reqs++;
+          if (g.status === 'declined') declined++;
+        });
         var h = '<p class="eyebrow">Manage event</p><h1 class="org-title">' + esc(e.title) + '</h1>' +
           '<p class="muted">' + esc(fmtInstant(e.startAt)) + ' · ' + esc(e.status) + '</p>' +
           '<div class="share-row"><input class="share-url" readonly value="' + esc(url) + '" aria-label="Public link">' +
           '<button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(url) + '">Copy link</button>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-share="' + esc(url) + '" data-title="' + esc(e.title) + '">Share</button>' +
           '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '">View page</a></div>' +
-          '<p><strong>' + seats + '</strong> of ' + esc(e.capacity) + ' tickets confirmed' + (e.requiresApproval ? ' · <strong>' + reqs + '</strong> waiting for approval' : '') + '</p>';
-        if (!r.guests.length) h += '<p class="muted">No bookings yet. Share your link to get started.</p>';
-        else h += '<ul class="guest-list">' + r.guests.map(function (g) {
-          var answers = r.questions.filter(function (q) { return g.answers[q.id] != null; }).map(function (q) {
-            var v = g.answers[q.id];
-            return '<div><dt>' + esc(q.label) + '</dt><dd>' + esc(Array.isArray(v) ? v.join(', ') : v) + '</dd></div>';
-          }).join('');
-          return '<li class="guest"><div class="guest-head"><p class="org-item-title">' + esc(g.alias) + ' <span class="muted">#' + esc(g.ref) + '</span></p>' +
-            '<span class="pill pill-' + esc(g.status) + '">' + esc(STATUS[g.status] || g.status) + '</span></div>' +
-            '<p class="muted">' + esc(g.ticket || 'Ticket') + ' × ' + esc(g.quantity) + ' · ' + esc(PAY[g.paymentStatus] || g.paymentStatus) + (g.pickup ? ' · Pickup: ' + esc(g.pickup) : '') + ' · Requested ' + esc(ago(g.createdAt)) + '</p>' +
-            (answers ? '<dl class="answers">' + answers + '</dl>' : '') +
-            (g.status === 'pending_approval' ? '<div class="org-item-actions"><button class="btn btn-sm btn-primary" type="button" data-decide="approve" data-id="' + esc(g.id) + '">Approve</button>' +
-              '<button class="btn btn-sm btn-ghost" type="button" data-decide="decline" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Decline</button></div>' : '') +
-            '</li>';
-        }).join('') + '</ul>';
+          '<div class="org-stats-bar">' +
+          '<div class="org-stat-item"><span class="org-stat-val">' + seats + '</span><span class="org-stat-lbl">Confirmed Seats</span></div>' +
+          '<div class="org-stat-item"><span class="org-stat-val">' + esc(e.capacity) + '</span><span class="org-stat-lbl">Total Capacity</span></div>' +
+          (e.requiresApproval ? '<div class="org-stat-item"><span class="org-stat-val">' + reqs + '</span><span class="org-stat-lbl">Pending Requests</span></div>' : '') +
+          '</div>';
+
+        if (!r.guests.length) {
+          h += '<div class="empty-state org-empty-state">' +
+            '<div class="empty-state-icon" aria-hidden="true">👥</div>' +
+            '<p class="empty-state-title">No bookings yet</p>' +
+            '<p class="muted">Share your event link to start receiving attendee bookings.</p>' +
+            '<div class="empty-state-actions">' +
+            '<button class="btn btn-sm btn-outline-cyan" type="button" data-copy="' + esc(url) + '">Copy Event Link</button>' +
+            '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '" target="_blank">View Live Event</a>' +
+            '</div></div>';
+        } else {
+          var filtered = r.guests.filter(function (g) {
+            if (activeFilter === 'confirmed') return g.status === 'confirmed' || g.status === 'checked_in';
+            if (activeFilter === 'pending') return g.status === 'pending_approval';
+            if (activeFilter === 'declined') return g.status === 'declined';
+            return true;
+          });
+          h += '<div class="org-guest-filters">' +
+            '<button class="org-filter-btn' + (activeFilter === 'all' ? ' active' : '') + '" type="button" data-filter="all">All Guests (' + r.guests.length + ')</button>' +
+            '<button class="org-filter-btn' + (activeFilter === 'confirmed' ? ' active' : '') + '" type="button" data-filter="confirmed">Confirmed (' + seats + ')</button>' +
+            (e.requiresApproval ? '<button class="org-filter-btn' + (activeFilter === 'pending' ? ' active' : '') + '" type="button" data-filter="pending">Pending Approval (' + reqs + ')</button>' : '') +
+            (declined > 0 ? '<button class="org-filter-btn' + (activeFilter === 'declined' ? ' active' : '') + '" type="button" data-filter="declined">Declined (' + declined + ')</button>' : '') +
+            '</div>';
+
+          if (!filtered.length) {
+            h += '<p class="muted">No guests match this filter.</p>';
+          } else {
+            h += '<ul class="guest-list">' + filtered.map(function (g) {
+              var answers = r.questions.filter(function (q) { return g.answers[q.id] != null; }).map(function (q) {
+                var v = g.answers[q.id];
+                return '<div><dt>' + esc(q.label) + '</dt><dd>' + esc(Array.isArray(v) ? v.join(', ') : v) + '</dd></div>';
+              }).join('');
+              return '<li class="guest"><div class="guest-head"><p class="org-item-title">' + esc(g.alias) + ' <span class="muted">#' + esc(g.ref) + '</span></p>' +
+                '<span class="pill pill-' + esc(g.status) + '">' + esc(STATUS[g.status] || g.status) + '</span></div>' +
+                '<p class="muted">' + esc(g.ticket || 'Ticket') + ' × ' + esc(g.quantity) + ' · ' + esc(PAY[g.paymentStatus] || g.paymentStatus) + (g.pickup ? ' · Pickup: ' + esc(g.pickup) : '') + ' · Requested ' + esc(ago(g.createdAt)) + '</p>' +
+                (answers ? '<dl class="answers">' + answers + '</dl>' : '') +
+                (g.status === 'pending_approval' ? '<div class="org-item-actions"><button class="btn btn-sm btn-primary" type="button" data-decide="approve" data-id="' + esc(g.id) + '">Approve</button>' +
+                  '<button class="btn btn-sm btn-ghost" type="button" data-decide="decline" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Decline</button></div>' : '') +
+                '</li>';
+            }).join('') + '</ul>';
+          }
+        }
         h += '<p class="form-msg" data-manage-msg role="status" aria-live="polite"></p><p><a class="link-arrow" href="/organiser">All your events</a></p>';
         el.innerHTML = h;
       });
@@ -154,6 +191,11 @@
     el.addEventListener('click', function (ev) {
       var b = ev.target.closest('button');
       if (!b) return;
+      if (b.hasAttribute('data-filter')) {
+        activeFilter = b.getAttribute('data-filter');
+        load();
+        return;
+      }
       if (b.hasAttribute('data-copy')) return copyText(b.getAttribute('data-copy'), b);
       if (b.hasAttribute('data-share')) return share(b.getAttribute('data-title'), b.getAttribute('data-share'), b);
       var d = b.getAttribute('data-decide');

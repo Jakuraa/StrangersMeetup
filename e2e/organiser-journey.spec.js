@@ -155,5 +155,16 @@ test.describe('Phase 3H Organiser Onboarding, Wizard & Dashboard Journey', () =>
     await expect(visitor.locator('body')).not.toContainText('Secret Penthouse');
     await expect(visitor.locator('.badge-mystery')).toBeVisible();
     await visitor.close();
+
+    // Verify Organiser Manage Page: stats bar and empty guest state
+    await page.goto('/organiser');
+    await expect(page.locator('.org-item').filter({ hasText: title })).toBeVisible({ timeout: 10_000 });
+    await page.locator('.org-item').filter({ hasText: title }).getByRole('link', { name: 'Manage' }).click();
+    await expect(page.locator('.org-manage')).toBeVisible();
+    await expect(page.locator('.org-stats-bar')).toBeVisible();
+    await expect(page.locator('.org-empty-state')).toBeVisible();
+    await expect(page.locator('.org-empty-state')).toContainText('No bookings yet');
+
+    await page.screenshot({ path: path.join(SHOT_DIR, 'phase3k-organiser-manage-empty.png') });
   });
 });
