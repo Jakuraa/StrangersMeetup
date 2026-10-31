@@ -115,9 +115,12 @@ p { margin: 0 0 1em; }
   .nav-toggle { display: inline-flex; }
   .mobile-cta-wrap { display: block; padding: 12px var(--gutter) 8px; border-bottom: 1px solid var(--line); }
 }
+.mobile-search-wrap { display: none; }
 @media (max-width: 768px) {
   .header-center { display: none; }
   .header-list-cta { display: none; }
+  .mobile-search-wrap { display: block; padding: 10px var(--gutter) 8px; border-bottom: 1px solid var(--line); }
+  .mobile-search-wrap .header-search { max-width: 100%; width: 100%; }
 }
 @media (max-width: 600px) {
   .header-left .header-location { display: none; }
@@ -221,8 +224,13 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .card-body { padding: 18px 20px 20px; display: flex; flex-direction: column; flex: 1; }
 .card-meta { display: flex; gap: 12px; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
 .card-title { font-size: 1.2rem; margin-bottom: 6px; }
-.card-title a { text-decoration: none; }
-.card-title a::after { content: ""; }
+.card-title a { text-decoration: none; color: inherit; }
+/* Stretched card link from Modern Web Guidance */
+.card:has(a.card-link) { position: relative; }
+.card a.card-link::after { content: ""; position: absolute; inset: 0; z-index: 1; }
+.card a.card-link:focus-visible { outline: none; }
+.card:has(a.card-link:focus-visible) { outline: 2px solid var(--neon-cyan); outline-offset: 2px; }
+.card a:not(.card-link), .card button, .card input, .card select { position: relative; z-index: 2; }
 .card-when { font-size: .92rem; color: var(--ink-2); margin-bottom: 8px; }
 .card-incl { font-size: .88rem; color: var(--muted); margin-bottom: 10px; }
 .card-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -237,8 +245,20 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .badge { font-size: .74rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--alt); border: 1px solid var(--line); color: var(--ink-2); }
 .badge-sample { background: #fff6d6; border-color: #ead9a0; color: #6a5410; }
 
-.empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 32px 24px; text-align: center; background: var(--surface); }
+.empty { border: 1px dashed var(--line); border-radius: var(--radius); padding: 36px 24px; text-align: center; background: var(--surface); }
 .empty p:first-child { font-weight: 600; font-size: 1.05rem; }
+.empty-suggestions { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.empty-suggest-title { font-size: 0.88rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
+.empty-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 16px; }
+.empty-action-note { font-size: 0.88rem; color: var(--muted); margin: 0; }
+.search-notice { background: rgba(0, 217, 255, 0.08); border: 1px solid rgba(0, 217, 255, 0.25); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px; font-size: 0.92rem; }
+.search-notice p { margin: 0; color: #fff; }
+.search-notice strong { color: var(--neon-cyan); }
+.clear-search { color: var(--neon-cyan); margin-left: 8px; font-weight: 600; text-decoration: underline; }
+.filter-clear { margin-left: 4px; }
+.preview-signin-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; margin-bottom: 24px; text-align: center; }
+.preview-signin-card p { margin-bottom: 12px; }
+.preview-signin-actions { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
 
 /* Steps */
 .steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; counter-reset: s; }
@@ -637,4 +657,5 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   .header-location { min-height: 44px; }
   .header-location select { min-height: 44px; }
   .cat-pill { min-height: 44px; }
+  .header-search input { min-height: 44px; }
 }
