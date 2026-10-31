@@ -412,13 +412,17 @@
         if (b.mapsUrl) facts += '<div><dt>Map</dt><dd><a href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener nofollow">Open in Maps</a></dd></div>';
         if (facts) html += '<dl>' + facts + '</dl>';
         if (b.status === 'pending_approval') {
+          html += '<div class="mystery-venue-card"><p><span class="mystery-badge-icon" aria-hidden="true">🔒</span> <strong>Mystery Venue:</strong> The exact address will be unlocked here once your booking is approved by the host.</p></div>';
           html += '<p>The host reviews each request. You’ll get a Telegram message when they decide — nothing is charged before then.</p>';
         } else if (b.status === 'declined') {
           html += '<p>The host couldn’t accept your request this time. You have not been charged.</p>';
         } else if (b.status === 'pending_payment') {
           html += '<p>We are waiting for SuperProfile to confirm your payment. If you already paid, send <strong>/claim</strong> to our Telegram bot with your SuperProfile order ID.</p>';
         } else if (b.status === 'confirmed' || b.status === 'checked_in') {
-          html += '<p><strong>You are in.</strong> ' + (b.venue ? 'Venue: ' + esc(b.venue) + '. ' : '') + (b.ticket ? 'Your confirmation is sent by our Telegram bot.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
+          if (b.venue) {
+            html += '<div class="unlocked-venue-card"><div class="unlocked-venue-badge"><span class="unlocked-icon" aria-hidden="true">🔓</span> <strong>Venue Unlocked</strong></div><p class="unlocked-venue-addr">' + esc(b.venue) + '</p>' + (b.mapsUrl ? '<p><a class="btn btn-outline-cyan btn-sm" href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a></p>' : '') + '</div>';
+          }
+          html += '<p><strong>You are in.</strong> ' + (b.ticket ? 'Your booking pass is confirmed.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
           if (b.invite) html += '<p><a class="btn btn-tg" href="' + safeUrl(b.invite.link) + '" rel="noopener">Join the private group</a></p><p class="muted">Single-use invite, valid until ' + esc(fmt(b.invite.expiresAt)) + '.</p>';
           if (BOT) html += '<p><a class="link-arrow" href="https://t.me/' + esc(BOT) + '?start=booking_' + esc(b.id) + '">Open the bot to get a fresh invite</a></p>';
         } else if (b.status === 'refunded') {
@@ -486,8 +490,179 @@
         var url = new URL(location.href);
         if (val) url.searchParams.set('city', val);
         else url.searchParams.delete('city');
-        location.href = url.pathname + url.search;
+        if (typeof window.__smLoadDiscovery === 'function') {
+          window.__smLoadDiscovery(url.pathname + url.search, true);
+        } else {
+          location.href = url.pathname + url.search;
+        }
       });
+    });
+  }
+
+  /* ---------- instant attendee discovery (progressive enhancement) ---------- */
+  function initInstantDiscovery() {
+    var feed = $('[data-discovery-feed]');
+    if (!feed) return;
+
+    var announcer = $('[data-discovery-announcer]');
+    if (!announcer) {
+      announcer = document.createElement('div');
+      announcer.setAttribute('data-discovery-announcer', '1');
+      announcer.setAttribute('role', 'status');
+      announcer.setAttribute('aria-live', 'polite');
+      announcer.className = 'sr-only';
+      feed.prepend(announcer);
+    }
+
+    var debounceTimer = null;
+    function announce(msg) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () {
+        announcer.textContent = msg;
+      }, 150);
+    }
+
+    var activeAbort = null;
+
+    function loadDiscoveryUrl(url, push) {
+      if (activeAbort && activeAbort.abort) activeAbort.abort();
+      activeAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+      var results = $('[data-discovery-results]', feed);
+      if (results) results.classList.add('is-loading');
+
+      var fetchOptions = {
+        headers: { 'Accept': 'text/html' }
+      };
+      if (activeAbort) fetchOptions.signal = activeAbort.signal;
+
+      fetch(url, fetchOptions).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+      }).then(function (htmlStr) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(htmlStr, 'text/html');
+
+        var newFeed = doc.querySelector('[data-discovery-feed]');
+        if (!newFeed) { location.href = url; return; }
+
+        var updateDOM = function () {
+          // Update search notice banner
+          var oldNotice = feed.querySelector('.search-notice');
+          var newNotice = newFeed.querySelector('.search-notice');
+          if (oldNotice && newNotice) oldNotice.replaceWith(newNotice);
+          else if (oldNotice && !newNotice) oldNotice.remove();
+          else if (!oldNotice && newNotice) {
+            var formEl = feed.querySelector('[data-filters]');
+            if (formEl) formEl.before(newNotice);
+            else feed.prepend(newNotice);
+          }
+
+          // Update filters form values
+          var oldFilters = feed.querySelector('[data-filters]');
+          var newFilters = newFeed.querySelector('[data-filters]');
+          if (oldFilters && newFilters) {
+            oldFilters.innerHTML = newFilters.innerHTML;
+          }
+
+          // Update results grid
+          var oldResults = feed.querySelector('[data-discovery-results]');
+          var newResults = newFeed.querySelector('[data-discovery-results]');
+          if (oldResults && newResults) {
+            oldResults.innerHTML = newResults.innerHTML;
+            oldResults.classList.remove('is-loading');
+          }
+        };
+
+        if (document.startViewTransition && !reduce) {
+          var transition = document.startViewTransition(updateDOM);
+          transition.finished.finally(function () {
+            var resultsHeading = feed.querySelector('h1, h2');
+            if (resultsHeading && document.activeElement === document.body) {
+              resultsHeading.setAttribute('tabindex', '-1');
+              resultsHeading.focus();
+            }
+          });
+        } else {
+          updateDOM();
+        }
+
+        // Update document title
+        if (doc.title) document.title = doc.title;
+
+        // Push state if requested
+        if (push) {
+          history.pushState({ url: url }, '', url);
+        }
+
+        // Sync header city selector
+        var currentCity = new URL(url, location.origin).searchParams.get('city') || '';
+        $$('[data-header-city]').forEach(function (sel) {
+          sel.value = currentCity;
+        });
+
+        // Accessible announcement
+        var count = feed.querySelectorAll('.card').length;
+        if (count > 0) {
+          announce(count + ' upcoming event' + (count === 1 ? '' : 's') + ' found.');
+        } else {
+          announce('No upcoming events found matching your filters.');
+        }
+
+        bindFilterEvents();
+      }).catch(function (err) {
+        if (err.name === 'AbortError') return;
+        location.href = url;
+      });
+    }
+
+    window.__smLoadDiscovery = loadDiscoveryUrl;
+
+    function onFilterChange() {
+      var form = feed.querySelector('[data-filters]');
+      if (!form) return;
+      var fd = new FormData(form);
+      var params = new URLSearchParams();
+      fd.forEach(function (v, k) {
+        if (v && v.trim()) params.set(k, v.trim());
+      });
+      var action = form.getAttribute('action') || '/events';
+      var newUrl = action + (params.toString() ? '?' + params.toString() : '');
+      loadDiscoveryUrl(newUrl, true);
+    }
+
+    function bindFilterEvents() {
+      var form = feed.querySelector('[data-filters]');
+      if (!form) return;
+      if (!form.getAttribute('data-async-bound')) {
+        form.setAttribute('data-async-bound', '1');
+        form.addEventListener('change', function (ev) {
+          if (ev.target && (ev.target.name === 'city' || ev.target.name === 'category' || ev.target.name === 'when')) {
+            onFilterChange();
+          }
+        });
+        form.addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          onFilterChange();
+        });
+      }
+
+      var clearLinks = feed.querySelectorAll('.clear-search, .filter-clear');
+      clearLinks.forEach(function (a) {
+        if (!a.getAttribute('data-async-bound')) {
+          a.setAttribute('data-async-bound', '1');
+          a.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            loadDiscoveryUrl(a.getAttribute('href'), true);
+          });
+        }
+      });
+    }
+
+    bindFilterEvents();
+
+    window.addEventListener('popstate', function () {
+      loadDiscoveryUrl(location.href, false);
     });
   }
 
@@ -522,6 +697,8 @@
     carousel.addEventListener('mouseleave', startTimer);
     startTimer();
   }
+
+  initInstantDiscovery();
 
   miniApp().then(refreshMe).then(function () {
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);

@@ -7,9 +7,13 @@ export default async function globalSetup() {
   Object.assign(process.env, { SKIP_DOTENV: 'true', DATABASE_URL: serverEnv.DATABASE_URL, LOG_SILENT: 'true' });
   const { db, migrate } = await import('../lib/db.js');
   const { seedLocal } = await import('../scripts/seed-local.js');
+  const { seedDemo } = await import('../scripts/seed-demo.js');
   try {
     await migrate({ log: false });
+    await db.query('DELETE FROM reports');
+    await db.query('DELETE FROM leads');
     await seedLocal();
+    await seedDemo();
     // Rate-limit windows outlive a re-seed; back-to-back runs would otherwise hit "Too many requests".
     await db.query('DELETE FROM rate_limits');
   } finally {
