@@ -92,15 +92,26 @@ test.describe('Phase 3D Attendee Discovery, Booking & Mystery Venue Journey', ()
     await expect(page.locator('.booking-notice')).toContainText('You already hold a pass for this event');
     await expect(page.locator('.unlocked-venue-card')).toBeVisible();
 
-    // 8. Attendee Booking History (/me)
+    // 8. Attendee Booking History (/me) & Safety Controls
     await page.goto('/me');
     await expectNoHorizontalOverflow(page);
     await expect(page.locator('.booking-list')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.booking-list')).toContainText('Indiranagar Rooftop Social & Cocktails');
     await expect(page.locator('.booking-card-item')).toBeVisible();
     await expect(page.locator('a:has-text("View Pass & Venue")')).toBeVisible();
+    await expect(page.locator('.safety-settings-card')).toBeVisible();
 
     await page.screenshot({ path: path.join(SHOT_DIR, 'phase3d-attendee-my-bookings.png'), fullPage: false });
+
+    // 9. Confidential Safety Reporting Flow (/trust-safety)
+    await page.goto('/trust-safety');
+    await expectNoHorizontalOverflow(page);
+    await expect(page.locator('.safety-form')).toBeVisible({ timeout: 10_000 });
+    await page.locator('select[name="category"]').selectOption('harassment');
+    await page.locator('textarea[name="body"]').fill('Observed disruptive behaviour during social mixer. Please review.');
+    await page.locator('form.safety-form button[type="submit"]').click();
+    await expect(page.locator('.form-msg.ok')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.form-msg.ok')).toContainText('Your report has been submitted to moderators');
   });
 
   test('mobile responsive viewports: 320px, 375px, 430px', async ({ page }) => {

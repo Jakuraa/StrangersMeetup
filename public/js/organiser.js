@@ -174,12 +174,19 @@
                 var v = g.answers[q.id];
                 return '<div><dt>' + esc(q.label) + '</dt><dd>' + esc(Array.isArray(v) ? v.join(', ') : v) + '</dd></div>';
               }).join('');
+              var actions = '';
+              if (g.status === 'pending_approval') {
+                actions += '<button class="btn btn-sm btn-primary" type="button" data-decide="approve" data-id="' + esc(g.id) + '">Approve</button>' +
+                  '<button class="btn btn-sm btn-ghost" type="button" data-decide="decline" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Decline</button>';
+              }
+              if (g.userId) {
+                actions += '<button class="btn btn-sm btn-ghost" type="button" data-guest-block="' + esc(g.userId) + '" data-blocked="' + (g.isBlocked ? '1' : '0') + '">' + (g.isBlocked ? 'Unblock' : 'Block') + '</button>';
+              }
               return '<li class="guest"><div class="guest-head"><p class="org-item-title">' + esc(g.alias) + ' <span class="muted">#' + esc(g.ref) + '</span></p>' +
                 '<span class="pill pill-' + esc(g.status) + '">' + esc(STATUS[g.status] || g.status) + '</span></div>' +
                 '<p class="muted">' + esc(g.ticket || 'Ticket') + ' × ' + esc(g.quantity) + ' · ' + esc(PAY[g.paymentStatus] || g.paymentStatus) + (g.pickup ? ' · Pickup: ' + esc(g.pickup) : '') + ' · Requested ' + esc(ago(g.createdAt)) + '</p>' +
                 (answers ? '<dl class="answers">' + answers + '</dl>' : '') +
-                (g.status === 'pending_approval' ? '<div class="org-item-actions"><button class="btn btn-sm btn-primary" type="button" data-decide="approve" data-id="' + esc(g.id) + '">Approve</button>' +
-                  '<button class="btn btn-sm btn-ghost" type="button" data-decide="decline" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Decline</button></div>' : '') +
+                (actions ? '<div class="org-item-actions">' + actions + '</div>' : '') +
                 '</li>';
             }).join('') + '</ul>';
           }
@@ -198,6 +205,20 @@
       }
       if (b.hasAttribute('data-copy')) return copyText(b.getAttribute('data-copy'), b);
       if (b.hasAttribute('data-share')) return share(b.getAttribute('data-title'), b.getAttribute('data-share'), b);
+      if (b.hasAttribute('data-guest-block')) {
+        var uid = b.getAttribute('data-guest-block');
+        var isBlk = b.getAttribute('data-blocked') === '1';
+        b.disabled = true;
+        var act = isBlk ? api('DELETE', '/api/me/blocks/' + encodeURIComponent(uid)) : api('POST', '/api/me/blocks', { blockedUserId: uid });
+        act.then(function () {
+          load();
+        }).catch(function (err) {
+          b.disabled = false;
+          var m = $('[data-manage-msg]', el);
+          if (m) { m.className = 'form-msg error'; m.textContent = err.message || 'Action failed.'; }
+        });
+        return;
+      }
       var d = b.getAttribute('data-decide');
       if (!d) return;
       if (d === 'decline' && !window.confirm('Decline ' + b.getAttribute('data-name') + '’s request? They will be told it wasn’t accepted.')) return;

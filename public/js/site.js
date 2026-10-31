@@ -491,6 +491,7 @@
           '<a class="btn btn-primary btn-sm" href="/me">View All My Bookings</a>' +
           '<a class="btn btn-outline-cyan btn-sm" href="/events">Explore More Events</a>' +
           (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Back to Event</a>' : '') +
+          (b.eventId ? '<a class="btn btn-ghost btn-sm" href="/trust-safety?event=' + esc(b.eventId) + '#report">Report an Issue</a>' : '') +
           '</div>';
 
         el.innerHTML = html;
@@ -542,6 +543,102 @@
         });
       });
     });
+  }
+
+  /* ---------- safety reporting & user blocking ---------- */
+  function renderSafetyReport(el) {
+    var params = new URLSearchParams(location.search);
+    var prefillEvent = params.get('event') || '';
+    if (!state.me) {
+      el.innerHTML = '<div class="safety-box">' +
+        '<h3>Submit a Confidential Safety Report</h3>' +
+        '<p class="muted">To submit a confidential report online, please <a class="link-cyan" href="/signin">sign in with Telegram</a> first. You can also send <code>/report</code> to our Telegram bot or email <a href="mailto:contact@strangersmeetup.com">contact@strangersmeetup.com</a>. If you are in immediate danger, call 112.</p>' +
+        '</div>';
+      return;
+    }
+    el.innerHTML = '<form class="lead-form safety-form" data-report-form>' +
+      '<h3>Submit a Confidential Safety Report</h3>' +
+      '<p class="muted">Reports are confidential and reviewed directly by platform moderators. If you are in immediate danger, call 112.</p>' +
+      '<label class="field"><span>Reason for report</span><select name="category" required>' +
+      '<option value="">Select a reason</option>' +
+      '<option value="harassment">Harassment or abusive behaviour</option>' +
+      '<option value="fraud_suspicious">Suspicious or fraudulent event</option>' +
+      '<option value="unwanted_contact">Unwanted contact or messaging</option>' +
+      '<option value="safety_concern">Safety concern at an event</option>' +
+      '<option value="policy_violation">Conduct or policy violation</option>' +
+      '<option value="other">Other safety concern</option>' +
+      '</select></label>' +
+      '<label class="field"><span>Details (required)</span><textarea name="body" rows="4" minlength="10" maxlength="3000" placeholder="Please describe what happened, when, and where. Include any names, handles or relevant details..." required></textarea></label>' +
+      (prefillEvent ? '<input type="hidden" name="eventId" value="' + esc(prefillEvent) + '">' : '') +
+      '<button class="btn btn-primary" type="submit">Submit Confidential Report</button>' +
+      '<p class="form-msg" role="status" aria-live="polite" data-report-msg></p>' +
+      '</form>';
+
+    var form = $('[data-report-form]', el);
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var btn = $('button[type=submit]', form);
+      var msg = $('[data-report-msg]', form);
+      var category = form.category.value;
+      var body = form.body.value;
+      var eventId = form.eventId ? form.eventId.value : null;
+      btn.disabled = true;
+      msg.className = 'form-msg';
+      msg.textContent = 'Submitting report…';
+      api('POST', '/api/reports', { category: category, body: body, eventId: eventId || null }).then(function (r) {
+        if (!r.ok) {
+          btn.disabled = false;
+          msg.className = 'form-msg error';
+          msg.textContent = r.message || 'Could not submit report. Please try again.';
+          return;
+        }
+        form.reset();
+        btn.disabled = false;
+        msg.className = 'form-msg ok';
+        msg.textContent = 'Thank you. Your report has been submitted to moderators and will be reviewed confidentially.';
+      }).catch(function (err) {
+        btn.disabled = false;
+        msg.className = 'form-msg error';
+        msg.textContent = err.message || 'Network error. Please try again.';
+      });
+    });
+  }
+
+  function renderSafetySettings(el) {
+    function loadBlocks() {
+      api('GET', '/api/me/blocks').then(function (r) {
+        if (!r.ok) return;
+        var blocks = r.blocks || [];
+        var html = '<div class="safety-settings-card">' +
+          '<h2>Safety &amp; Blocked Users</h2>' +
+          '<p class="muted">Blocked users cannot book your hosted events and you will not see their events.</p>';
+        if (!blocks.length) {
+          html += '<p class="muted small">You have not blocked any users.</p>';
+        } else {
+          html += '<ul class="blocked-users-list">' + blocks.map(function (b) {
+            return '<li class="blocked-user-item">' +
+              '<div><strong>' + esc(b.alias) + '</strong> <span class="muted small">· Blocked ' + esc(fmt(b.createdAt)) + '</span></div>' +
+              '<button class="btn btn-ghost btn-sm" type="button" data-unblock-id="' + esc(b.blockedUserId) + '">Unblock</button>' +
+              '</li>';
+          }).join('') + '</ul>';
+        }
+        html += '<div class="safety-actions">' +
+          '<a class="btn btn-outline-cyan btn-sm" href="/trust-safety#report">Submit a Safety Report</a>' +
+          '</div></div>';
+        el.innerHTML = html;
+
+        $$('[data-unblock-id]', el).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var uid = btn.getAttribute('data-unblock-id');
+            btn.disabled = true;
+            api('DELETE', '/api/me/blocks/' + encodeURIComponent(uid)).then(function () {
+              loadBlocks();
+            });
+          });
+        });
+      });
+    }
+    loadBlocks();
   }
 
   /* ---------- header location selector (desktop + mobile) ---------- */
@@ -769,6 +866,8 @@
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
     var mb = $('[data-my-bookings]'); if (mb) renderBookings(mb);
     var bs = $('[data-booking-status]'); if (bs) renderStatus(bs);
+    var sr = $('[data-safety-report]'); if (sr) renderSafetyReport(sr);
+    var ss = $('[data-safety-settings]'); if (ss && state.me) renderSafetySettings(ss);
     var tf = $('form[data-tier-form]');
     if (tf && state.me) {
       api('GET', '/api/me/bookings').then(function (r) {
