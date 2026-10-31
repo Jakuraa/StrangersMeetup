@@ -109,6 +109,13 @@ test('events without a SuperProfile product, closed or unknown events never redi
   await db.query(`UPDATE events SET start_at = now() - interval '3 days', end_at = now() - interval '2 days' WHERE id = $1`, [past.id]);
   assert.equal((await new Client().get(`/checkout/${past.slug}`)).status, 404);
   assert.equal((await new Client().get('/checkout/Not_A_Slug!')).status, 404);
+  // A multi-day trip that has started but not ended: the page already shows it as past, so the
+  // checkout link must not still sell it (same rule as free tiers: closed once it starts).
+  const running = await spEvent();
+  await db.query(`UPDATE events SET start_at = now() - interval '1 day', end_at = now() + interval '2 days' WHERE id = $1`, [running.id]);
+  const before = (await db.query(`SELECT count(*)::int AS n FROM checkout_intents WHERE event_id = $1`, [running.id])).rows[0].n;
+  assert.equal((await new Client().get(`/checkout/${running.slug}`)).status, 404);
+  assert.equal((await db.query(`SELECT count(*)::int AS n FROM checkout_intents WHERE event_id = $1`, [running.id])).rows[0].n, before, 'no intent recorded');
 });
 
 test('SuperProfile URL allowlist: https and superprofile.bio hosts only', async () => {
@@ -581,7 +588,7 @@ test('admin event form: SuperProfile product ids are unique and changes are audi
 // ---------------- provider removal ----------------
 
 test('Razorpay and Cashfree are gone from code, config, UI and docs', () => {
-  const skip = new Set(['node_modules', '.git', '.next', '.vercel', 'playwright-report', 'test-results', 'test', 'migrations']);
+  const skip = new Set(['node_modules', '.git', '.next', '.vercel', 'playwright-report', 'test-results', 'test', 'migrations', '.claude', '.remember', '.agents']);
   const hits = [];
   const walk = (dir) => {
     for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

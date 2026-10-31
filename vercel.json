@@ -4,6 +4,7 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "trailingSlash": false,
+  "ignoreCommand": "node scripts/vercel-ignore.js",
   "functions": {
     "api/index.js": { "maxDuration": 30 }
   },

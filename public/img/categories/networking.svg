@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#142338"/>
+      <stop offset="50%" stop-color="#1e3a5f"/>
+      <stop offset="85%" stop-color="#38547a"/>
+      <stop offset="100%" stop-color="#4d6b94"/>
+    </linearGradient>
+    <radialGradient id="twilight" cx="50%" cy="80%" r="50%">
+      <stop offset="0%" stop-color="#fdba74" stop-opacity="0.6"/>
+      <stop offset="40%" stop-color="#f472b6" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#38547a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#sky)"/>
+  <circle cx="320" cy="240" r="180" fill="url(#twilight)"/>
+  <!-- Distant City Skyline Silhouettes -->
+  <polygon points="60,200 90,200 90,300 60,300" fill="#0d1826" opacity="0.7"/>
+  <polygon points="110,160 150,160 150,300 110,300" fill="#0d1826" opacity="0.8"/>
+  <polygon points="170,180 210,180 210,300 170,300" fill="#0d1826" opacity="0.75"/>
+  <polygon points="230,130 270,130 270,300 230,300" fill="#09121d" opacity="0.9"/>
+  <polygon points="290,170 330,170 330,300 290,300" fill="#0d1826" opacity="0.8"/>
+  <polygon points="350,140 390,140 390,300 350,300" fill="#09121d" opacity="0.95"/>
+  <polygon points="410,190 440,190 440,300 410,300" fill="#0d1826" opacity="0.75"/>
+  <polygon points="460,150 500,150 500,300 460,300" fill="#09121d" opacity="0.85"/>
+  <polygon points="520,180 560,180 560,300 520,300" fill="#0d1826" opacity="0.7"/>
+  <!-- Windows glowing dots -->
+  <circle cx="250" cy="160" r="1.5" fill="#fef08a"/>
+  <circle cx="250" cy="180" r="1.5" fill="#fef08a"/>
+  <circle cx="370" cy="165" r="1.5" fill="#fef08a"/>
+  <circle cx="370" cy="185" r="1.5" fill="#fef08a"/>
+  <circle cx="480" cy="175" r="1.5" fill="#fef08a"/>
+  <!-- Rooftop terrace glass railing and ambient deck -->
+  <polygon points="0,270 640,270 640,360 0,360" fill="#060c14"/>
+  <line x1="0" y1="270" x2="640" y2="270" stroke="#38bdf8" stroke-width="2" opacity="0.4"/>
+</svg>

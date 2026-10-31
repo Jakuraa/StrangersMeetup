@@ -1,15 +1,15 @@
 .admin-body { background: var(--alt); }
 .admin-gate { padding: 80px var(--gutter); }
 .admin { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
-.admin-nav { background: var(--ink); color: #e9e3dc; padding: 20px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+.admin-nav { background: #090B16; border-right: 1px solid var(--line); color: #e2e4f0; padding: 20px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
 .admin-nav .logo { color: #fff; margin-bottom: 4px; }
 /* The "Sections" toggle exists only at phone/tablet widths; on desktop the section list is always shown. */
 .admin-nav-toggle { display: none; }
-.admin-role { color: #b9afa5; text-transform: capitalize; font-size: .85rem; }
+.admin-role { color: #8E92B2; text-transform: capitalize; font-size: .85rem; }
 .admin-nav nav { display: grid; gap: 2px; margin-top: 16px; }
 /* Scoped to the section list so the toggle keeps its own button styling. */
-#admin-sections button { all: unset; cursor: pointer; padding: 9px 10px; border-radius: 8px; font-size: .92rem; }
-#admin-sections button:hover, #admin-sections button[aria-current="page"] { background: #3a3530; color: #fff; }
+#admin-sections button { all: unset; cursor: pointer; padding: 9px 10px; border-radius: 8px; font-size: .92rem; color: #e2e4f0; }
+#admin-sections button:hover, #admin-sections button[aria-current="page"] { background: #1A1D33; color: var(--neon-cyan, #00D9FF); }
 /* `all: unset` above removes the default focus ring; the nav is dark, so the ring is white. */
 #admin-sections button:focus-visible, .admin-nav .admin-nav-toggle:focus-visible, .admin-nav a:focus-visible { outline: 3px solid #fff; outline-offset: 2px; border-radius: 8px; }
 .admin-main h1:focus { outline: none; }

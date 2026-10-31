@@ -80,6 +80,14 @@
       if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load your events.') + '</p>'; return; }
       var h = '<p><a class="btn btn-primary" href="/organiser/new?fresh=1">Create an event</a></p>';
       if (!r.checkout.available) h += '<p class="notice">' + esc(r.checkout.message) + '</p>';
+      var totalConfirmed = 0, totalRequests = 0;
+      r.events.forEach(function (e) { totalConfirmed += (e.confirmed || 0); totalRequests += (e.requests || 0); });
+      h += '<div class="org-kpis">' +
+        '<div class="org-kpi-card"><p class="org-kpi-num">' + r.events.length + '</p><p class="org-kpi-lbl">Published Events</p></div>' +
+        '<div class="org-kpi-card"><p class="org-kpi-num">' + totalConfirmed + '</p><p class="org-kpi-lbl">Confirmed Guests</p></div>' +
+        '<div class="org-kpi-card"><p class="org-kpi-num' + (totalRequests > 0 ? ' highlight' : '') + '">' + totalRequests + '</p><p class="org-kpi-lbl">Pending Requests</p></div>' +
+        '<div class="org-kpi-card"><p class="org-kpi-num">' + r.drafts.length + '</p><p class="org-kpi-lbl">Active Drafts</p></div>' +
+        '</div>';
       h += '<h2 class="org-h2">Drafts</h2>';
       h += r.drafts.length ? '<ul class="org-list">' + r.drafts.map(function (d) {
         return '<li class="org-item"><div><p class="org-item-title">' + esc(d.data.title || 'Untitled draft') + '</p><p class="muted">Edited ' + esc(ago(d.updatedAt)) + '</p></div>' +
@@ -304,24 +312,61 @@
     function whenSummary() {
       var d = S.data;
       if (!d.startLocal) return 'Pick a start date and time.';
-      var tz = TZ[d.timezone || 'Asia/Kolkata'] || d.timezone;
+      var tz = TZ[d.timezone || 'Asia/Kolkata'] || d.timezone || 'Asia/Kolkata';
       var s = fmtLocal(d.startLocal);
+      var dur = '';
       if (d.endLocal) {
         var sameDay = d.endLocal.slice(0, 10) === d.startLocal.slice(0, 10);
         s += ' – ' + (sameDay ? new Date(d.endLocal + ':00Z').toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' }) : fmtLocal(d.endLocal));
+        try {
+          var diffMs = new Date(d.endLocal + ':00Z') - new Date(d.startLocal + ':00Z');
+          if (diffMs > 0) {
+            var hrs = Math.floor(diffMs / 3600000);
+            var mins = Math.round((diffMs % 3600000) / 60000);
+            if (hrs >= 24) {
+              var days = Math.round(hrs / 24);
+              dur = ' · ' + days + ' day' + (days === 1 ? '' : 's');
+            } else {
+              dur = ' · ' + hrs + ' hr' + (hrs === 1 ? '' : 's') + (mins ? ' ' + mins + ' min' : '');
+            }
+          }
+        } catch (e) { /* ignored */ }
       }
-      return s + ' · ' + tz;
+      return s + ' · ' + tz + dur;
+    }
+    function venuePreview() {
+      var d = S.data;
+      var city = (d.city || '').trim();
+      var area = (d.area || '').trim();
+      var venue = (d.venue || '').trim();
+      var isPrivate = Boolean(d.privateVenue);
+      if (isPrivate) {
+        var pubLoc = [area, city].filter(Boolean).join(', ') || 'City to be added';
+        return '<div class="venue-preview-box mystery" role="status">' +
+          '<span class="venue-preview-badge">🔒 Mystery Venue Active</span>' +
+          '<p class="venue-preview-text"><strong>Public card will display:</strong> Secret Location · ' + esc(pubLoc) + '</p>' +
+          '<p class="venue-preview-secret"><strong>Confidential Address:</strong> ' + esc(venue || 'Enter private address above') + ' (revealed only upon confirmed booking)</p>' +
+          '</div>';
+      }
+      var fullLoc = [venue, area, city].filter(Boolean).join(', ') || 'Venue to be added';
+      return '<div class="venue-preview-box" role="status">' +
+        '<span class="venue-preview-badge" style="color:var(--ink-2);">📍 Public Venue</span>' +
+        '<p class="venue-preview-text"><strong>Public card will display:</strong> ' + esc(fullLoc) + '</p>' +
+        '</div>';
     }
     function inventory() {
       var t = S.data.tickets || [];
       var total = 0, free = 0, paid = 0;
       t.forEach(function (x) { var q = Number.isInteger(x.quantity) && x.quantity > 0 ? x.quantity : 0; total += q; if (x.kind === 'free') free += q; else paid += q; });
-      return '<table class="inv"><caption class="sr-only">Ticket inventory</caption><thead><tr><th scope="col">Ticket</th><th scope="col">Price</th><th scope="col">Qty</th></tr></thead><tbody>' +
+      return '<div class="capacity-banner"><span class="capacity-total">Total Event Capacity: <strong>' + total + '</strong> spots</span>' +
+        '<span class="capacity-split">(' + free + ' free RSVP · ' + paid + ' paid)</span></div>' +
+        '<table class="inv"><caption class="sr-only">Ticket inventory</caption><thead><tr><th scope="col">Ticket</th><th scope="col">Price</th><th scope="col">Qty</th></tr></thead><tbody>' +
         t.map(function (x) { return '<tr><td>' + esc(x.name || 'Untitled') + ' <span class="pill pill-' + esc(x.kind) + '">' + (x.kind === 'free' ? 'Free' : 'Paid') + '</span></td><td>' + (x.kind === 'free' ? 'Free' : Number.isInteger(x.pricePaise) ? esc(money(x.pricePaise)) : '—') + '</td><td>' + (Number.isInteger(x.quantity) ? esc(x.quantity) : '—') + '</td></tr>'; }).join('') +
         '</tbody><tfoot><tr><th scope="row">Total</th><td>' + free + ' free · ' + paid + ' paid</td><td>' + total + '</td></tr></tfoot></table>';
     }
     function updateLive() {
       var w = $('[data-live="when"]', el); if (w) w.textContent = whenSummary();
+      var vp = $('[data-live="venue-preview"]', el); if (vp) vp.innerHTML = venuePreview();
       var inv = $('[data-live="inventory"]', el); if (inv) inv.innerHTML = inventory();
       $$('[data-count-for]', el).forEach(function (c) { var v = getPath(S.data, c.getAttribute('data-count-for')) || ''; c.textContent = v.length + ' / ' + c.getAttribute('data-max'); });
     }
@@ -385,7 +430,7 @@
       return (S.choosingTemplate ? templateGrid('Choose a template') : '') +
         card('What kind of event?', '<p class="help">Template: <strong>' + esc(tpl ? tpl.label : 'Something else') + '</strong> <button class="linkish" type="button" data-act="change-template">Change</button></p>' +
           select('category', 'Category', CFG.categories), {}) +
-        card('Event name', text('title', 'Event name', { required: true, max: 140, placeholder: 'e.g. Sunday Founders Breakfast' }) + '<p class="help counter" data-count-for="title" data-max="140"></p>') +
+        card('Event name', text('title', 'Event name', { required: true, max: 140, placeholder: 'e.g. Sunday Founders Breakfast' }) + '<p class="help counter" data-count-for="title" data-max="140"></p>' + '<p class="help small">The first 220 characters of your description will serve as the summary snippet on discovery cards.</p>') +
         card('Date & time',
           select('timezone', 'Time zone', CFG.timezones, { def: 'Asia/Kolkata' }) +
           '<div class="row2">' + text('startLocal', 'Starts', { type: 'datetime-local', required: true }) +
@@ -397,8 +442,10 @@
           '<div class="row2">' + text('city', 'City', { max: 60, list: 'wz-cities' }) + text('area', 'Area or neighbourhood', { max: 120, optional: true, help: 'Shown publicly.' }) + '</div>' +
           '<datalist id="wz-cities">' + CFG.cities.map(function (c) { return '<option value="' + esc(c) + '">'; }).join('') + '</datalist>' +
           text('mapsUrl', 'Google Maps link', { type: 'url', optional: true, max: 500, placeholder: 'https://maps.app.goo.gl/…', help: d.privateVenue ? 'Given only to confirmed guests, as a one-tap map button.' : 'Adds an “Open in Maps” button.' }) +
-          toggle('privateVenue', 'Keep the address private until someone books.', 'Guests see the area and city only. The address and map link appear on their booking once it’s confirmed.')) +
+          toggle('privateVenue', 'Keep the address private until someone books.', 'Guests see the area and city only. The address and map link appear on their booking once it’s confirmed.') +
+          '<div data-live="venue-preview"></div>') +
         card('Poster & description', '<div class="fld"><p class="lbl">Cover image <span class="muted">(optional)</span></p>' + cover + errSlot('coverImageId') + '</div>' +
+          '<p class="help small">If no cover image is uploaded, an elegant themed illustration for this category will be automatically displayed.</p>' +
           '<div class="fld"><p class="lbl">More photos <span class="muted">(optional, up to ' + (CFG.limits.images - 1) + ')</span></p>' + gallery + '</div>' +
           '<p class="form-msg error" data-upload-msg role="alert"></p>' +
           (d.coverImageId || imgs.length ? check('imageRightsConfirmed', 'I own these images or have permission to use them.') : '') +

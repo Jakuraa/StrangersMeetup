@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#4a3b2c"/>
+      <stop offset="50%" stop-color="#2a2018"/>
+      <stop offset="100%" stop-color="#140e0a"/>
+    </radialGradient>
+    <radialGradient id="lamp1" cx="50%" cy="10%" r="50%">
+      <stop offset="0%" stop-color="#ffe3a8" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#f3a953" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f3a953" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lamp2" cx="50%" cy="15%" r="60%">
+      <stop offset="0%" stop-color="#ffcf87" stop-opacity="0.75"/>
+      <stop offset="60%" stop-color="#d47a32" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#d47a32" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="table" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3d2a1d"/>
+      <stop offset="100%" stop-color="#1c120c"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Ambient light cones -->
+  <circle cx="180" cy="80" r="140" fill="url(#lamp1)"/>
+  <circle cx="460" cy="90" r="160" fill="url(#lamp2)"/>
+  <!-- Pendant lamps -->
+  <line x1="180" y1="0" x2="180" y2="70" stroke="#8c6a47" stroke-width="2"/>
+  <path d="M165 70 Q180 60 195 70 L190 82 L170 82 Z" fill="#2b1e16"/>
+  <circle cx="180" cy="84" r="5" fill="#fff1c7"/>
+  <line x1="460" y1="0" x2="460" y2="80" stroke="#8c6a47" stroke-width="2"/>
+  <path d="M440 80 Q460 68 480 80 L475 94 L445 94 Z" fill="#2b1e16"/>
+  <circle cx="460" cy="96" r="6" fill="#fff1c7"/>
+  <!-- Background cafe window / silhouettes -->
+  <rect x="260" y="40" width="120" height="150" rx="60" fill="#241b14" opacity="0.6"/>
+  <path d="M0 240 L640 240 L640 360 L0 360 Z" fill="url(#table)"/>
+  <!-- Foreground table and cups -->
+  <ellipse cx="220" cy="260" rx="28" ry="10" fill="#4d3524"/>
+  <path d="M206 244 Q206 260 220 260 Q234 260 234 244 Z" fill="#f5ede4" opacity="0.85"/>
+  <ellipse cx="220" cy="244" rx="14" ry="4" fill="#3a2214"/>
+  <ellipse cx="420" cy="270" rx="32" ry="12" fill="#4d3524"/>
+  <path d="M404 252 Q404 270 420 270 Q436 270 436 252 Z" fill="#f5ede4" opacity="0.85"/>
+  <ellipse cx="420" cy="252" rx="16" ry="5" fill="#3a2214"/>
+  <!-- Warm glow overlay -->
+  <rect width="640" height="360" fill="url(#lamp1)" opacity="0.3"/>
+</svg>
