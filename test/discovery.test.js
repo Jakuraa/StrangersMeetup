@@ -349,3 +349,15 @@ test('discovery pages render with honest empty states', async () => {
   assert.match((await c.get('/dinners')).text, /No dinners are listed right now/);
   assert.equal((await c.get('/events/no-such-event')).status, 404);
 });
+
+test('search query q filters events by keyword on /events and shows search notice', async () => {
+  const c = new Client();
+  const searchMatch = await c.get('/events?q=Sunset');
+  assert.equal(searchMatch.status, 200);
+  assert.match(searchMatch.text, /Showing results for/);
+  assert.match(searchMatch.text, /Sunset Social/);
+
+  const searchEmpty = await c.get('/events?q=NonExistentKeywordXYZ');
+  assert.equal(searchEmpty.status, 200);
+  assert.match(searchEmpty.text, /No upcoming events match (&quot;|")NonExistentKeywordXYZ(&quot;|")/);
+});

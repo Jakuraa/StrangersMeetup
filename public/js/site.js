@@ -475,17 +475,19 @@
     });
   }
 
-  /* ---------- header location selector ---------- */
-  var citySelect = $('[data-header-city]');
-  if (citySelect) {
+  /* ---------- header location selector (desktop + mobile) ---------- */
+  var citySelects = $$('[data-header-city]');
+  if (citySelects.length) {
     var curCity = new URLSearchParams(location.search).get('city');
-    if (curCity) citySelect.value = curCity;
-    citySelect.addEventListener('change', function () {
-      var val = citySelect.value;
-      var url = new URL(location.href);
-      if (val) url.searchParams.set('city', val);
-      else url.searchParams.delete('city');
-      location.href = url.pathname + url.search;
+    citySelects.forEach(function (sel) {
+      if (curCity) sel.value = curCity;
+      sel.addEventListener('change', function () {
+        var val = sel.value;
+        var url = new URL(location.href);
+        if (val) url.searchParams.set('city', val);
+        else url.searchParams.delete('city');
+        location.href = url.pathname + url.search;
+      });
     });
   }
 
