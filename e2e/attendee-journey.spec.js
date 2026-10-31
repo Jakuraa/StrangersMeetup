@@ -72,17 +72,33 @@ test.describe('Phase 3D Attendee Discovery, Booking & Mystery Venue Journey', ()
     await expectNoHorizontalOverflow(page);
 
     // 6. Confirmed Pass & Unlocked Mystery Venue
-    await expect(page.locator('.unlocked-venue-card')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.digital-pass-card')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.pass-code')).toContainText('#SM-');
+    await expect(page.locator('.unlocked-venue-card')).toBeVisible();
     await expect(page.locator('.unlocked-venue-badge')).toContainText('Venue Unlocked');
     await expect(page.locator('.unlocked-venue-addr')).toContainText('Secret Terrace, 12th Main Road, Indiranagar');
+    await expect(page.locator('.booking-nav-actions')).toBeVisible();
 
     await page.screenshot({ path: path.join(SHOT_DIR, 'phase3d-booking-confirmed.png'), fullPage: false });
 
-    // 7. Attendee Booking History (/me)
+    // 7. Re-booking feedback: navigate back to event page, see already-booked banner, and re-booking notice
+    await page.goto('/events/sample-bengaluru-indiranagar-rooftop-mixer');
+    await expect(page.locator('.already-booked-banner')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.already-booked-banner')).toContainText('You have a pass for this event');
+
+    // Attempt to book again
+    await page.locator('form.tier-form button[type="submit"]').click();
+    await page.waitForURL('**/bookings/**?existing=1');
+    await expect(page.locator('.booking-notice')).toContainText('You already hold a pass for this event');
+    await expect(page.locator('.unlocked-venue-card')).toBeVisible();
+
+    // 8. Attendee Booking History (/me)
     await page.goto('/me');
     await expectNoHorizontalOverflow(page);
     await expect(page.locator('.booking-list')).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.booking-list')).toContainText('Indiranagar Rooftop Social & Cocktails');
+    await expect(page.locator('.booking-card-item')).toBeVisible();
+    await expect(page.locator('a:has-text("View Pass & Venue")')).toBeVisible();
 
     await page.screenshot({ path: path.join(SHOT_DIR, 'phase3d-attendee-my-bookings.png'), fullPage: false });
   });

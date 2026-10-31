@@ -711,3 +711,54 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .host-step-content p { font-size: 0.86rem; margin: 0; color: var(--ink-2); }
 .host-thanks-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
 
+/* Phase 3K: Marketplace Journey Polish */
+.booking-notice { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 20px; font-size: 0.92rem; }
+.booking-notice-info { background: rgba(0, 217, 255, 0.08); border: 1px solid rgba(0, 217, 255, 0.3); color: #fff; }
+.booking-notice .notice-icon { font-size: 1.25rem; line-height: 1; flex-shrink: 0; }
+.booking-notice-content strong { color: var(--neon-cyan); display: block; margin-bottom: 2px; }
+.booking-notice-content p { margin: 0; }
+
+.already-booked-banner { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; background: rgba(0, 217, 255, 0.08); border: 1px solid rgba(0, 217, 255, 0.35); border-radius: var(--radius-sm); margin-bottom: 16px; }
+.already-booked-icon { font-size: 1.35rem; line-height: 1; flex-shrink: 0; }
+.already-booked-text p { margin: 0 0 4px; font-size: 0.92rem; color: #fff; }
+.already-booked-text strong { color: var(--neon-cyan); }
+.already-booked-text a { font-size: 0.88rem; font-weight: 600; color: var(--neon-cyan); text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.already-booked-text a:hover { text-decoration: underline; }
+
+.notice-sold-out { background: rgba(255, 117, 143, 0.08); border: 1px solid rgba(255, 117, 143, 0.3); color: #ff758f; padding: 12px 16px; border-radius: var(--radius-sm); margin: 8px 0; font-size: 0.92rem; }
+.notice-sold-out strong { color: #ff758f; }
+.notice-sold-out a { color: var(--neon-cyan); font-weight: 600; text-decoration: underline; margin-left: 4px; display: inline-flex; align-items: center; min-height: 44px; }
+
+.digital-pass-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: clamp(18px, 4vw, 24px); box-shadow: var(--shadow); margin-bottom: 24px; position: relative; overflow: hidden; }
+.digital-pass-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--neon-cyan), #315bff); }
+.digital-pass-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 14px; border-bottom: 1px dashed var(--line); margin-bottom: 16px; }
+.pass-brand { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--neon-cyan); }
+.pass-ref { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.85rem; }
+.pass-label { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.pass-code { font-family: monospace; font-size: 0.92rem; font-weight: 700; color: #fff; background: rgba(255, 255, 255, 0.08); padding: 2px 8px; border-radius: 4px; letter-spacing: 0.05em; }
+.pass-title { font-size: clamp(1.2rem, 3vw, 1.6rem); font-weight: 800; color: #fff; margin: 0 0 8px; line-height: 1.25; }
+.pass-datetime { font-size: 0.92rem; color: var(--muted); margin: 0 0 16px; }
+.pass-facts { display: grid; gap: 10px; margin: 16px 0; padding: 14px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.pass-footer-note { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); text-align: center; }
+.booking-nav-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.booking-nav-actions .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+
+.booking-card-item { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 14px; list-style: none; transition: border-color .2s; }
+.booking-card-item:hover { border-color: rgba(0, 217, 255, 0.35); }
+.booking-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.booking-card-item h3 { margin: 0 0 6px; font-size: 1.15rem; }
+.booking-card-item h3 a { color: #fff; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.booking-card-item h3 a:hover { color: var(--neon-cyan); }
+.booking-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.booking-card-actions .btn { min-height: 44px; display: inline-flex; align-items: center; }
+
+.empty-state { text-align: center; padding: 36px 20px; background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); margin: 16px 0; }
+.empty-state-icon { font-size: 2.2rem; margin-bottom: 10px; }
+.empty-state-title { font-size: 1.15rem; font-weight: 700; color: #fff; margin: 0 0 8px; }
+.empty-state p { margin-bottom: 14px; }
+.empty-state-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 16px; }
+.empty-state-actions .btn { min-height: 44px; display: inline-flex; align-items: center; }
+
+.mobile-nav-auth { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mobile-nav-auth a { color: var(--neon-cyan) !important; font-weight: 700 !important; }
+

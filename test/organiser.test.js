@@ -576,3 +576,20 @@ test('mystery venue secrecy: private venue address is never leaked to public or 
     assert.equal(slugRes.json.event.venue, 'Secret Location');
   }
 });
+
+test('organiser event guest isolation: organiser A cannot view guests of organiser B event', async () => {
+  const orgA = await organiserClient();
+  const orgB = await organiserClient();
+
+  const pubA = await publish(orgA, validData({ title: 'Org A Exclusive Gathering' }));
+
+  // Org A can access their own guest list
+  const guestsA = await orgA.get(`/api/organiser/events/${pubA.eventId}/guests`);
+  assert.equal(guestsA.status, 200);
+  assert.equal(guestsA.json.ok, true);
+  assert.equal(guestsA.json.event.title, 'Org A Exclusive Gathering');
+
+  // Org B cannot access Org A's guest list -> 404 Not Found
+  const stolen = await orgB.get(`/api/organiser/events/${pubA.eventId}/guests`);
+  assert.equal(stolen.status, 404, 'cross-organiser guest inspection is blocked with 404');
+});
