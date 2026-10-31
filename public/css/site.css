@@ -688,3 +688,26 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 /* Instant discovery loading state and screen reader utility */
 [data-discovery-results].is-loading { opacity: 0.6; pointer-events: none; transition: opacity .15s ease; }
 .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
+
+/* Host Onboarding (/become-a-host) */
+.host-onboarding { display: grid; gap: 24px; padding-top: 12px; }
+.host-benefits-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 14px; margin-bottom: 20px; }
+.host-benefit-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 8px; }
+.host-benefit-icon { font-size: 1.5rem; }
+.host-benefit-card h3 { font-size: 1rem; margin: 0; color: #fff; font-weight: 700; }
+.host-benefit-card p { font-size: 0.86rem; color: var(--ink-2); margin: 0; line-height: 1.45; }
+.host-safety-card { background: rgba(0, 217, 255, 0.06); border: 1px solid rgba(0, 217, 255, 0.25); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px; }
+.host-safety-card h4 { font-size: 0.92rem; font-weight: 700; color: var(--neon-cyan); margin: 0 0 8px; }
+.host-safety-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 0.86rem; color: var(--ink-2); }
+.host-safety-list li strong { color: #fff; }
+.host-already-card { background: rgba(0, 217, 255, 0.1); border: 1px solid rgba(0, 217, 255, 0.35); border-radius: var(--radius); padding: 22px; text-align: center; margin-bottom: 20px; }
+.host-already-card h3 { margin: 10px 0 6px; font-size: 1.15rem; color: #fff; }
+.host-already-card p { color: var(--ink-2); margin: 0 0 14px; font-size: 0.9rem; }
+.host-form-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: clamp(18px, 4vw, 28px); }
+.host-thanks-steps { display: grid; gap: 12px; margin: 20px 0; text-align: left; }
+.host-thanks-step { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.host-step-num { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+.host-step-content h4 { font-size: 0.92rem; margin: 0 0 4px; color: #fff; }
+.host-step-content p { font-size: 0.86rem; margin: 0; color: var(--ink-2); }
+.host-thanks-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+
