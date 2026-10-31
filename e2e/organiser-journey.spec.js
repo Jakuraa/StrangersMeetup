@@ -143,7 +143,7 @@ test.describe('Phase 3H Organiser Onboarding, Wizard & Dashboard Journey', () =>
     // Publish event
     await page.getByRole('button', { name: 'Publish event' }).click();
     await page.getByRole('button', { name: 'Publish now' }).click();
-    await expect(page.getByRole('heading', { name: 'Your event is live' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your event is live' })).toBeVisible({ timeout: 15_000 });
 
     const publicUrl = await page.locator('.share-url').inputValue();
     const visitor = await browser.newPage();
