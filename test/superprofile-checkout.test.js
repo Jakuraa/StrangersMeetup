@@ -25,6 +25,7 @@ let support;
 let seq = 0;
 
 before(async () => {
+  process.env.ENABLE_LIVE_PAYMENTS = 'true';
   await resetDb();
   await startServer();
   owner = await signedInClient({ tgId: 900000001 });
@@ -34,7 +35,10 @@ before(async () => {
   await owner.post('/api/admin/admins', { telegram_user_id: finance.tgId, role: 'finance' });
   await owner.post('/api/admin/admins', { telegram_user_id: support.tgId, role: 'support' });
 });
-after(stopServer);
+after(async () => {
+  process.env.ENABLE_LIVE_PAYMENTS = 'false';
+  await stopServer();
+});
 beforeEach(clearCalls);
 
 const hook = (body, secret = SECRET) => new Client().req('POST', '/api/webhooks/superprofile', body, secret ? { 'x-webhook-secret': secret } : {});
@@ -90,6 +94,18 @@ test('Book Tickets redirects to SuperProfile with a ref, signed in or not; one i
   const head = await new Client().req('HEAD', `/checkout/${ev.slug}`);
   assert.equal(head.status, 302);
   assert.equal((await db.one('SELECT count(*)::int n FROM checkout_intents')).n, before);
+});
+
+test('when ENABLE_LIVE_PAYMENTS is false, Book Tickets never redirects to SuperProfile', async () => {
+  process.env.ENABLE_LIVE_PAYMENTS = 'false';
+  try {
+    const ev = await spEvent();
+    const r = await new Client().get(`/checkout/${ev.slug}`);
+    assert.equal(r.status, 302);
+    assert.equal(r.headers.get('location'), `/events/${ev.slug}`);
+  } finally {
+    process.env.ENABLE_LIVE_PAYMENTS = 'true';
+  }
 });
 
 test('refs are unique and unguessable-looking', () => {

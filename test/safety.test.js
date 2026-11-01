@@ -87,6 +87,7 @@ test('preview checkout safety: paid checkout disabled in preview unless approved
   const origEnv = { ...process.env };
   const event = { checkout_mode: 'superprofile', superprofile_url: 'https://superprofile.bio/vp/event1' };
   try {
+    process.env.ENABLE_LIVE_PAYMENTS = 'true';
     process.env.VERCEL = '1';
     process.env.VERCEL_ENV = 'preview';
     delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
@@ -98,6 +99,19 @@ test('preview checkout safety: paid checkout disabled in preview unless approved
     process.env.ALLOW_PREVIEW_PAID_CHECKOUT = 'true';
     const approved = checkoutForEvent(event);
     assert.equal(approved.available, true, 'paid checkout enabled when approved test mode set');
+  } finally {
+    process.env = origEnv;
+  }
+});
+
+test('production checkout safety: paid checkout disabled when ENABLE_LIVE_PAYMENTS is false', () => {
+  const origEnv = { ...process.env };
+  const event = { checkout_mode: 'superprofile', superprofile_url: 'https://superprofile.bio/vp/event1' };
+  try {
+    process.env.ENABLE_LIVE_PAYMENTS = 'false';
+    const r = checkoutForEvent(event);
+    assert.equal(r.available, false, 'paid checkout disabled when live payments disabled');
+    assert.equal(r.reason, 'live_payments_disabled');
   } finally {
     process.env = origEnv;
   }
