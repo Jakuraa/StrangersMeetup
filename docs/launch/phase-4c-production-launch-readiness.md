@@ -77,7 +77,7 @@ An inspection of configured environment variables via `vercel env ls` reveals th
 | `CANONICAL_URL` / `PUBLIC_SITE_URL` | **MISSING** | **MISSING** | Recommended for canonical URLs, sitemaps, and redirects |
 | `SUPPORT_EMAIL` | **MISSING** | **MISSING** | Mandatory for legal compliance (Consumer Protection Rules) |
 | `GRIEVANCE_EMAIL` | **MISSING** | **MISSING** | Mandatory for legal compliance (IT Intermediary Rules) |
-| `SUPERPROFILE_*` / `RAZORPAY_*` | **NOT SET** | **NOT SET** | **Correct for Free-Only MVP:** Paid checkout is disabled |
+| `SUPERPROFILE_*` / `LEGACY_GATEWAY_*` | **NOT SET** | **NOT SET** | **Correct for Free-Only MVP:** Paid checkout is disabled |
 
 ---
 
