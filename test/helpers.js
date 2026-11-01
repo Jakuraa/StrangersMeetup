@@ -154,6 +154,7 @@ export class Client {
   get(p, h) { return this.req('GET', p, undefined, h); }
   post(p, b, h) { return this.req('POST', p, b ?? {}, h); }
   patch(p, b, h) { return this.req('PATCH', p, b ?? {}, h); }
+  del(p, h) { return this.req('DELETE', p, undefined, h); }
 }
 
 // ---------- Telegram identity helpers ----------
@@ -166,7 +167,7 @@ export function makeInitData(user, { authDate = Math.floor(Date.now() / 1000), t
 }
 
 export function makeWidgetData(user, { authDate = Math.floor(Date.now() / 1000), token = BOT_TOKEN } = {}) {
-  const data = { id: user.id, first_name: user.first_name, auth_date: authDate };
+  const data = { auth_date: authDate, ...user };
   const dcs = Object.keys(data).sort().map((k) => `${k}=${data[k]}`).join('\n');
   const secret = crypto.createHash('sha256').update(token).digest();
   return { ...data, hash: crypto.createHmac('sha256', secret).update(dcs).digest('hex') };

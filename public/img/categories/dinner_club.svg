@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#422212"/>
+      <stop offset="50%" stop-color="#211208"/>
+      <stop offset="100%" stop-color="#0d0603"/>
+    </radialGradient>
+    <radialGradient id="candleglow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffd599" stop-opacity="0.9"/>
+      <stop offset="35%" stop-color="#ea8c38" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#ea8c38" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Candlelight ambience -->
+  <circle cx="320" cy="180" r="220" fill="url(#candleglow)"/>
+  <!-- Dining table surface -->
+  <path d="M0 220 Q320 200 640 220 L640 360 L0 360 Z" fill="#1f1109"/>
+  <!-- Dinner plate setting in center -->
+  <ellipse cx="320" cy="270" rx="90" ry="32" fill="#2d1a0f"/>
+  <ellipse cx="320" cy="268" rx="80" ry="28" fill="#eae1d6" opacity="0.9"/>
+  <ellipse cx="320" cy="267" rx="55" ry="18" fill="#dfd4c7" opacity="0.95"/>
+  <!-- Cutlery -->
+  <line x1="210" y1="245" x2="210" y2="295" stroke="#d5c8b8" stroke-width="3" stroke-linecap="round"/>
+  <line x1="430" y1="245" x2="430" y2="295" stroke="#d5c8b8" stroke-width="3" stroke-linecap="round"/>
+  <!-- Wine Glass left -->
+  <path d="M150 220 Q165 245 165 260 M165 260 L165 285 M152 285 L178 285" stroke="#f4ede6" stroke-width="2" fill="none" opacity="0.6"/>
+  <!-- Wine Glass right -->
+  <path d="M490 220 Q475 245 475 260 M475 260 L475 285 M462 285 L488 285" stroke="#f4ede6" stroke-width="2" fill="none" opacity="0.6"/>
+</svg>

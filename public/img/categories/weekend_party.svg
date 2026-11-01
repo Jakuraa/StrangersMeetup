@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#4d2417"/>
+      <stop offset="50%" stop-color="#261009"/>
+      <stop offset="100%" stop-color="#120603"/>
+    </radialGradient>
+    <radialGradient id="bokeh1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bokeh2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f43f5e" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#f43f5e" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bokeh3" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fbbf24" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Fairy lights garland string -->
+  <path d="M0 60 Q160 120 320 70 Q480 120 640 60" stroke="#78350f" stroke-width="1.5" fill="none"/>
+  <circle cx="80" cy="85" r="7" fill="#fef08a"/>
+  <circle cx="160" cy="105" r="8" fill="#fef08a"/>
+  <circle cx="240" cy="92" r="7" fill="#fed7aa"/>
+  <circle cx="320" cy="70" r="8" fill="#fef08a"/>
+  <circle cx="400" cy="92" r="7" fill="#fed7aa"/>
+  <circle cx="480" cy="105" r="8" fill="#fef08a"/>
+  <circle cx="560" cy="85" r="7" fill="#fef08a"/>
+  <!-- Bokeh bubbles -->
+  <circle cx="140" cy="200" r="55" fill="url(#bokeh1)"/>
+  <circle cx="280" cy="160" r="70" fill="url(#bokeh2)"/>
+  <circle cx="440" cy="220" r="80" fill="url(#bokeh3)"/>
+  <circle cx="530" cy="140" r="50" fill="url(#bokeh1)"/>
+  <!-- Confetti sparkles -->
+  <polygon points="210,120 214,130 224,134 214,138 210,148 206,138 196,134 206,130" fill="#fef08a" opacity="0.8"/>
+  <polygon points="460,110 463,118 471,121 463,124 460,132 457,124 449,121 457,118" fill="#f43f5e" opacity="0.7"/>
+  <polygon points="340,240 343,248 351,251 343,254 340,262 337,254 329,251 337,248" fill="#38bdf8" opacity="0.7"/>
+</svg>

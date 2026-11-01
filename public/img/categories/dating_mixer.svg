@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="75%">
+      <stop offset="0%" stop-color="#4d1d28"/>
+      <stop offset="50%" stop-color="#2a0d17"/>
+      <stop offset="100%" stop-color="#120409"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="65%" r="45%">
+      <stop offset="0%" stop-color="#ffb38a" stop-opacity="0.7"/>
+      <stop offset="40%" stop-color="#e05a6d" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#e05a6d" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bokeh1" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fca5a5" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#fca5a5" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bokeh2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fed7aa" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#fed7aa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Bokeh circles -->
+  <circle cx="120" cy="90" r="60" fill="url(#bokeh1)"/>
+  <circle cx="210" cy="150" r="45" fill="url(#bokeh2)"/>
+  <circle cx="480" cy="110" r="75" fill="url(#bokeh1)"/>
+  <circle cx="550" cy="180" r="50" fill="url(#bokeh2)"/>
+  <circle cx="320" cy="80" r="35" fill="url(#bokeh2)"/>
+  <!-- Center table candlelight -->
+  <circle cx="320" cy="240" r="160" fill="url(#glow)"/>
+  <!-- Wine glasses silhouettes -->
+  <path d="M250 250 L250 280 L235 285 L265 285 L250 280 M230 215 Q250 255 250 250 Q250 255 270 215 Q270 200 250 200 Q230 200 230 215 Z" fill="none" stroke="#fbcfe8" stroke-width="2" opacity="0.6"/>
+  <path d="M236 220 Q250 248 264 220 Z" fill="#e11d48" opacity="0.5"/>
+  <path d="M390 250 L390 280 L375 285 L405 285 L390 280 M370 215 Q390 255 390 250 Q390 255 410 215 Q410 200 390 200 Q370 200 370 215 Z" fill="none" stroke="#fbcfe8" stroke-width="2" opacity="0.6"/>
+  <path d="M376 220 Q390 248 404 220 Z" fill="#e11d48" opacity="0.5"/>
+  <!-- Center candle -->
+  <ellipse cx="320" cy="265" rx="8" ry="3" fill="#fda4af"/>
+  <path d="M315 265 L315 245 L325 245 L325 265 Z" fill="#fff1f2" opacity="0.8"/>
+  <path d="M320 240 Q323 232 320 228 Q317 232 320 240 Z" fill="#fed7aa"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#182736"/>
+      <stop offset="60%" stop-color="#0a121c"/>
+      <stop offset="100%" stop-color="#03060a"/>
+    </radialGradient>
+    <linearGradient id="beam" x1="0%" y1="0%" x2="100%" y2="80%">
+      <stop offset="0%" stop-color="#bae6fd" stop-opacity="0.8"/>
+      <stop offset="40%" stop-color="#7dd3fc" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Projector light cone -->
+  <polygon points="60,40 68,40 580,320 280,360" fill="url(#beam)"/>
+  <circle cx="64" cy="40" r="16" fill="#e0f2fe" opacity="0.9"/>
+  <!-- Screen glow reflection on seats -->
+  <ellipse cx="440" cy="240" rx="160" ry="80" fill="#38bdf8" opacity="0.12"/>
+  <!-- Theater seat rows in foreground silhouette -->
+  <path d="M0 320 Q80 300 160 320 Q240 300 320 320 Q400 300 480 320 Q560 300 640 320 L640 360 L0 360 Z" fill="#040910"/>
+  <path d="M40 340 Q120 320 200 340 Q280 320 360 340 Q440 320 520 340 Q600 320 680 340 L680 360 L0 360 Z" fill="#020408"/>
+</svg>
