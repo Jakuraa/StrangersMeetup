@@ -8,7 +8,7 @@
 import { fileURLToPath } from 'node:url';
 import '../lib/config.js'; // loads a local .env (never on Vercel)
 import { db, migrate } from '../lib/db.js';
-import { PERSONAS, PERSONA_KEYS, PERSONA_TG_IDS } from '../lib/dev-personas.js';
+import { PERSONAS, PERSONA_KEYS, PERSONA_TG_IDS, REVIEWER_TG_ID } from '../lib/dev-personas.js';
 import { assertSeedAllowed, SeedRefused } from './seed-guard.js';
 import { at } from './seed-demo.js';
 
@@ -94,9 +94,10 @@ export const LOCAL_LEADS = [
 ];
 export const LOCAL_REPORTS = [['guest', 'Test report: someone at the last event made me uncomfortable.\nPlease review. Ref: TEST-0001']];
 
-/** Remove everything earlier runs created for the personas. Order follows the foreign keys. */
+/** Remove everything earlier runs created for the personas and synthetic reviewer. Order follows the foreign keys. */
 async function clearPersonaData(c) {
-  await c.query(`CREATE TEMP TABLE _pu ON COMMIT DROP AS SELECT id FROM users WHERE telegram_user_id = ANY($1::bigint[])`, [PERSONA_TG_IDS]);
+  const allTestTgIds = [...PERSONA_TG_IDS, REVIEWER_TG_ID];
+  await c.query(`CREATE TEMP TABLE _pu ON COMMIT DROP AS SELECT id FROM users WHERE telegram_user_id = ANY($1::bigint[])`, [allTestTgIds]);
   await c.query(`CREATE TEMP TABLE _pe ON COMMIT DROP AS
     SELECT id FROM events WHERE organiser_user_id IN (SELECT id FROM _pu) OR (is_demo AND slug LIKE 'local-%')`);
   await c.query(`CREATE TEMP TABLE _pb ON COMMIT DROP AS
@@ -113,7 +114,8 @@ async function clearPersonaData(c) {
   await c.query(`DELETE FROM bookings WHERE id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM ticket_types WHERE event_id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM analytics_events WHERE event_id IN (SELECT id FROM _pe)`);
-  await c.query(`DELETE FROM reports WHERE user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM user_blocks WHERE blocker_user_id IN (SELECT id FROM _pu) OR blocked_user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM reports WHERE user_id IN (SELECT id FROM _pu) OR reported_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM leads WHERE payload->>'seed' = 'local'`);
   await c.query(`UPDATE event_drafts SET event_id = NULL WHERE organiser_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM events WHERE id IN (SELECT id FROM _pe)`);

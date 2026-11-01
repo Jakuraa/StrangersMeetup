@@ -352,7 +352,13 @@
       if (can(['super_admin', 'moderator'])) {
         main.append(el('h2', { text: 'Safety reports' }), el('div', { class: 'panel' }, [table([
           ['When', function (x) { return fmtDT(x.created_at); }], ['From', function (x) { return (x.alias || '') + ' (' + x.telegram_user_id + ')'; }],
-          ['Report', function (x) { return el('div', { class: 't-text', text: x.body }); }],
+          ['Report', function (x) {
+            var parts = [];
+            if (x.category && x.category !== 'other') parts.push(el('span', { class: 'pill pill-sm', text: x.category.replace(/_/g, ' ') }));
+            if (x.event_title) parts.push(el('small', { class: 'muted', text: ' · Event: ' + x.event_title }));
+            parts.push(el('div', { class: 't-text', text: x.body }));
+            return el('div', {}, parts);
+          }],
           ['Status', function (x) { return statusSelect(x.status, ['new', 'reviewing', 'actioned', 'dismissed'], function (v) { api('PATCH', '/api/admin/reports/' + x.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }, 'Status of safety report from ' + fmtDT(x.created_at)); }]
         ], r.reports, 'No reports.', { name: 'Safety reports', primary: 2 })]));
       }

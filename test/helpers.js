@@ -154,6 +154,7 @@ export class Client {
   get(p, h) { return this.req('GET', p, undefined, h); }
   post(p, b, h) { return this.req('POST', p, b ?? {}, h); }
   patch(p, b, h) { return this.req('PATCH', p, b ?? {}, h); }
+  del(p, h) { return this.req('DELETE', p, undefined, h); }
 }
 
 // ---------- Telegram identity helpers ----------
