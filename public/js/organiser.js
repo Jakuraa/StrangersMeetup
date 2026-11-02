@@ -1,4 +1,4 @@
-/* StrangersMeetup organiser tools: event wizard (Basics → Tickets → Features → Preview), dashboard
+/* NIGHTLIFEZ organiser tools: event wizard (Basics → Tickets → Features → Preview), dashboard
    and guest management. Drafts are saved to the server (versioned); a copy of unsaved edits is
    kept in this browser only as a safety net and reconciled with the server copy on load.
    Every value interpolated into HTML goes through esc(). */
@@ -641,7 +641,7 @@
         '<button class="btn btn-primary" type="button" data-act="publish"' + (errs.length ? ' disabled aria-describedby="pub-why"' : '') + '>Publish event</button></div>' +
         (errs.length ? '<p class="help" id="pub-why">Finish the items above to publish. Your draft is saved.</p>' : '') +
         '<dialog class="wz-dialog" data-publish-dialog aria-labelledby="pub-title"><h2 id="pub-title">Publish “' + esc(S.data.title || 'this event') + '”?</h2>' +
-        '<p>It will appear on StrangersMeetup for everyone to see' + ((S.data.features || {}).approval && S.data.features.approval.enabled ? ', and guests can send requests to join.' : ', and guests can start booking.') + '</p>' +
+        '<p>It will appear on NIGHTLIFEZ for everyone to see' + ((S.data.features || {}).approval && S.data.features.approval.enabled ? ', and guests can send requests to join.' : ', and guests can start booking.') + '</p>' +
         ((S.data.tickets || []).some(function (t) { return t.kind === 'paid'; }) && !CFG.checkout.available ? '<p class="notice notice-warn">Paid tickets will show as “not available yet” until online payment is configured. Only free tickets can be booked.</p>' : '') +
         '<p class="form-msg error" data-publish-msg role="alert"></p>' +
         '<div class="org-item-actions"><button class="btn btn-ghost" type="button" data-act="publish-cancel">Not yet</button><button class="btn btn-primary" type="button" data-act="publish-confirm">Publish now</button></div></dialog>';

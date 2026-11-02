@@ -1,4 +1,4 @@
-/* StrangersMeetup admin client. All authorisation is enforced server-side; this only renders.
+/* NIGHTLIFEZ admin client. All authorisation is enforced server-side; this only renders.
    DOM is built with textContent (never innerHTML with data). */
 (function () {
   'use strict';
@@ -488,7 +488,7 @@
   function block(title, m, render) {
     return el('div', { class: 'subpanel' }, [el('h3', { text: title }), m.available ? render(m.value, m) : unavailable(m)].concat(m.available && m.note ? [el('p', { class: 'muted small', text: m.note })] : []));
   }
-  var CAT_LABEL = { meetup: 'Meetup', dating_mixer: 'Dating mixer', nightlife: 'Nightlife', dinner_club: 'Dinner club', movie: 'Movie night', board_games: 'Board games', weekend_trip: 'Strangers trip', resort_getaway: 'Resort getaway', weekend_party: 'Weekend party', matchmaking: 'Matchmaking' };
+  var CAT_LABEL = { meetup: 'Meetup', dating_mixer: 'Dating mixer', nightlife: 'Nightlife', dinner_club: 'Dinner club', movie: 'Movie night', board_games: 'Board games', weekend_trip: 'Weekend trip', resort_getaway: 'Resort getaway', weekend_party: 'Weekend party', matchmaking: 'Matchmaking' };
   var HUMAN = { female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say', '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+' };
   function human(v) { return HUMAN[v] || CAT_LABEL[v] || String(v).replace(/_/g, ' '); }
 
