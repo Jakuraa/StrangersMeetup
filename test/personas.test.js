@@ -106,7 +106,7 @@ test('seed:local refuses before touching the database when the target is not loc
 
 test('seed:local is idempotent and resets what tests changed', async () => {
   const first = await countLocal();
-  assert.deepEqual(first, { users: 6, admins: 2, events: LOCAL_EVENTS.length, ticket_types: 8, bookings: 7, drafts: 2, analytics: 50, leads: 2, reports: 1 });
+  assert.deepEqual(first, { users: 11, admins: 3, events: LOCAL_EVENTS.length, ticket_types: 8, bookings: 7, drafts: 2, analytics: 50, leads: 2, reports: 1, orgs: 4, memberships: 6, venues: 1 });
   const c = await as('guest2');
   assert.equal((await c.post(`/api/events/${ev['local-sunday-picnic'].id}/book`, { ticketTypeId: await tierId('local-sunday-picnic') })).status, 200);
   assert.equal((await countLocal()).bookings, 8);
@@ -135,14 +135,15 @@ test('each persona is a distinct identity with a distinct role, inside the reser
     `SELECT u.id, u.telegram_user_id, u.alias, u.organiser_enabled, a.role AS admin_role
        FROM users u LEFT JOIN admin_users a ON a.telegram_user_id = u.telegram_user_id AND a.active
       WHERE u.telegram_user_id BETWEEN $1 AND $2 ORDER BY u.telegram_user_id`, [PERSONA_TG_MIN, PERSONA_TG_MAX])).rows;
-  assert.equal(rows.length, 6);
-  assert.equal(new Set(rows.map((r) => r.id)).size, 6);
-  assert.equal(new Set(rows.map((r) => r.alias)).size, 6);
+  assert.equal(rows.length, PERSONA_KEYS.length);
+  assert.equal(new Set(rows.map((r) => r.id)).size, PERSONA_KEYS.length);
+  assert.equal(new Set(rows.map((r) => r.alias)).size, PERSONA_KEYS.length);
   for (const r of rows) assert.match(r.alias, /^Test /);
   const byKey = Object.fromEntries(PERSONA_KEYS.map((k) => [k, rows.find((r) => r.telegram_user_id === PERSONAS[k].tg)]));
   assert.deepEqual(PERSONA_KEYS.map((k) => [k, byKey[k].organiser_enabled, byKey[k].admin_role]), [
     ['guest', false, null], ['guest2', false, null], ['organiser', true, null], ['organiser2', true, null],
-    ['staff', false, 'support'], ['admin', false, 'super_admin']
+    ['staff', false, 'support'], ['admin', false, 'super_admin'], ['finance', false, 'finance'],
+    ['manager', false, null], ['teamstaff', false, null], ['venue', false, null], ['dj', false, null]
   ]);
   // Sessions resolve to the right person.
   for (const k of PERSONA_KEYS) {
