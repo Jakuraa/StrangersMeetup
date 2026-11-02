@@ -126,7 +126,7 @@ test('MCP Tools: sm_inspect_page inspects public routes and classifies correctly
     const homeInspect = await inspectPage({ path: '/' });
     assert.equal(homeInspect.status_code, 200);
     assert.equal(homeInspect.classification, 'EXISTS_AND_LOADED_200');
-    assert.ok(homeInspect.title.includes('StrangersMeetup'));
+    assert.ok(homeInspect.title.includes('NIGHTLIFEZ') || homeInspect.title.includes('StrangersMeetup'));
 
     const meInspect = await inspectPage({ path: '/me' });
     assert.equal(meInspect.status_code, 302);

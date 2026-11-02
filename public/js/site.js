@@ -1,4 +1,4 @@
-/* StrangersMeetup site script. Progressive enhancement: every page works without it except
+/* NIGHTLIFEZ site script. Progressive enhancement: every page works without it except
    member actions (sign-in, booking), which need it. No user ids are ever sent from here —
    the server derives identity from the session cookie. */
 (function () {
@@ -272,7 +272,7 @@
   });
 
   function confirmAge() {
-    if (!window.confirm('StrangersMeetup events are for adults only. Do you confirm you are 21 or older?')) return Promise.resolve(false);
+    if (!window.confirm('NIGHTLIFEZ events are for adults only. Do you confirm you are 21 or older?')) return Promise.resolve(false);
     return api('POST', '/api/auth/confirm-age', {}).then(function (r) { return r.ok; });
   }
 
@@ -315,7 +315,7 @@
       if (r.getAttribute('data-paid')) {
         /* Paid tier: hand over to SuperProfile (works signed out). Not available inside the Mini App. */
         var path = form.getAttribute('data-checkout-path');
-        if (inTelegram || !path) { msg.className = 'book-msg error'; msg.textContent = 'Paid tickets are sold on our website. Open StrangersMeetup in your browser to book.'; return; }
+        if (inTelegram || !path) { msg.className = 'book-msg error'; msg.textContent = 'Paid tickets are sold on our website. Open NIGHTLIFEZ in your browser to book.'; return; }
         track('checkout_start', eventId);
         location.href = path + '?tier=' + encodeURIComponent(r.value) + '&qty=' + encodeURIComponent(parseInt(qty.value, 10) || 1);
         return;
@@ -452,7 +452,7 @@
 
         html += '<div class="digital-pass-card">' +
           '<div class="digital-pass-header">' +
-          '<div class="pass-brand"><span class="pass-badge-icon" aria-hidden="true">🎟️</span> <span>StrangersMeetup Pass</span></div>' +
+          '<div class="pass-brand"><span class="pass-badge-icon" aria-hidden="true">🎟️</span> <span>NIGHTLIFEZ Pass</span></div>' +
           '<span class="pill pill-' + esc(b.status) + '">' + esc(statusLabel) + '</span>' +
           '</div>' +
           '<div class="pass-ref"><span class="pass-label">Pass Reference</span><span class="pass-code">#SM-' + esc(shortRef) + '</span></div>' +
@@ -513,7 +513,7 @@
   var LABELS = {
     female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say',
     '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+',
-    nightlife: 'Nightlife', strangers_trips: 'Strangers trips', meetups: 'Meetups', dinners: 'Dinners', weekend_parties: 'Weekend parties',
+    nightlife: 'Nightlife', weekend_trips: 'Weekend trips', strangers_trips: 'Weekend trips', meetups: 'Meetups', dinners: 'Dinners', weekend_parties: 'Weekend parties',
     dating: 'Dating', matchmaking: 'Matchmaking', board_games: 'Board games', movies: 'Movies'
   };
   function renderProfile(el) {
@@ -550,9 +550,17 @@
     var params = new URLSearchParams(location.search);
     var prefillEvent = params.get('event') || '';
     if (!state.me) {
+      var bot = el.getAttribute('data-bot');
+      var supportEmail = el.getAttribute('data-support-email');
+      var botPart = bot
+        ? 'send <code>/report</code> to <a class="link-cyan" href="https://t.me/' + esc(bot) + '" target="_blank" rel="noopener">@' + esc(bot) + '</a> on Telegram'
+        : 'send <code>/report</code> to our Telegram bot';
+      var emailPart = supportEmail
+        ? ' or email <a class="link-cyan" href="mailto:' + esc(supportEmail) + '">' + esc(supportEmail) + '</a>'
+        : '';
       el.innerHTML = '<div class="safety-box">' +
         '<h3>Submit a Confidential Safety Report</h3>' +
-        '<p class="muted">To submit a confidential report online, please <a class="link-cyan" href="/signin">sign in with Telegram</a> first. You can also send <code>/report</code> to our Telegram bot or email <a href="mailto:contact@strangersmeetup.com">contact@strangersmeetup.com</a>. If you are in immediate danger, call 112.</p>' +
+        '<p class="muted">To submit a confidential report online, please <a class="link-cyan" href="/signin">sign in with Telegram</a> first. You can also ' + botPart + emailPart + '. If you are in immediate danger, call 112.</p>' +
         '</div>';
       return;
     }

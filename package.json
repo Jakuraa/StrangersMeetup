@@ -1,7 +1,7 @@
 {
   "name": "strangersmeetup",
   "version": "1.0.0",
-  "description": "StrangersMeetup — social discovery meetups & trips across South India (21+)",
+  "description": "NIGHTLIFEZ — vibrant social discovery and experiences marketplace across South India (21+)",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -20,11 +20,13 @@
     "mcp:stdio": "node mcp/server.js --stdio"
   },
   "keywords": [
-    "strangersmeetup",
+    "nightlifez",
+    "nightlife",
+    "parties",
     "meetups",
     "telegram"
   ],
-  "author": "StrangersMeetup Team",
+  "author": "NIGHTLIFEZ Team",
   "license": "UNLICENSED",
   "private": true,
   "engines": {
