@@ -552,7 +552,7 @@
     if (!state.me) {
       el.innerHTML = '<div class="safety-box">' +
         '<h3>Submit a Confidential Safety Report</h3>' +
-        '<p class="muted">To submit a confidential report online, please <a class="link-cyan" href="/signin">sign in with Telegram</a> first. You can also send <code>/report</code> to our Telegram bot or email <a href="mailto:contact@strangersmeetup.com">contact@strangersmeetup.com</a>. If you are in immediate danger, call 112.</p>' +
+        '<p class="muted">To submit a confidential report online, please <a class="link-cyan" href="/signin">sign in with Telegram</a> first. You can also send <code>/report</code> to our Telegram bot or email <a href="mailto:contact@nightlifez.com">contact@nightlifez.com</a>. If you are in immediate danger, call 112.</p>' +
         '</div>';
       return;
     }
