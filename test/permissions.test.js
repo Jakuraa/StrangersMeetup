@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resetDb, startServer, stopServer, db, signedInClient, createEvent } from './helpers.js';
-import { can, ACTIONS, ORG_ACTIONS } from '../lib/services/permissions.js';
+import { can, ACTIONS, ORG_ACTIONS, ensurePersonalOrg } from '../lib/services/permissions.js';
 import { listOrganiserEvents } from '../lib/services/organiser.js';
 
 const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
@@ -296,6 +296,25 @@ test('migration 012 on a fresh database: tables exist and 9 capabilities are see
   assert.deepEqual(caps, ['creator', 'dj', 'first_aid', 'food_service', 'host_staff', 'manage_venue', 'organise_events', 'photography', 'security']);
   for (const t of ['user_identities', 'organisations', 'org_memberships', 'user_capabilities', 'venues', 'event_team']) {
     assert.ok(await db.one(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [t]), t);
+  }
+});
+
+test('ensurePersonalOrg: sets verified organise_events capability for active event admin even if organiser_enabled is false', async () => {
+  const adminUser = await db.one(`INSERT INTO users (telegram_user_id, alias, organiser_enabled) VALUES (8881234, 'Admin Host', false) RETURNING id, telegram_user_id, alias`);
+  try {
+    await db.query(`INSERT INTO user_identities (user_id, provider, subject) VALUES ($1, 'telegram', '8881234')`, [adminUser.id]);
+    await db.query(`INSERT INTO admin_users (telegram_user_id, role, active) VALUES (8881234, 'event_manager', true)`);
+    const orgId = await ensurePersonalOrg(adminUser);
+    assert.ok(orgId);
+    const cap = await db.one(`SELECT status FROM user_capabilities WHERE user_id = $1 AND capability_code = 'organise_events'`, [adminUser.id]);
+    assert.equal(cap?.status, 'verified');
+  } finally {
+    await db.query(`DELETE FROM user_capabilities WHERE user_id = $1`, [adminUser.id]);
+    await db.query(`DELETE FROM org_memberships WHERE user_id = $1`, [adminUser.id]);
+    await db.query(`DELETE FROM organisations WHERE personal_user_id = $1`, [adminUser.id]);
+    await db.query(`DELETE FROM admin_users WHERE telegram_user_id = 8881234`);
+    await db.query(`DELETE FROM user_identities WHERE user_id = $1`, [adminUser.id]);
+    await db.query(`DELETE FROM users WHERE id = $1`, [adminUser.id]);
   }
 });
 
