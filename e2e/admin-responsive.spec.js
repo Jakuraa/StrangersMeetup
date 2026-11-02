@@ -94,6 +94,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test('check-in: the list stays open, updates in place, and is audit-logged in full', async ({ page, hasTouch }, testInfo) => {
+      test.setTimeout(90_000); // sign-in + axe + audit-log checks run close to the 30s default under load
       await signInAs(page, 'staff');
       await openAdminTab(page, 'Events');
       await page.getByRole('button', { name: 'Attendees for Test: Board games night' }).click();

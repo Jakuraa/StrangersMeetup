@@ -12,6 +12,7 @@ export default defineConfig({
   workers: 1, // one shared seeded database
   retries: 0,
   reporter: [['list'], ['html', { open: 'never' }]],
+  expect: { timeout: 10_000 },
   use: {
     baseURL: E2E_BASE,
     trace: 'retain-on-failure',

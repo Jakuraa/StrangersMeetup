@@ -6,11 +6,16 @@ import crypto from 'node:crypto';
 import {
   resetDb, startServer, stopServer, Client, db, clearCalls, createEvent, signedInClient
 } from './helpers.js';
-import { migrationPolicy, isLocalDatabaseUrl, databaseName } from '../lib/db.js';
+import {
+  migrationPolicy, isLocalDatabaseUrl, databaseName,
+  isPreviewWriteAllowed, isWriteQuery, assertPreviewWriteAllowed, PreviewWriteBlockedError
+} from '../lib/db.js';
+import { botToken, siteUrl } from '../lib/config.js';
+import { checkoutForEvent } from '../lib/payments/availability.js';
 import { assertSeedAllowed, SeedRefused } from '../scripts/seed-guard.js';
 import { planReset, assertResettable } from '../scripts/db-reset-local.js';
 import { seedDemo } from '../scripts/seed-demo.js';
-import { createSessionToken } from '../lib/session.js';
+import { createSessionToken, createSession } from '../lib/session.js';
 
 const LOCAL = 'postgres://postgres@localhost:5432/sm_local';
 const REMOTE = 'postgres://u:p@ep-cool-name.aws.neon.tech/neondb?sslmode=require';
@@ -21,7 +26,7 @@ beforeEach(clearCalls);
 
 // ---------- migrations on Vercel ----------
 
-test('migration policy: Vercel previews never migrate unless explicitly given their own DB', () => {
+test('migration policy: Vercel previews never migrate unless explicitly given their own DB and verified isolated', () => {
   assert.equal(migrationPolicy({}).run, false, 'no DATABASE_URL');
   assert.equal(migrationPolicy({ DATABASE_URL: LOCAL }).run, true, 'local dev migrates');
   assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'production' }).run, true);
@@ -30,8 +35,104 @@ test('migration policy: Vercel previews never migrate unless explicitly given th
   assert.match(preview.reason, /MIGRATE_ON_PREVIEW/);
   assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'development' }).run, false);
   assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1' }).run, false, 'unknown Vercel env is not production');
-  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true' }).run, true);
-  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: '1' }).run, false, 'only the literal "true" opts in');
+  // MIGRATE_ON_PREVIEW alone is not enough: database isolation must be proven with ISOLATED_PREVIEW_DB or PREVIEW_DATABASE_URL
+  const unisolated = migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true' });
+  assert.equal(unisolated.run, false, 'refuses without confirmed isolation');
+  assert.match(unisolated.reason, /ISOLATED_PREVIEW_DB=true is required/);
+  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true', ISOLATED_PREVIEW_DB: 'true' }).run, true);
+  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: 'true', PREVIEW_DATABASE_URL: REMOTE }).run, true);
+  assert.equal(migrationPolicy({ DATABASE_URL: REMOTE, VERCEL: '1', VERCEL_ENV: 'preview', MIGRATE_ON_PREVIEW: '1', ISOLATED_PREVIEW_DB: 'true' }).run, false, 'only the literal "true" opts in');
+});
+
+test('preview database safety: writes blocked in preview without confirmed isolated database', async () => {
+  assert.equal(isPreviewWriteAllowed({}), true, 'local dev allows writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'production' }), true, 'production allows writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview' }), false, 'preview without isolated DB blocks writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview', ISOLATED_PREVIEW_DB: 'true' }), true, 'preview with isolated DB allows writes');
+  assert.equal(isPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview', PREVIEW_DATABASE_URL: REMOTE }), true, 'preview with PREVIEW_DATABASE_URL allows writes');
+
+  assert.equal(isWriteQuery('SELECT * FROM events'), false);
+  assert.equal(isWriteQuery('INSERT INTO events (title) VALUES (\'test\')'), true);
+  assert.equal(isWriteQuery('UPDATE users SET role = \'admin\''), true);
+  assert.equal(isWriteQuery('DELETE FROM bookings WHERE id = 1'), true);
+
+  assert.throws(() => assertPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview' }), PreviewWriteBlockedError);
+  assert.doesNotThrow(() => assertPreviewWriteAllowed({ VERCEL: '1', VERCEL_ENV: 'preview', ISOLATED_PREVIEW_DB: 'true' }));
+});
+
+test('preview telegram safety: bot token disabled in preview unless dedicated token or explicit permission', () => {
+  const origEnv = { ...process.env };
+  try {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_ENV = 'preview';
+    process.env.TELEGRAM_BOT_TOKEN = '123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678';
+    delete process.env.PREVIEW_TELEGRAM_BOT_TOKEN;
+    delete process.env.TELEGRAM_TEST_BOT_TOKEN;
+    delete process.env.ALLOW_PREVIEW_TELEGRAM;
+
+    assert.equal(botToken(), '', 'shared production token returns empty in preview');
+
+    process.env.PREVIEW_TELEGRAM_BOT_TOKEN = '987654321:PREVIEW_defGHIjklMNOpqrsTUVwxyz012345';
+    assert.equal(botToken(), '987654321:PREVIEW_defGHIjklMNOpqrsTUVwxyz012345', 'dedicated preview token is used');
+
+    delete process.env.PREVIEW_TELEGRAM_BOT_TOKEN;
+    process.env.ALLOW_PREVIEW_TELEGRAM = 'true';
+    assert.equal(botToken(), '123456789:ABCdefGHIjklMNOpqrsTUVwxyz012345678', 'explicit permission uses token');
+  } finally {
+    process.env = origEnv;
+  }
+});
+
+test('preview checkout safety: paid checkout disabled in preview unless approved test mode', () => {
+  const origEnv = { ...process.env };
+  const event = { checkout_mode: 'superprofile', superprofile_url: 'https://superprofile.bio/vp/event1' };
+  try {
+    process.env.ENABLE_LIVE_PAYMENTS = 'true';
+    process.env.VERCEL = '1';
+    process.env.VERCEL_ENV = 'preview';
+    delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
+
+    const r = checkoutForEvent(event);
+    assert.equal(r.available, false, 'paid checkout disabled in preview by default');
+    assert.equal(r.reason, 'preview_paid_checkout_disabled');
+
+    process.env.ALLOW_PREVIEW_PAID_CHECKOUT = 'true';
+    const approved = checkoutForEvent(event);
+    assert.equal(approved.available, true, 'paid checkout enabled when approved test mode set');
+  } finally {
+    process.env = origEnv;
+  }
+});
+
+test('production checkout safety: paid checkout disabled when ENABLE_LIVE_PAYMENTS is false', () => {
+  const origEnv = { ...process.env };
+  const event = { checkout_mode: 'superprofile', superprofile_url: 'https://superprofile.bio/vp/event1' };
+  try {
+    process.env.ENABLE_LIVE_PAYMENTS = 'false';
+    const r = checkoutForEvent(event);
+    assert.equal(r.available, false, 'paid checkout disabled when live payments disabled');
+    assert.equal(r.reason, 'live_payments_disabled');
+  } finally {
+    process.env = origEnv;
+  }
+});
+
+test('preview site url: uses VERCEL_URL or PREVIEW_PUBLIC_SITE_URL instead of shared PUBLIC_SITE_URL', () => {
+  const origEnv = { ...process.env };
+  try {
+    process.env.VERCEL = '1';
+    process.env.VERCEL_ENV = 'preview';
+    process.env.PUBLIC_SITE_URL = 'https://strangersmeetup-virid.vercel.app';
+    process.env.VERCEL_URL = 'strangersmeetup-preview-xyz.vercel.app';
+    delete process.env.PREVIEW_PUBLIC_SITE_URL;
+
+    assert.equal(siteUrl(), 'https://strangersmeetup-preview-xyz.vercel.app', 'prefers VERCEL_URL in preview');
+
+    process.env.PREVIEW_PUBLIC_SITE_URL = 'https://preview.strangersmeetup.com';
+    assert.equal(siteUrl(), 'https://preview.strangersmeetup.com', 'prefers explicit preview url');
+  } finally {
+    process.env = origEnv;
+  }
 });
 
 test('local database detection only accepts loopback hosts and Unix sockets', () => {
@@ -140,6 +241,20 @@ test('expired, unknown and pre-migration session cookies are rejected', async ()
   assert.equal(await meUser(legacy), null, 'old cookie format without a session id');
 });
 
+test('without SESSION_SECRET, creating a session refuses before writing a session row', async () => {
+  const c = await signedInClient();
+  const count = async () => (await db.query('SELECT count(*)::int AS n FROM user_sessions WHERE user_id = $1', [c.userId])).rows[0].n;
+  const n = await count();
+  const saved = process.env.SESSION_SECRET;
+  delete process.env.SESSION_SECRET;
+  try {
+    await assert.rejects(createSession(c.userId), (e) => e.status === 503 && e.code === 'not_configured');
+  } finally {
+    process.env.SESSION_SECRET = saved;
+  }
+  assert.equal(await count(), n, 'no orphan user_sessions row');
+});
+
 test('cron cleanup prunes long-dead sessions only', async () => {
   const c = await signedInClient();
   await db.query(`UPDATE user_sessions SET expires_at = now() - interval '31 days' WHERE user_id = $1`, [c.userId]);
@@ -149,38 +264,6 @@ test('cron cleanup prunes long-dead sessions only', async () => {
   assert.ok(r.json.results.cleanup.sessions >= 1);
   assert.equal((await db.one('SELECT count(*)::int n FROM user_sessions WHERE user_id = $1', [c.userId])).n, 0);
   assert.ok(await meUser(live));
-});
-
-// ---------- payments ----------
-
-function rzpPaid({ linkId, amount }) {
-  const body = JSON.stringify({
-    entity: 'event', event: 'payment_link.paid',
-    payload: {
-      payment_link: { entity: { id: linkId, amount, amount_paid: amount, status: 'paid', currency: 'INR' } },
-      payment: { entity: { id: `pay_${crypto.randomBytes(5).toString('hex')}`, amount, currency: 'INR', status: 'captured' } }
-    }
-  });
-  const sig = crypto.createHmac('sha256', 'test_rzp_webhook_secret').update(body).digest('hex');
-  return new Client().req('POST', '/api/payments/webhook/razorpay', body,
-    { 'content-type': 'application/json', 'x-razorpay-signature': sig, 'x-razorpay-event-id': `evt_${crypto.randomBytes(6).toString('hex')}` });
-}
-
-test('a signed "paid" webhook without a usable amount never confirms a booking (fail closed)', async () => {
-  const ev = await createEvent();
-  const c = await signedInClient();
-  const r = await c.post('/api/bookings', { eventId: ev.id });
-  assert.equal(r.status, 200, r.text);
-  const pay = await db.one('SELECT * FROM payments WHERE booking_id = $1', [r.json.bookingId]);
-  for (const amount of [undefined, 'abc']) {
-    const w = await rzpPaid({ linkId: pay.provider_txn_id, amount });
-    assert.equal(w.json.result, 'amount_mismatch', `amount=${amount}`);
-  }
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [r.json.bookingId])).status, 'pending_payment');
-  assert.equal((await db.one('SELECT status FROM payments WHERE id = $1', [pay.id])).status, 'created');
-  const ok = await rzpPaid({ linkId: pay.provider_txn_id, amount: Number(pay.amount) });
-  assert.notEqual(ok.json.result, 'amount_mismatch', 'the correct amount still confirms');
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [r.json.bookingId])).status, 'confirmed');
 });
 
 // ---------- insights ----------

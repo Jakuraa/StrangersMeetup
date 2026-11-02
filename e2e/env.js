@@ -24,6 +24,7 @@ export const serverEnv = {
   DEV_LOGIN: 'true',
   SESSION_SECRET: 'e2e-only-session-secret-0123456789abcdef',
   PUBLIC_SITE_URL: E2E_BASE,
-  ENABLE_LIVE_PAYMENTS: 'false',
+  IS_PREVIEW: 'true',
+  ENABLE_LIVE_PAYMENTS: 'true',
   LOG_SILENT: 'true'
 };

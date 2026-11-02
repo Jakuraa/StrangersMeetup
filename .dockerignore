@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Version control and agent configuration
+.git/
+.github/
+.claude/
+.agents/
+.remember/
+.playwright-mcp/
+skills-lock.json
+
+# Environment and secrets
+.env
+.env*
+.env.local
+
+# Vercel deployment cache
+.vercel/
+
+# Local MCP runtime state, screenshots and audit logs
+.mcp/
+
+# Test output and reports
+test-results/
+playwright-report/
+coverage/
+*.log
+
+# Operating system and temporary artifacts
+.DS_Store
+Thumbs.db
+*.db
+*.sqlite
+data/
+public/img/review/
+research_notes/
+reports/

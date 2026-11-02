@@ -101,7 +101,7 @@ Scope: live site `https://strangersmeetup-virid.vercel.app/`, repo `Jakuraa/Stra
 
 ### P0 — blocks the money loop
 1. No persistent database in production (SQLite in `/tmp`). → Managed Postgres + migration runner.
-2. No ticket payment path at all; "booking" is free and unverified. → `PaymentProvider` + Razorpay/Cashfree sandbox + webhook-driven confirmation.
+2. No ticket payment path at all; "booking" is free and unverified. → `PaymentProvider` + SuperProfile hosted checkout + notification-driven confirmation.
 3. Auth bypass when bot token missing (S1); no sessions. → Strict initData/Login Widget validation, signed httpOnly session.
 4. IDOR on entitlements/invite links and cancel (S2, S3). → Session-scoped endpoints only.
 5. Webhook processing non-transactional, non-retryable (S8); hardcoded fallback secret (S5).

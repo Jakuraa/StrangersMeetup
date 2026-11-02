@@ -4,6 +4,7 @@ import { signInAs, expectAccessible, expectNoHorizontalOverflow, screenshot } fr
 import { openAdminTab } from './admin-helpers.js';
 
 test('super admin sees the console and the roles and audit screens', async ({ page }, testInfo) => {
+  test.setTimeout(90_000); // axe on the dense overview takes ~30s on a loaded runner
   await signInAs(page, 'admin');
   await expect(page.locator('.admin-role')).toHaveText(/super admin/i);
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();

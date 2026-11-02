@@ -1,0 +1,17 @@
+{
+  "name": "NIGHTLIFEZ — Discover. Connect. Experience.",
+  "short_name": "NIGHTLIFEZ",
+  "description": "A vibrant social discovery and experiences marketplace across South India. Adults 21+.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090B16",
+  "theme_color": "#090B16",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

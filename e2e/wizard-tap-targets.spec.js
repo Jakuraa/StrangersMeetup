@@ -13,11 +13,21 @@ async function openWizard(page) {
   await expect(page.getByLabel('Event name')).toBeVisible();
 }
 
-for (const width of [320, 375]) {
-  test(`wizard switches, Fix link and + ticket buttons are 44px @ ${width}`, async ({ page }, testInfo) => {
+for (const width of [320, 360, 375, 390, 430]) {
+  test(`wizard header and controls are 44px @ ${width}`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== 'mobile', 'phone widths only');
     await page.setViewportSize({ width, height: 700 });
     await openWizard(page);
+
+    // Wizard header: 4 compact horizontal step badges with >= 44px tap targets
+    const stepBtns = page.locator('.wz-steps button');
+    expect(await stepBtns.count()).toBe(4);
+    for (const btn of await stepBtns.all()) {
+      const b = await btn.boundingBox();
+      expect(b.height).toBeGreaterThanOrEqual(44);
+      const dir = await btn.evaluate((el) => getComputedStyle(el).flexDirection);
+      expect(dir).toBe('row');
+    }
 
     // Tickets step: every "+ ticket" button (presets and "+ Add another ticket type").
     await page.getByRole('button', { name: /Next: Tickets/ }).click();
@@ -59,16 +69,25 @@ for (const width of [320, 375]) {
   });
 }
 
+// The wizard re-renders its whole step (innerHTML) when a debounced autosave returns, so an element
+// can be detached between "visible" and "measured" and boundingBox() returns null. Poll the
+// measurement until it settles; the expected sizes are unchanged.
+const box = (locator) => locator.boundingBox().then((b) => (b ? [b.width, b.height] : null));
+
 test('wizard controls keep their desktop size', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'desktop only');
   await openWizard(page);
   await page.getByRole('button', { name: /Next: Tickets/ }).click();
-  expect((await page.locator('.chip[data-act="add-tier"]').first().boundingBox()).height).toBe(40);
+  const chip = page.locator('.chip[data-act="add-tier"]').first();
+  await expect(chip).toBeVisible();
+  await expect.poll(async () => (await box(chip))?.[1]).toBe(40);
   await page.getByRole('button', { name: /Next: Features/ }).click();
-  const b = await page.getByRole('switch').first().boundingBox();
-  expect([b.width, b.height]).toEqual([52, 32]);
+  const sw = page.getByRole('switch').first();
+  await expect(sw).toBeVisible();
+  await expect.poll(() => box(sw)).toEqual([52, 32]);
   await screenshot(page, testInfo, 'wizard-features-desktop');
   await page.getByRole('button', { name: /^Next/ }).click();
-  const fb = await page.getByRole('button', { name: 'Fix', exact: true }).first().boundingBox();
-  expect(fb.height).toBeLessThan(30);
+  const fix = page.getByRole('button', { name: 'Fix', exact: true }).first();
+  await expect(fix).toBeVisible();
+  await expect.poll(async () => (await box(fix))?.[1] ?? Infinity).toBeLessThan(30);
 });

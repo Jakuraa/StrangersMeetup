@@ -89,9 +89,9 @@ Legend — Auth: `—` none · `user` session · `org` session + organiser · `o
 
 ### Webhooks and cron
 `POST /api/telegram/webhook` (secret header, constant-time, `update_id` dedupe) ·
-`POST /api/payments/webhook/:provider` (HMAC; Cashfree timestamp window; `webhook_events` dedupe; amount must match — fails closed) ·
-`POST /api/membership/superprofile/webhook` (shared secret, RL, idempotent) ·
-`GET /api/cron/:job` (bearer `CRON_SECRET` ≥16 chars; jobs: expire-holds, reconcile, memberships, notifications, feeds, cleanup).
+`POST /api/webhooks/superprofile` (alias `/api/membership/superprofile/webhook`; shared secret checked before any read or write, RL, idempotent on `order_id`; amount must match the configured price — fails closed) ·
+`GET /checkout/:slug` (public; creates a checkout intent and 302s to the event's SuperProfile page; HEAD never writes) ·
+`GET /api/cron/:job` (bearer `CRON_SECRET` ≥16 chars; jobs: expire-holds, memberships, notifications, feeds, cleanup).
 
 ### Admin (`/admin` shell + `/api/admin/*`; every handler calls `guard()`; writes add CSRF + RL 120/min + audit)
 | Area | Endpoints | Roles |
