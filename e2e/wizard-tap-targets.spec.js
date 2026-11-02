@@ -3,6 +3,11 @@
 import { test, expect } from '@playwright/test';
 import { signInAs, screenshot } from './helpers.js';
 
+// The wizard re-renders its whole step (innerHTML) when a debounced autosave returns, so an element
+// can be detached between "visible" and "measured" and boundingBox() returns null. Every size check
+// polls the measurement until it settles; the expected sizes are unchanged.
+const box = (locator) => locator.boundingBox().then((b) => (b ? [b.width, b.height] : null));
+
 async function openWizard(page) {
   page.on('dialog', (d) => d.accept());
   await signInAs(page, 'organiser');
@@ -23,8 +28,7 @@ for (const width of [320, 360, 375, 390, 430]) {
     const stepBtns = page.locator('.wz-steps button');
     expect(await stepBtns.count()).toBe(4);
     for (const btn of await stepBtns.all()) {
-      const b = await btn.boundingBox();
-      expect(b.height).toBeGreaterThanOrEqual(44);
+      await expect.poll(async () => (await box(btn))?.[1] ?? 0).toBeGreaterThanOrEqual(44);
       const dir = await btn.evaluate((el) => getComputedStyle(el).flexDirection);
       expect(dir).toBe('row');
     }
@@ -34,20 +38,17 @@ for (const width of [320, 360, 375, 390, 430]) {
     await page.getByRole('button', { name: '+ Free entry' }).click();
     const adders = page.locator('[data-act="add-tier"]');
     expect(await adders.count()).toBeGreaterThan(1);
-    for (const b of await adders.all()) expect((await b.boundingBox()).height, await b.innerText()).toBeGreaterThanOrEqual(44);
+    for (const b of await adders.all()) await expect.poll(async () => (await box(b))?.[1] ?? 0).toBeGreaterThanOrEqual(44);
     await screenshot(page, testInfo, `wizard-tickets-${width}`);
 
     // Features step: every switch.
     await page.getByRole('button', { name: /Next: Features/ }).click();
     const switches = page.getByRole('switch');
     expect(await switches.count()).toBeGreaterThanOrEqual(4);
-    for (const s of await switches.all()) {
-      const b = await s.boundingBox();
-      expect(b.height).toBeGreaterThanOrEqual(44);
-      expect(b.width).toBeGreaterThanOrEqual(44);
-    }
+    for (const s of await switches.all()) await expect.poll(async () => Math.min(...((await box(s)) ?? [0]))).toBeGreaterThanOrEqual(44);
     // Tapping the padding above the visible track still toggles it.
     const sw = switches.first();
+    await expect.poll(() => box(sw)).not.toBeNull();
     const b = await sw.boundingBox();
     const before = await sw.getAttribute('aria-checked');
     await page.mouse.click(b.x + b.width / 2, b.y + 2);
@@ -58,21 +59,13 @@ for (const width of [320, 360, 375, 390, 430]) {
     await page.getByRole('button', { name: /^Next/ }).click();
     const fixes = page.getByRole('button', { name: 'Fix', exact: true });
     await expect(fixes.first()).toBeVisible();
-    for (const f of await fixes.all()) {
-      const fb = await f.boundingBox();
-      expect(fb.width).toBeGreaterThanOrEqual(44);
-      expect(fb.height).toBeGreaterThanOrEqual(44);
-    }
+    for (const f of await fixes.all()) await expect.poll(async () => Math.min(...((await box(f)) ?? [0]))).toBeGreaterThanOrEqual(44);
     const sizes = await fixes.first().evaluate((el) => [getComputedStyle(el).fontSize, getComputedStyle(el.parentElement).fontSize]);
     expect(sizes[0]).toBe(sizes[1]);
     await screenshot(page, testInfo, `wizard-preview-${width}`);
   });
 }
 
-// The wizard re-renders its whole step (innerHTML) when a debounced autosave returns, so an element
-// can be detached between "visible" and "measured" and boundingBox() returns null. Poll the
-// measurement until it settles; the expected sizes are unchanged.
-const box = (locator) => locator.boundingBox().then((b) => (b ? [b.width, b.height] : null));
 
 test('wizard controls keep their desktop size', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'desktop only');
