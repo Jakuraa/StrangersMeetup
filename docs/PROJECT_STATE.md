@@ -21,7 +21,7 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 | Ref | SHA | What it is |
 |---|---|---|
 | `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 74 commits behind `launch-mvp`. |
-| `origin/launch-mvp` | `83a30a7` | Merge of PR #25 (Owner Addendum Ops). Baseline for milestone execution. |
+| `origin/launch-mvp` | `46b85c1` | Merge of PR #26 (M3 Deployment & Database Migration). Baseline for M4. |
 | `origin/feature/p3-location-intelligence` | `d7836ff` | PR #23 feature branch head; merged into `launch-mvp` at `7c5079e`. |
 | `origin/fix/preview-recovery-audit` | `bcb4989` | Commit holding Phase 5.6/5.7 reports; pushed to origin per owner decision. |
 
@@ -37,6 +37,7 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
+PR #26 is **merged** at `46b85c1` (M3 Deployment & Database Migration Architecture).
 
 ## 4. Migrations per environment
 
@@ -65,7 +66,7 @@ PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, br
 
 | Path | Branch @ SHA | Untracked | Role |
 |---|---|---|---|
-| `/Users/pradeepjakuraa/strangersmeetup` | `feature/m3-deployment-migration` | none | **Canonical workspace** (main clone; holds the `.vercel` project link and local env). Cut from `launch-mvp` @ `83a30a7`. |
+| `/Users/pradeepjakuraa/strangersmeetup` | `feature/m4-payment-booking-audit` | none | **Canonical workspace** (main clone; holds the `.vercel` project link and local env). Cut from `launch-mvp` @ `46b85c1`. |
 | `/Users/pradeepjakuraa/nightlifez-work` | `feature/m1-project-state` | none | Secondary worktree. Free when milestone finishes. |
 | `/Users/pradeepjakuraa/strangersmeetup/.claude/worktrees/launch-mvp` | `worktree-launch-mvp` @ `7db45a5` | `.playwright-mcp/` | **Stale worktree.** Preserved as is per owner addendum instruction. |
 
@@ -149,13 +150,17 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 | M1 Repository truth | `feature/m1-project-state` / #24 | **Merged** @ `cd40fcf` into `launch-mvp` |
 | M2 P3 remediation | `feature/p3-location-intelligence` / #23 | **Merged** @ `7c5079e` into `launch-mvp` (H-01, H-02, M-01, M-02, L-01, L-02 resolved, Migration 014 applied on Preview `dpl_AbjNDha7i298qjrh84FZZA3hHUQv`, 100% CI pass) |
 | Owner Addendum | `feature/m2-addendum-ops` / #25 | **Merged** @ `83a30a7` into `launch-mvp` (Dynamic production DB block list + safety tests; 19 merged branches archived and deleted; `bcb4989` pushed and Phase 5.6/5.7 reports imported into `docs/history/`) |
-| M3 Deployment & DB Migration | `feature/m3-deployment-migration` | **Completed** (Deployment architecture, DB migration policy, forensic production verification, environment inventory, migration test suite `test/migrations.test.js`) |
-| M4–M10 | — | not started |
+| M3 Deployment & DB Migration | `feature/m3-deployment-migration` / #26 | **Merged** @ `46b85c1` into `launch-mvp` (Deployment architecture, DB migration policy, forensic production verification, environment inventory, migration test suite `test/migrations.test.js`) |
+| M4 Payment & Booking Readiness | `feature/m4-payment-booking-audit` | **Completed** (Booking & payment architecture, payment readiness & financial safety report, booking integrity test report, 10/10 automated tests in `test/booking-integrity.test.js`) |
+| M5–M10 | — | not started |
 
 ## 11. Where the detail lives
 
 | Topic | Doc |
 |---|---|
+| Booking and payment architecture | [arch/BOOKING_AND_PAYMENT_ARCHITECTURE.md](arch/BOOKING_AND_PAYMENT_ARCHITECTURE.md) |
+| Payment readiness & financial safety | [launch/PAYMENT_READINESS.md](launch/PAYMENT_READINESS.md) |
+| Booking integrity test report | [launch/BOOKING_INTEGRITY_TEST_REPORT.md](launch/BOOKING_INTEGRITY_TEST_REPORT.md) |
 | Deployment architecture | [arch/DEPLOYMENT_ARCHITECTURE.md](arch/DEPLOYMENT_ARCHITECTURE.md) |
 | Database migration policy | [arch/DATABASE_MIGRATION_POLICY.md](arch/DATABASE_MIGRATION_POLICY.md) |
 | Environment readiness & secrets inventory | [launch/ENVIRONMENT_READINESS.md](launch/ENVIRONMENT_READINESS.md) |
