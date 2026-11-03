@@ -4,11 +4,17 @@
 
 const env = process.env.VERCEL_ENV || '';
 const branch = process.env.VERCEL_GIT_COMMIT_REF || '';
-const isProduction = env === 'production' || branch === 'main' || branch === 'launch-mvp';
+const isProduction = env === 'production' || branch === 'main';
+const isLaunchMvp = branch === 'launch-mvp';
 const isIsolatedPreview = process.env.ISOLATED_PREVIEW_DB === 'true' || Boolean(process.env.PREVIEW_DATABASE_URL);
 
 if (isProduction) {
   console.log(`[vercel-ignore] Production deployment on '${branch || env}' — proceeding with build.`);
+  process.exit(1);
+}
+
+if (isLaunchMvp) {
+  console.log(`[vercel-ignore] Integration Preview deployment on '${branch}' — proceeding with build.`);
   process.exit(1);
 }
 

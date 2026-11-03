@@ -20,22 +20,23 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 
 | Ref | SHA | What it is |
 |---|---|---|
-| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 73 commits behind `launch-mvp`. |
-| `origin/launch-mvp` | `7c5079e` | Merge of PR #23 (P3 Location Intelligence & M2 Remediation). Baseline for milestone execution. |
+| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 74 commits behind `launch-mvp`. |
+| `origin/launch-mvp` | `83a30a7` | Merge of PR #25 (Owner Addendum Ops). Baseline for milestone execution. |
 | `origin/feature/p3-location-intelligence` | `d7836ff` | PR #23 feature branch head; merged into `launch-mvp` at `7c5079e`. |
 | `origin/fix/preview-recovery-audit` | `bcb4989` | Commit holding Phase 5.6/5.7 reports; pushed to origin per owner decision. |
 
-Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp`.
+Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp` @ `83a30a7`.
 
 ## 3. Open pull requests and CI
 
 | PR | Base ← Head | Head SHA | Checks on head | Latest CI run |
 |---|---|---|---|---|
-| #17 Production release: free-only MVP | `main` ← `launch-mvp` | `7c5079e` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41561448083](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41561448083) (push) success |
+| #17 Production release: free-only MVP | `main` ← `launch-mvp` | `83a30a7` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41564501659](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41564501659) (push) success |
 
 **Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record.
 
-PR #23 is **merged** at `7c5079e` after all M2 findings (H-01, H-02, M-01, M-02, L-01, L-02) were remediated and verified with green CI ([41559713677](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41559713677)) and clean Preview deployment (`dpl_AbjNDha7i298qjrh84FZZA3hHUQv`).
+PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
+PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
 
 ## 4. Migrations per environment
 
@@ -49,14 +50,14 @@ PR #23 is **merged** at `7c5079e` after all M2 findings (H-01, H-02, M-01, M-02,
 
 > ℹ️ **Preview DB migrations.** Both `013_location_intelligence.sql` and `014_location_remediation.sql` are applied on the Preview database. `013` was preserved strictly unchanged; all fixes were applied via `014`.
 
-> ⚠️ **Unreconciled — Production DB contents (Owner Gate 3).** The owner will provide the confirmed Production project ID and endpoint ID from Vercel → Storage before any release. Until then, `ep-dawn-glitter-b4mkwxkl` is treated as unconfirmed/suspected. The codebase implements a dynamic production endpoint block list (via `DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS` and `BLOCKED_PRODUCTION_ENDPOINTS` in `lib/config.js`), which strictly refuses all listed endpoints across preview reviewer sign-in, seed/reset guards, preview writes, and preview migrations, verified by automated tests in `test/safety.test.js`.
+> ⚠️ **Unreconciled — Production DB contents (Owner Gate 3).** See [PRODUCTION_DATABASE_VERIFICATION.md](launch/PRODUCTION_DATABASE_VERIFICATION.md) for full forensics. On 2026-10-29, build `dpl_3g7a...` applied migrations 003–009 to the configured database. The owner will provide the confirmed Production project ID and endpoint ID from Vercel → Storage before release. Until then, `ep-dawn-glitter-b4mkwxkl` is treated as unconfirmed/suspected. The codebase implements a dynamic production endpoint block list (via `DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS` and `BLOCKED_PRODUCTION_ENDPOINTS` in `lib/config.js`), strictly refusing all listed endpoints across preview reviewer sign-in, seed/reset guards, preview writes, and preview migrations, verified by automated tests in `test/safety.test.js` and `test/migrations.test.js`.
 
 ## 5. What is live vs Preview-only
 
 | Surface | Code | Status |
 |---|---|---|
-| **Production** (Vercel Production target) | `main` @ `5c6652a`: Postgres backend, Telegram auth/bot, sandbox payments, admin (PR #2) | Live, READY since 2026-10-29. It is still branded StrangersMeetup and lacks the 73 commits on `launch-mvp`. Production env is missing most required variables (§7). |
-| **Preview, `launch-mvp`** | `7c5079e`: everything in Production plus the organiser wizard, SuperProfile checkout (gated off by `ENABLE_LIVE_PAYMENTS`), trust & safety, the NIGHTLIFEZ rebrand (PR #19), P0 ground truth (PR #20), P2 identities/orgs/`can()` (PR #21), wizard e2e fix (PR #22), and P3 Location Intelligence + Remediation (PR #23) | Preview-only, READY (`dpl_6Z4ZwqYfuwAwLJEbYN5fkeaqjj1g`). Behind Vercel deployment protection. |
+| **Production** (Vercel Production target) | `main` @ `5c6652a`: Postgres backend, Telegram auth/bot, sandbox payments, admin (PR #2) | Live, READY since 2026-10-29. It is still branded StrangersMeetup and lacks the 74 commits on `launch-mvp`. Production env is missing most required variables (§7). |
+| **Preview, `launch-mvp`** | `83a30a7`: everything in Production plus the organiser wizard, SuperProfile checkout (gated off by `ENABLE_LIVE_PAYMENTS`), trust & safety, the NIGHTLIFEZ rebrand (PR #19), P0 ground truth (PR #20), P2 identities/orgs/`can()` (PR #21), wizard e2e fix (PR #22), P3 Location Intelligence + Remediation (PR #23), and Owner Addendum Ops (PR #25) | Preview-only, READY (`dpl_5bwWwcYWVx5cwcxXZNFZt2fhA73C`). Protected by Vercel deployment protection (SSO). |
 
 ## 6. Workspaces (worktrees)
 
@@ -64,7 +65,7 @@ PR #23 is **merged** at `7c5079e` after all M2 findings (H-01, H-02, M-01, M-02,
 
 | Path | Branch @ SHA | Untracked | Role |
 |---|---|---|---|
-| `/Users/pradeepjakuraa/strangersmeetup` | `launch-mvp` @ `7c5079e` | none | **Canonical workspace** (main clone; holds the `.vercel` project link and local env). |
+| `/Users/pradeepjakuraa/strangersmeetup` | `feature/m3-deployment-migration` | none | **Canonical workspace** (main clone; holds the `.vercel` project link and local env). Cut from `launch-mvp` @ `83a30a7`. |
 | `/Users/pradeepjakuraa/nightlifez-work` | `feature/m1-project-state` | none | Secondary worktree. Free when milestone finishes. |
 | `/Users/pradeepjakuraa/strangersmeetup/.claude/worktrees/launch-mvp` | `worktree-launch-mvp` @ `7db45a5` | `.playwright-mcp/` | **Stale worktree.** Preserved as is per owner addendum instruction. |
 
@@ -147,14 +148,19 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 |---|---|---|
 | M1 Repository truth | `feature/m1-project-state` / #24 | **Merged** @ `cd40fcf` into `launch-mvp` |
 | M2 P3 remediation | `feature/p3-location-intelligence` / #23 | **Merged** @ `7c5079e` into `launch-mvp` (H-01, H-02, M-01, M-02, L-01, L-02 resolved, Migration 014 applied on Preview `dpl_AbjNDha7i298qjrh84FZZA3hHUQv`, 100% CI pass) |
-| Owner Addendum | `launch-mvp` | **Completed** (Dynamic production DB block list + safety tests; 19 merged branches archived and deleted; `bcb4989` pushed and Phase 5.6/5.7 reports imported into `docs/history/`) |
-| M3–M10 | — | not started |
+| Owner Addendum | `feature/m2-addendum-ops` / #25 | **Merged** @ `83a30a7` into `launch-mvp` (Dynamic production DB block list + safety tests; 19 merged branches archived and deleted; `bcb4989` pushed and Phase 5.6/5.7 reports imported into `docs/history/`) |
+| M3 Deployment & DB Migration | `feature/m3-deployment-migration` | **Completed** (Deployment architecture, DB migration policy, forensic production verification, environment inventory, migration test suite `test/migrations.test.js`) |
+| M4–M10 | — | not started |
 
 ## 11. Where the detail lives
 
 | Topic | Doc |
 |---|---|
-| Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Deployment architecture | [arch/DEPLOYMENT_ARCHITECTURE.md](arch/DEPLOYMENT_ARCHITECTURE.md) |
+| Database migration policy | [arch/DATABASE_MIGRATION_POLICY.md](arch/DATABASE_MIGRATION_POLICY.md) |
+| Environment readiness & secrets inventory | [launch/ENVIRONMENT_READINESS.md](launch/ENVIRONMENT_READINESS.md) |
+| Production database verification & forensics | [launch/PRODUCTION_DATABASE_VERIFICATION.md](launch/PRODUCTION_DATABASE_VERIFICATION.md) |
+| Architecture overview | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Product spec | [SPEC.md](SPEC.md) |
 | Geographic coverage & LGD directory | [GEOGRAPHIC_COVERAGE.md](GEOGRAPHIC_COVERAGE.md) |
 | Routes and roles | [ROUTES_AND_ROLES.md](ROUTES_AND_ROLES.md) |
