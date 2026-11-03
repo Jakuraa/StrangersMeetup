@@ -22,10 +22,13 @@ import {
   createUpiPaymentIntent,
   getUpiPaymentStatus,
   applySuccessfulUpiPayment,
+  claimUpiBooking,
+  activePaymentHolds,
   processUpiWebhook,
   refundUpiOrder,
   isLegalTransition
 } from '../lib/services/upi-payments.js';
+import { renderUpiCheckout } from '../lib/views/checkout-upi.js';
 
 let guest1;
 let guest2;
@@ -312,8 +315,16 @@ test('status polling: client polling returns current status and handles expiry',
 
   const c = new Client();
 
-  // Pending status
-  const resPending = await c.get(`/api/checkout/upi/status/${intent.orderId}`);
+  // AUTH-01: Anonymous request rejected with 401
+  const resAnon = await c.get(`/api/checkout/upi/status/${intent.orderId}`);
+  assert.equal(resAnon.status, 401);
+
+  // AUTH-01: Different user rejected with 403
+  const resOther = await guest1.get(`/api/checkout/upi/status/${intent.orderId}`);
+  assert.equal(resOther.status, 403);
+
+  // Pending status for owner
+  const resPending = await guest3.get(`/api/checkout/upi/status/${intent.orderId}`);
   assert.equal(resPending.status, 200);
   assert.equal(resPending.json.status, 'pending');
   assert.equal(resPending.json.amountPaise, 30000);
@@ -322,7 +333,7 @@ test('status polling: client polling returns current status and handles expiry',
   await db.query(`UPDATE payments SET expires_at = now() - interval '1 second' WHERE order_id = $1`, [intent.orderId]);
 
   // Polling after expiry returns expired
-  const resExpired = await c.get(`/api/checkout/upi/status/${intent.orderId}`);
+  const resExpired = await guest3.get(`/api/checkout/upi/status/${intent.orderId}`);
   assert.equal(resExpired.status, 200);
   assert.equal(resExpired.json.status, 'expired');
 });
@@ -500,4 +511,354 @@ test('http routes: POST /api/payments/webhook/phonepe processes valid webhook pa
   const pay = await db.one('SELECT status, provider_payment_id FROM payments WHERE order_id = $1', [orderId]);
   assert.equal(pay.status, 'succeeded');
   assert.equal(pay.provider_payment_id, 'UTR-HTTP-999');
+});
+
+// ============================================================================
+// Milestone M4.3: Critical UPI Security & Financial Integrity Remediation Tests
+// ============================================================================
+
+test('SEC-01: Authentic PhonePe S2S webhook signature calculation using base64 payload', () => {
+  const adapter = new PhonePeAdapter();
+  const innerPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: 'ORD-SEC01-TEST',
+      transactionId: 'TXN-SEC01-1',
+      amount: 49900,
+      state: 'COMPLETED'
+    }
+  };
+  const base64Response = Buffer.from(JSON.stringify(innerPayload)).toString('base64');
+  const outerBody = JSON.stringify({ response: base64Response });
+
+  // Official PhonePe S2S specification: SHA256(base64Response + saltKey) + "###" + saltIndex
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const expectedHash = crypto.createHash('sha256').update(`${base64Response}${saltKey}`).digest('hex');
+  const validHeader = `${expectedHash}###1`;
+
+  const verified = adapter.verifyWebhook({ 'x-verify': validHeader }, outerBody);
+  assert.equal(verified.orderId, 'ORD-SEC01-TEST');
+  assert.equal(verified.status, 'succeeded');
+  assert.equal(verified.amountPaise, 49900);
+
+  // Tampered payload rejected
+  const tamperedOuter = JSON.stringify({ response: Buffer.from(JSON.stringify({ ...innerPayload, code: 'PAYMENT_ERROR' })).toString('base64') });
+  assert.throws(
+    () => adapter.verifyWebhook({ 'x-verify': validHeader }, tamperedOuter),
+    /Invalid PhonePe webhook signature/
+  );
+
+  // Tampered salt index rejected
+  assert.throws(
+    () => adapter.verifyWebhook({ 'x-verify': `${expectedHash}###2` }, outerBody),
+    /Invalid PhonePe webhook signature/
+  );
+});
+
+test('FIN-01: Webhook underpayment attack rejected and marked disputed with 0 bookings', async () => {
+  const { event, tier } = await createPaidEvent({ price: 500000 }); // ₹5,000 ticket
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest1,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  // Malicious webhook reporting payment of ₹1 (100 paise) instead of ₹5,000
+  const underpayPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: intent.orderId,
+      transactionId: `TXN-UNDERPAY-${intent.orderId}`,
+      amount: 100, // Only 100 paise (₹1)
+      state: 'COMPLETED',
+      paymentInstrument: { type: 'UPI', utr: 'UTR-ATTACK-001' }
+    }
+  };
+  const base64 = Buffer.from(JSON.stringify(underpayPayload)).toString('base64');
+  const rawBody = JSON.stringify({ response: base64 });
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const sig = crypto.createHash('sha256').update(`${base64}${saltKey}`).digest('hex') + '###1';
+
+  const hookRes = await processUpiWebhook({
+    headers: { 'x-verify': sig },
+    rawBody,
+    clientIp: '127.0.0.1'
+  });
+
+  assert.equal(hookRes.ok, false);
+  assert.equal(hookRes.error, 'amount_mismatch');
+
+  // Verify DB state: payment marked disputed
+  const paymentRow = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(paymentRow.status, 'disputed');
+  assert.ok(paymentRow.failure_reason.includes('Amount mismatch'));
+
+  // Zero confirmed bookings created
+  const bookingCount = await db.one('SELECT count(*)::int AS count FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [intent.orderId]);
+  assert.equal(bookingCount.count, 0);
+
+  // Payment audit ledger records dispute with amount details
+  const auditEntry = await db.one('SELECT * FROM payment_audits WHERE order_id = $1 AND to_status = $2', [intent.orderId, 'disputed']);
+  assert.ok(auditEntry);
+  assert.equal(auditEntry.details.reason, 'amount_mismatch');
+  assert.equal(auditEntry.details.expectedPaise, 500000);
+  assert.equal(auditEntry.details.verifiedPaise, 100);
+});
+
+test('DATA-01: Guest checkout flow without user_id succeeds on webhook without 500 and requires claim', async () => {
+  const { event, tier } = await createPaidEvent({ price: 15000 });
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: null, // Guest checkout
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  assert.ok(intent.guestToken, 'Guest token generated and returned');
+
+  // Webhook arrives for this guest order
+  const payload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: intent.orderId,
+      transactionId: `TXN-GUEST-${intent.orderId}`,
+      amount: 15000,
+      state: 'COMPLETED',
+      paymentInstrument: { type: 'UPI', utr: 'UTR-GUEST-001' }
+    }
+  };
+  const base64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+  const rawBody = JSON.stringify({ response: base64 });
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const sig = crypto.createHash('sha256').update(`${base64}${saltKey}`).digest('hex') + '###1';
+
+  const hookRes = await processUpiWebhook({
+    headers: { 'x-verify': sig },
+    rawBody,
+    clientIp: '127.0.0.1'
+  });
+
+  assert.equal(hookRes.ok, true);
+  assert.equal(hookRes.guestClaimRequired, true);
+
+  // Payment is succeeded in DB, but 0 bookings exist yet
+  const payRow = await db.one('SELECT id, status, user_id, booking_id FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(payRow.status, 'succeeded');
+  assert.equal(payRow.user_id, null);
+  assert.equal(payRow.booking_id, null);
+
+  // Anonymous claim fails with 401
+  const c = new Client();
+  const claimAnon = await c.post('/api/checkout/upi/claim', {
+    orderId: intent.orderId,
+    guestToken: intent.guestToken
+  });
+  assert.equal(claimAnon.status, 401);
+
+  // Claim with wrong guestToken fails with 403
+  const claimWrongToken = await guest1.post('/api/checkout/upi/claim', {
+    orderId: intent.orderId,
+    guestToken: 'wrong-token-12345'
+  });
+  assert.equal(claimWrongToken.status, 403);
+
+  // Valid claim succeeds
+  const claimValid = await guest1.post('/api/checkout/upi/claim', {
+    orderId: intent.orderId,
+    guestToken: intent.guestToken
+  });
+  assert.equal(claimValid.status, 200);
+  assert.ok(claimValid.json.bookingId);
+  assert.equal(claimValid.json.claimed, true);
+
+  // Re-claim is idempotent
+  const claimDup = await guest1.post('/api/checkout/upi/claim', {
+    orderId: intent.orderId,
+    guestToken: intent.guestToken
+  });
+  assert.equal(claimDup.status, 200);
+  assert.equal(claimDup.json.duplicate, true);
+
+  // Claimed booking is confirmed in DB
+  const bookingRow = await db.one('SELECT * FROM bookings WHERE id = $1', [claimValid.json.bookingId]);
+  assert.equal(bookingRow.status, 'confirmed');
+  assert.equal(bookingRow.payment_id, payRow.id);
+});
+
+test('CONCUR-01: Active unexpired checkout intent holds capacity & re-checks at confirmation', async () => {
+  // Event with capacity = 1
+  const { event, tier } = await createPaidEvent({ price: 20000, capacity: 1 });
+
+  // User 1 creates intent for 1 seat
+  const intent1 = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest1,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+  assert.ok(intent1.orderId);
+
+  // User 2 attempts to create intent while User 1 holds active unexpired intent
+  await assert.rejects(
+    async () => {
+      await createUpiPaymentIntent({
+        slug: event.slug,
+        user: guest2,
+        ticketTypeId: tier.id,
+        quantity: 1
+      });
+    },
+    /sold out/i
+  );
+
+  // Expire User 1's payment intent
+  await db.query(`UPDATE payments SET expires_at = now() - interval '10 seconds' WHERE order_id = $1`, [intent1.orderId]);
+
+  // User 2 can now create intent
+  const intent2 = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest2,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+  assert.ok(intent2.orderId);
+
+  // Now test confirmation capacity guard: consume capacity manually
+  await db.query(
+    `INSERT INTO bookings (event_id, user_id, ticket_type_id, quantity, status, amount_paise, payment_mode, source, confirmed_at)
+     VALUES ($1, $2, $3, 1, 'confirmed', 20000, 'free', 'site', now())`,
+    [event.id, guest3.userId, tier.id]
+  );
+
+  // Confirming User 2's payment detects capacity exceeded
+  const confirmResult = await applySuccessfulUpiPayment({
+    orderId: intent2.orderId,
+    providerTxnId: 'TXN-OVERSOLD-1',
+    actor: 'test:concurrency'
+  });
+
+  assert.equal(confirmResult.overbooked, true);
+  assert.equal(confirmResult.status, 'refund_pending');
+
+  const payOversold = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [intent2.orderId]);
+  assert.equal(payOversold.status, 'refund_pending');
+  assert.equal(payOversold.failure_reason, 'capacity_exceeded');
+});
+
+test('AUTH-01: Status endpoint authorization and guest token isolation', async () => {
+  const { event, tier } = await createPaidEvent({ price: 10000 });
+  const guestIntent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: null,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  const c = new Client();
+
+  // Polling guest order without token is forbidden (403)
+  const resNoToken = await c.get(`/api/checkout/upi/status/${guestIntent.orderId}`);
+  assert.equal(resNoToken.status, 403);
+
+  // Polling guest order with invalid token is forbidden (403)
+  const resBadToken = await c.get(`/api/checkout/upi/status/${guestIntent.orderId}?token=invalid-guest-token`);
+  assert.equal(resBadToken.status, 403);
+
+  // Polling guest order with valid token succeeds (200)
+  const resValidToken = await c.get(`/api/checkout/upi/status/${guestIntent.orderId}?token=${guestIntent.guestToken}`);
+  assert.equal(resValidToken.status, 200);
+  assert.equal(resValidToken.json.orderId, guestIntent.orderId);
+
+  // Admin user can view guest order without token
+  const resAdmin = await admin.get(`/api/checkout/upi/status/${guestIntent.orderId}`);
+  assert.equal(resAdmin.status, 200);
+});
+
+test('QR-01: QR format info preserves mandatory Dark Module at (size - 8, 8)', () => {
+  // Test Version 1 (21x21, <=14 bytes)
+  const uriV1 = 'upi://pay';
+  const qr1 = encodeQrMatrix(uriV1);
+  assert.equal(qr1.version, 1);
+  assert.equal(qr1.size, 21);
+  assert.equal(qr1.get(qr1.size - 8, 8), true, 'Dark module at (size - 8, 8) in Version 1 must be true');
+
+  // Test Version 3 (29x29)
+  const uriV3 = 'upi://pay?pa=test@upi&pn=Test&am=100.00';
+  const qr3 = encodeQrMatrix(uriV3);
+  assert.equal(qr3.version, 3);
+  assert.equal(qr3.size, 29);
+  assert.equal(qr3.get(qr3.size - 8, 8), true, 'Dark module at (size - 8, 8) in Version 3 must be true');
+
+  // Test Version 8 (49x49, long UPI URI with metadata)
+  const uriLong = buildUpiUri({
+    vpa: 'nightlifez@icici',
+    name: 'NIGHTLIFEZ Experiences',
+    amountPaise: 499900,
+    orderId: 'ORD-UPI-TEST-V8-1234567890',
+    note: 'Premium VIP Table Reservation'
+  });
+  const qr8 = encodeQrMatrix(uriLong);
+  assert.equal(qr8.version, 8, 'Selected Version 8 for long URI');
+  assert.equal(qr8.get(qr8.size - 8, 8), true, `Dark module at (size - 8, 8) in Version ${qr8.version} must be true`);
+});
+
+test('UI-01: Responsive CSS rules strictly isolate mobile intent and desktop QR', () => {
+  const rendered = renderUpiCheckout({
+    order: {
+      orderId: 'ORD-UI-TEST',
+      amountPaise: 29900,
+      amountRupees: '299.00',
+      currency: 'INR',
+      eventTitle: 'UI Test Mixer',
+      tierName: 'Standard',
+      quantity: 1,
+      upiUri: 'upi://pay?pa=test@upi',
+      appIntents: { gpay: 'gpay://', phonepe: 'phonepe://', paytm: 'paytm://', cred: 'cred://', bhim: 'bhim://' },
+      qrSvg: '<svg></svg>',
+      expiresInSeconds: 600
+    },
+    event: { slug: 'ui-test-mixer', title: 'UI Test Mixer', city: 'Mumbai', start_at: new Date() },
+    tier: { name: 'Standard', price_paise: 29900 },
+    user: guest1.user
+  });
+
+  assert.ok(rendered.includes('.checkout-desktop { display: none !important; }'));
+  assert.ok(rendered.includes('.checkout-mobile { display: none !important; }'));
+  assert.ok(rendered.includes('@media (max-width: 768px)'));
+  assert.ok(rendered.includes('@media (min-width: 769px)'));
+  assert.ok(rendered.includes('class="checkout-desktop"'));
+  assert.ok(rendered.includes('class="checkout-mobile"'));
+});
+
+test('DB-01: payment_audits table is strictly append-only and immutable', async () => {
+  const { event, tier } = await createPaidEvent({ price: 10000 });
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest1,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  const auditRow = await db.one('SELECT id FROM payment_audits WHERE order_id = $1 LIMIT 1', [intent.orderId]);
+  assert.ok(auditRow);
+
+  // Direct UPDATE should be blocked by trigger
+  await assert.rejects(
+    async () => {
+      await db.query(`UPDATE payment_audits SET actor = 'tampered' WHERE id = $1`, [auditRow.id]);
+    },
+    /append-only ledger/
+  );
+
+  // Direct DELETE should be blocked by trigger
+  await assert.rejects(
+    async () => {
+      await db.query(`DELETE FROM payment_audits WHERE id = $1`, [auditRow.id]);
+    },
+    /append-only ledger/
+  );
 });

@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 13 migrations currently exist: 003 through 015
-  assert.equal(files.length, 13, `expected 13 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 14 migrations currently exist: 003 through 016
+  assert.equal(files.length, 14, `expected 14 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 13 migrations in correct order', async () => {
+test('schema_migrations table records all 14 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 13);
+  assert.equal(rows.length, 14);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 13
+  // Total count in schema_migrations must remain exactly 14
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 13);
+  assert.equal(countRes.n, 14);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -159,4 +159,25 @@ test('core schema integrity: all tables, custom types, and location intelligence
   );
   assert.ok(col, 'expected coords_provenance column on events');
   assert.equal(col.udt_name, 'location_provenance');
+});
+
+test('payment_audits is immutable append-only ledger (DB-01)', async () => {
+  const ins = await db.one(
+    `INSERT INTO payment_audits (order_id, to_status, actor)
+     VALUES ('ORD-TEST-IMMUTABLE', 'pending', 'test:migration')
+     RETURNING id`
+  );
+  assert.ok(ins.id);
+
+  // Attempt UPDATE -> must fail with append-only trigger exception
+  await assert.rejects(
+    () => db.query(`UPDATE payment_audits SET actor = 'hacked' WHERE id = $1`, [ins.id]),
+    /payment_audits is an append-only ledger/
+  );
+
+  // Attempt DELETE -> must fail with append-only trigger exception
+  await assert.rejects(
+    () => db.query(`DELETE FROM payment_audits WHERE id = $1`, [ins.id]),
+    /payment_audits is an append-only ledger/
+  );
 });
