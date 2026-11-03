@@ -17,6 +17,8 @@ Cross-references inside the reports still say `docs/launch/phase-…`; read them
 | 5.3 | [phase-5-3-pr18-e2e-remediation.md](phase-5-3-pr18-e2e-remediation.md) | PR #18 E2E environment remediation |
 | 5.4 | [phase-5-4-pr18-merge-release-candidate-sync.md](phase-5-4-pr18-merge-release-candidate-sync.md) | PR #18 merge and release-candidate sync |
 | 5.5 | [phase-5-5-production-owner-gate-checklist.md](phase-5-5-production-owner-gate-checklist.md) | Production owner-gate checklist |
+| 5.6 | [phase-5-6-production-owner-gate-final-verification.md](phase-5-6-production-owner-gate-final-verification.md) | Production owner gate final verification |
+| 5.7 | [phase-5-7-production-configuration-reconciliation.md](phase-5-7-production-configuration-reconciliation.md) | Production configuration requirements reconciliation |
 | 6A | [phase-6a-nightlifez-brand-inventory.md](phase-6a-nightlifez-brand-inventory.md) | Brand inventory (StrangersMeetup → NIGHTLIFEZ) |
 | 6A | [phase-6a-nightlifez-rebrand-report.md](phase-6a-nightlifez-rebrand-report.md) | Rebrand report |
 | 6A | [phase-6a-domain-and-telegram-migration-checklist.md](phase-6a-domain-and-telegram-migration-checklist.md) | Domain and Telegram migration checklist |
@@ -24,9 +26,8 @@ Cross-references inside the reports still say `docs/launch/phase-…`; read them
 | 6A.1 | [phase-6a-1-independent-review.md](phase-6a-1-independent-review.md) | Independent rebrand review |
 | 6A.2 | [phase-6a-2-rebrand-remediation-report.md](phase-6a-2-rebrand-remediation-report.md) | Rebrand remediation |
 
-Not here yet:
-
-- **Phase 5.6 and 5.7** reports exist only as an unpushed local commit (`bcb4989` on the local `fix/preview-recovery-audit` branch in the main clone). The owner decides whether to push and archive them or drop them.
-- **Phase 6A.3 and P3** reports arrive with PR #23 under `docs/launch/`; M2 moves them here.
+Archived notes:
+- **Phase 5.6 and 5.7** reports were imported from commit `bcb4989` on `fix/preview-recovery-audit` per owner gate approval.
+- **Phase 6A.3 and P3** reports arrived with PR #23 under `docs/launch/`.
 
 New phase or milestone reports go straight into this folder, and this index gets a row for each one.

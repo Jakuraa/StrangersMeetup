@@ -3,6 +3,7 @@
 // reset : drop and rebuild the schema. Local DBs only, never with a remote URL, never in production.
 // local : test personas + their events (seed-local.js). Local DBs only; there is no remote override.
 import { isLocalDatabaseUrl, databaseName } from '../lib/db.js';
+import { isBlockedProductionDatabaseUrl } from '../lib/config.js';
 
 export class SeedRefused extends Error {}
 
@@ -11,6 +12,9 @@ export function assertSeedAllowed({ kind, e = process.env } = {}) {
   if (!url) throw new SeedRefused('DATABASE_URL is not set');
   if (e.VERCEL_ENV === 'production' || e.NODE_ENV === 'production') {
     throw new SeedRefused(`refusing to ${kind === 'reset' ? 'reset' : 'seed'}: this looks like production (VERCEL_ENV/NODE_ENV)`);
+  }
+  if (isBlockedProductionDatabaseUrl(url, e)) {
+    throw new SeedRefused(`refusing to ${kind === 'reset' ? 'reset' : 'seed'}: database URL matches a blocked production endpoint`);
   }
   const local = isLocalDatabaseUrl(url);
   if (kind === 'reset') {

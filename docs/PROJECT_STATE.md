@@ -2,7 +2,7 @@
 
 **Single source of truth for where the code, environments and gates stand.** Each milestone PR updates this file. Other docs hold design and how-to detail; this file links to them instead of repeating them. Older point-in-time reports live in [`history/`](history/README.md).
 
-Captured **2026-11-03 03:30 IST**, after `git fetch --all --prune`, from `git`, `gh` and Vercel deployment metadata. Every SHA, PR, run and build-log line below was read in that session. Anything not verified says so.
+Captured **2026-11-03 07:30 IST**, after `git fetch --all --prune`, from `git`, `gh` and Vercel deployment metadata. Every SHA, PR, run and build-log line below was read in that session. Anything not verified says so.
 
 ---
 
@@ -20,22 +20,22 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 
 | Ref | SHA | What it is |
 |---|---|---|
-| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 57 commits behind `launch-mvp`. |
-| `origin/launch-mvp` | `9d48147` | Merge of PR #22 (`fix/p2-wizard-e2e-flake`). Baseline for M1; the M1 merge moves it forward. |
-| `origin/feature/p3-location-intelligence` | `15b923d` | PR #23 head; 1 commit ahead of `launch-mvp`, 0 behind. |
+| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 73 commits behind `launch-mvp`. |
+| `origin/launch-mvp` | `7c5079e` | Merge of PR #23 (P3 Location Intelligence & M2 Remediation). Baseline for milestone execution. |
+| `origin/feature/p3-location-intelligence` | `d7836ff` | PR #23 feature branch head; merged into `launch-mvp` at `7c5079e`. |
+| `origin/fix/preview-recovery-audit` | `bcb4989` | Commit holding Phase 5.6/5.7 reports; pushed to origin per owner decision. |
 
-Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp` but has **no upstream set**.
+Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp`.
 
 ## 3. Open pull requests and CI
 
 | PR | Base ← Head | Head SHA | Checks on head | Latest CI run |
 |---|---|---|---|---|
-| #23 feat(location): P3 Location Intelligence V1 | `launch-mvp` ← `feature/p3-location-intelligence` | `15b923d` | `lint, unit, e2e` ✅ · Vercel ✅ · Vercel Preview Comments ✅ | [41414881620](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41414881620) success |
-| #17 Production release: free-only MVP | `main` ← `launch-mvp` | `9d48147` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41396124504](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41396124504) (push) and [41396130033](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41396130033) (PR), both success |
+| #17 Production release: free-only MVP | `main` ← `launch-mvp` | `7c5079e` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41561448083](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41561448083) (push) success |
 
 **Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record.
 
-PR #23 is **not merge-ready**, even though CI is green. It carries the H-01/H-02/M-01/M-02 findings that M2 resolves.
+PR #23 is **merged** at `7c5079e` after all M2 findings (H-01, H-02, M-01, M-02, L-01, L-02) were remediated and verified with green CI ([41559713677](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41559713677)) and clean Preview deployment (`dpl_AbjNDha7i298qjrh84FZZA3hHUQv`).
 
 ## 4. Migrations per environment
 
@@ -43,37 +43,30 @@ PR #23 is **not merge-ready**, even though CI is green. It carries the H-01/H-02
 
 | Environment | DB endpoint | Applied | Evidence |
 |---|---|---|---|
-| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`014` on `feature/p3-location-intelligence`) | CI service container; fresh each run. |
-| **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `013`** (applied); **`014`** (queued for application on PR #23 push) | Build log for PR #23 @ `15b923d` (`dpl_6KeQv9mx…`, 2026-11-02 08:41 UTC): `migration applied {"file":"013_location_intelligence.sql"}`. M2 remediation adds `014_location_remediation.sql` preserving 013 unchanged. |
+| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`014` on `launch-mvp`) | CI service container; fresh each run. |
+| **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `014`** (applied) | Applied via PR #23 push @ `d7836ff` (`dpl_AbjNDha7i298qjrh84FZZA3hHUQv`): `migration applied {"file":"014_location_remediation.sql"}`. |
 | **Production** | `ep-dawn-glitter-b4mkwxkl` (from earlier docs; not re-verified) | **`003` … `009`** per its last build | Build log for `main` @ `5c6652a` (`dpl_3g7aUM3V…`, 2026-10-29): `[migrate] done (0 applied; vercel production)`; that tree holds `003`–`009`. |
 
-> ⚠️ **Preview DB is ahead of `launch-mvp`.** It already has `013` from the initial PR #23 push, because all Preview branches share one isolated Preview DB.
-> - In strict compliance with safeguards, M2 **did not edit `013_location_intelligence.sql`**. All remediation schema changes are housed in `014_location_remediation.sql`.
-> - Any future PR's migration lands on Preview at its first push, before review. Prefer to push migration PRs only when they are ready.
+> ℹ️ **Preview DB migrations.** Both `013_location_intelligence.sql` and `014_location_remediation.sql` are applied on the Preview database. `013` was preserved strictly unchanged; all fixes were applied via `014`.
 
-> ⚠️ **Unreconciled — Production DB contents.** [Phase 5.4](history/phase-5-4-pr18-merge-release-candidate-sync.md) says the Production endpoint `ep-dawn-glitter-b4mkwxkl` had **0 user tables**. The 2026-10-29 Production build log says migrations had nothing pending. Both statements cannot hold for the same database. The likeliest explanation is that the Production `DATABASE_URL` was changed after 2026-10-29, but nobody has verified that. Before any Production release, the owner (or an approved read-only check) must confirm which database Production points at and its `schema_migrations` rows.
+> ⚠️ **Unreconciled — Production DB contents (Owner Gate 3).** The owner will provide the confirmed Production project ID and endpoint ID from Vercel → Storage before any release. Until then, `ep-dawn-glitter-b4mkwxkl` is treated as unconfirmed/suspected. The codebase implements a dynamic production endpoint block list (via `DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS` and `BLOCKED_PRODUCTION_ENDPOINTS` in `lib/config.js`), which strictly refuses all listed endpoints across preview reviewer sign-in, seed/reset guards, preview writes, and preview migrations, verified by automated tests in `test/safety.test.js`.
 
 ## 5. What is live vs Preview-only
 
 | Surface | Code | Status |
 |---|---|---|
-| **Production** (Vercel Production target) | `main` @ `5c6652a`: Postgres backend, Telegram auth/bot, sandbox payments, admin (PR #2) | Live, READY since 2026-10-29. It is still branded StrangersMeetup and lacks the 57 commits below. Production env is missing most required variables (§7). |
-| **Preview, `launch-mvp`** | `9d48147`: everything in Production plus the organiser wizard, SuperProfile checkout (gated off by `ENABLE_LIVE_PAYMENTS`), trust & safety, the NIGHTLIFEZ rebrand (PR #19), P0 ground truth (PR #20), P2 identities/orgs/`can()` (PR #21), the wizard e2e fix (PR #22) | Preview-only, READY (`dpl_86inZXG2…`). Behind Vercel deployment protection. |
-| **Preview, PR #23** | `15b923d`: P3 location intelligence | Preview-only, READY (`dpl_6KeQv9mx…`). Under remediation in M2. |
-
-Observations for M3 (not acted on in M1):
-- `scripts/vercel-ignore.js` logs "Production deployment on 'launch-mvp'" for `launch-mvp` Preview builds, because it treats the branch name as production when deciding whether to build. Isolation still holds, since migration is gated separately by `migrationPolicy()`, but the label is misleading.
-- PR #23's Preview build restored its **build cache** from the Production deployment `dpl_3g7aUM3V…`. That cache holds dependencies, not data, and the build migrated against the isolated Preview DB as logged. Recorded as a note, not as a Production touch.
+| **Production** (Vercel Production target) | `main` @ `5c6652a`: Postgres backend, Telegram auth/bot, sandbox payments, admin (PR #2) | Live, READY since 2026-10-29. It is still branded StrangersMeetup and lacks the 73 commits on `launch-mvp`. Production env is missing most required variables (§7). |
+| **Preview, `launch-mvp`** | `7c5079e`: everything in Production plus the organiser wizard, SuperProfile checkout (gated off by `ENABLE_LIVE_PAYMENTS`), trust & safety, the NIGHTLIFEZ rebrand (PR #19), P0 ground truth (PR #20), P2 identities/orgs/`can()` (PR #21), wizard e2e fix (PR #22), and P3 Location Intelligence + Remediation (PR #23) | Preview-only, READY (`dpl_6Z4ZwqYfuwAwLJEbYN5fkeaqjj1g`). Behind Vercel deployment protection. |
 
 ## 6. Workspaces (worktrees)
 
-`git worktree list` (all three paths exist; no two share a branch; no detached HEADs):
+`git worktree list`:
 
 | Path | Branch @ SHA | Untracked | Role |
 |---|---|---|---|
-| `/Users/pradeepjakuraa/strangersmeetup` | `feature/p3-location-intelligence` @ `15b923d` | none | **Canonical workspace** (main clone; holds the `.vercel` project link and local env). It sits on PR #23's branch for M2 and returns to `launch-mvp` between milestones. |
-| `/Users/pradeepjakuraa/nightlifez-work` | `feature/m1-project-state` (this PR) | none | Secondary worktree for isolated agent work. Use one per active milestone branch, then free it. |
-| `/Users/pradeepjakuraa/strangersmeetup/.claude/worktrees/launch-mvp` | `worktree-launch-mvp` @ `7db45a5` | `.playwright-mcp/` | **Stale.** Its branch is 74 commits behind `origin/launch-mvp` (its tip is an ancestor, with no unique commits). Removal needs the owner's approval (it holds an untracked folder; it also lives under `.claude/`). |
+| `/Users/pradeepjakuraa/strangersmeetup` | `launch-mvp` @ `7c5079e` | none | **Canonical workspace** (main clone; holds the `.vercel` project link and local env). |
+| `/Users/pradeepjakuraa/nightlifez-work` | `feature/m1-project-state` | none | Secondary worktree. Free when milestone finishes. |
+| `/Users/pradeepjakuraa/strangersmeetup/.claude/worktrees/launch-mvp` | `worktree-launch-mvp` @ `7db45a5` | `.playwright-mcp/` | **Stale worktree.** Preserved as is per owner addendum instruction. |
 
 Stashes: `git stash list` is empty.
 
@@ -85,14 +78,14 @@ Rule: only the canonical workspace switches to `launch-mvp`. Milestone branches 
 |---|---|---|
 | 1 | Approve merging PR #17 (`launch-mvp` → `main`) and the Production release | open |
 | 2 | Production env vars. Missing as of P0 (2026-11-02, names only): `SESSION_SECRET`, `CRON_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TG_CHAT_ID_EVENTS`, `ADMIN_BOOTSTRAP_TELEGRAM_ID`, `PUBLIC_SITE_URL`, `SUPPORT_EMAIL`, `LEGAL_ENTITY_NAME`, `GRIEVANCE_OFFICER_NAME`, `GRIEVANCE_EMAIL` (`ENABLE_LIVE_PAYMENTS` unset = off) | open, not re-checked in M1 |
-| 3 | Reconcile which DB Production points at (§4) | open |
+| 3 | Reconcile which DB Production points at (§4) | open (owner will supply confirmed project ID & endpoint ID from Vercel → Storage; dynamic block list active) |
 | 4 | Domain/DNS for `nightlifez.com` (Cloudflare, Vercel) | open (M8 prepares the steps) |
 | 5 | BotFather `/setdomain` and profile; Telegram groups and channel | open (M5 prepares the steps) |
 | 6 | Vercel Protection Bypass for Automation | open (M9) |
 | 7 | Email routing `contact@nightlifez.com` | open (M8) |
 | 8 | Legal fields (entity, grievance officer) | open |
-| 9 | Approve the branch/worktree deletions proposed in §9 | open |
-| 10 | Decide on the unpushed Phase 5.6/5.7 reports (local commit `bcb4989`): push and archive, or drop | open |
+| 9 | Approve the branch/worktree deletions proposed in §9 | **completed / approved** (19 fully merged remote branches archived to `archive/<branch>` tags and deleted from origin; `.claude/worktrees/launch-mvp` preserved as is) |
+| 10 | Decide on the unpushed Phase 5.6/5.7 reports (local commit `bcb4989`): push and archive, or drop | **completed / approved** (`bcb4989` pushed to `origin/fix/preview-recovery-audit`; reports imported into `docs/history/`) |
 
 ## 8. Branch classification
 
@@ -100,80 +93,61 @@ Unique = commits in the branch but not in the reference (`git rev-list --count r
 
 | Remote branch | Last commit | Unique vs `launch-mvp` | Unique vs `main` | Behind `launch-mvp` | Class |
 |---|---|---|---|---|---|
-| `main` | `5c6652a` 2026-10-29 | 1 (merge commit, no content) | — | 57 | keep (production) |
-| `launch-mvp` | `9d48147` 2026-11-02 | — | 57 | — | keep (integration) |
-| `feature/p3-location-intelligence` | `15b923d` 2026-11-02 | 1 | 58 | 0 | **unique code**, PR #23 (M2) |
-| `fix/preview-recovery-audit` | `303dcab` 2026-11-02 | 2 | 48 | 11 | **docs-only remainder**, now archived in `docs/history/` by this PR |
-| `feature/attendee-discovery-booking` | `14ebace` 2026-10-31 | 0 | 25 | 32 | merged |
-| `feature/cloud-deployment-prep` | `607d708` 2026-10-30 | 0 | 17 | 40 | merged |
-| `feature/complete-marketplace-journey` | `6ad0da0` 2026-11-01 | 0 | 32 | 25 | merged |
-| `feature/gate-paid-checkout-live-payments` | `db1f25c` 2026-11-01 | 0 | 42 | 15 | merged |
-| `feature/m2-responsive-admin` | `09c2a96` 2026-10-29 | 0 | 0 | 58 | merged (also in `main`) |
-| `feature/m8-personas-e2e` | `cfa9536` 2026-10-29 | 0 | 0 | 64 | merged (also in `main`) |
-| `feature/nightlifez-rebrand` | `c8d4d85` 2026-11-02 | 0 | 50 | 7 | merged (PR #19) |
-| `feature/organiser-onboarding-wizard` | `f77e437` 2026-10-31 | 0 | 29 | 28 | merged |
-| `feature/organiser-wizard` | `b3a1d37` 2026-10-28 | 0 | 0 | 73 | merged (also in `main`) |
-| `feature/p0-ground-truth` | `070a7a8` 2026-11-02 | 0 | 49 | 8 | merged (PR #20) |
-| `feature/p2-identity-orgs` | `7198f53` 2026-11-02 | 0 | 54 | 3 | merged (PR #21) |
-| `feature/platform-v2` | `50113e5` 2026-10-29 | 0 | 0 | 67 | merged (also in `main`) |
-| `feature/superprofile-checkout` | `64cfe6f` 2026-10-29 | 0 | 5 | 52 | merged |
-| `feature/trust-safety-remediation` | `b4f7f73` 2026-11-01 | 0 | 34 | 23 | merged |
-| `feature/website-ux-enhancements` | `27597aa` 2026-10-31 | 0 | 22 | 35 | merged |
-| `fix/cloud-deployment-pr9-blockers` | `fb28579` 2026-10-30 | 0 | 16 | 41 | merged |
-| `fix/p2-wizard-e2e-flake` | `2a0e9ce` 2026-11-02 | 0 | 56 | 1 | merged (PR #22) |
-| `fix/render-docker-alignment` | `a6d6159` 2026-10-30 | 0 | 19 | 38 | merged |
-| `vercel/install-vercel-web-analytics-7s18we` | `a7dbe24` 2026-10-25 | 0 | 0 | 91 | merged (also in `main`), stale bot branch |
+| `main` | `5c6652a` 2026-10-29 | 1 (merge commit, no content) | — | 73 | keep (production) |
+| `launch-mvp` | `7c5079e` 2026-11-03 | — | 73 | — | keep (integration baseline) |
+| `feature/p3-location-intelligence` | `d7836ff` 2026-11-03 | 0 | 73 | 1 | merged (PR #23 @ `7c5079e`) |
+| `fix/preview-recovery-audit` | `bcb4989` 2026-11-02 | 1 | 48 | 26 | docs remainder (pushed; reports imported into `docs/history/`) |
+
+19 fully merged remote branches were archived and deleted in accordance with approved Owner Gate 9 (see §9).
 
 Local-only state (main clone):
 
 | Local branch | State | Note |
 |---|---|---|
-| `fix/preview-recovery-audit` | 1 ahead of its remote (`bcb4989`, Phase 5.6/5.7 reports, **never pushed**) | owner decision (gate 10) |
-| `feature/m2-responsive-admin` | 1 ahead of its remote (`e82cac9`) | patch-identical to `f4bbc2b` already on `launch-mvp` (`git cherry` reports `-`) |
-| `fix/render-docker-alignment` | upstream mis-set to `origin/fix/preview-recovery-audit` | same SHA as `origin/fix/render-docker-alignment` (0/0) |
+| `fix/preview-recovery-audit` | equals remote `bcb4989` | pushed to origin per owner decision (gate 10) |
+| `feature/m2-responsive-admin` | 1 ahead of its old remote (`e82cac9`) | patch-identical to `f4bbc2b` already on `launch-mvp` |
 | `sprint/mvp-launch-ux` | no upstream; tip is an ancestor of `launch-mvp` | merged |
-| `worktree-launch-mvp` | tracks `origin/launch-mvp`, 74 behind, tip is an ancestor | stale worktree branch (§6) |
-| `launch-mvp` | equals `origin/launch-mvp`, no upstream set | fix with `git branch -u origin/launch-mvp launch-mvp` |
+| `worktree-launch-mvp` | tracks `origin/launch-mvp`, tip is an ancestor | stale worktree branch; preserved with `.claude/worktrees/launch-mvp` |
+| `launch-mvp` | equals `origin/launch-mvp` @ `7c5079e` | canonical workspace branch |
 | `main` | `5693f7b`, behind `origin/main` | fast-forward when next on it |
 
-## 9. Deletion proposal (nothing deleted — owner approval required)
+## 9. Branch archive and deletion (Owner Gate 9 executed)
 
-Proof for "merged" = `git rev-list --count origin/launch-mvp..<branch>` returned `0` on 2026-11-03, i.e. the tip is an ancestor of `launch-mvp`.
+Per owner approval on 2026-11-03, each of the 19 fully merged remote branches was tagged at its head with `archive/<branch>`, the tag was pushed to `origin`, and the remote branch was subsequently deleted from `origin`.
 
-| Branch | Reason | Proof |
-|---|---|---|
-| `origin/feature/attendee-discovery-booking` | merged | 0 unique vs `launch-mvp` |
-| `origin/feature/cloud-deployment-prep` | merged | 0 unique |
-| `origin/feature/complete-marketplace-journey` | merged | 0 unique |
-| `origin/feature/gate-paid-checkout-live-payments` | merged | 0 unique |
-| `origin/feature/m2-responsive-admin` | merged into `launch-mvp` and `main` | 0 unique vs both |
-| `origin/feature/m8-personas-e2e` | merged into both | 0 unique vs both |
-| `origin/feature/nightlifez-rebrand` | merged (PR #19) | 0 unique |
-| `origin/feature/organiser-onboarding-wizard` | merged | 0 unique |
-| `origin/feature/organiser-wizard` | merged into both | 0 unique vs both |
-| `origin/feature/p0-ground-truth` | merged (PR #20) | 0 unique |
-| `origin/feature/p2-identity-orgs` | merged (PR #21) | 0 unique |
-| `origin/feature/platform-v2` | merged into both | 0 unique vs both |
-| `origin/feature/superprofile-checkout` | merged | 0 unique |
-| `origin/feature/trust-safety-remediation` | merged | 0 unique |
-| `origin/feature/website-ux-enhancements` | merged | 0 unique |
-| `origin/fix/cloud-deployment-pr9-blockers` | merged | 0 unique |
-| `origin/fix/p2-wizard-e2e-flake` | merged (PR #22) | 0 unique |
-| `origin/fix/render-docker-alignment` | merged | 0 unique |
-| `origin/vercel/install-vercel-web-analytics-7s18we` | merged into both; stale bot branch | 0 unique vs both |
-| `origin/fix/preview-recovery-audit` | its 2 unique commits are docs only, and **after this PR merges** they are in `launch-mvp` by content | `docs/history/phase-5-4…` and `phase-5-5…` have blob SHAs `05d545c` and `9cb973f`, identical to the branch's `docs/launch/` blobs. **Delete only after gate 10**, because the local branch also holds unpushed `bcb4989`. |
-| local `feature/*`, `fix/*` counterparts of the above | merged | same as remote; local `feature/m2-responsive-admin`'s extra commit is patch-identical to `f4bbc2b` |
-| local `sprint/mvp-launch-ux` | merged, no remote | `git merge-base --is-ancestor sprint/mvp-launch-ux origin/launch-mvp` → true |
-| worktree `.claude/worktrees/launch-mvp` + branch `worktree-launch-mvp` | stale, 74 behind | tip is an ancestor of `launch-mvp`; **untracked `.playwright-mcp/` would be lost**, so check it first |
+### Created archive tags (19 total):
+1. `archive/feature/attendee-discovery-booking`
+2. `archive/feature/cloud-deployment-prep`
+3. `archive/feature/complete-marketplace-journey`
+4. `archive/feature/gate-paid-checkout-live-payments`
+5. `archive/feature/m2-responsive-admin`
+6. `archive/feature/m8-personas-e2e`
+7. `archive/feature/nightlifez-rebrand`
+8. `archive/feature/organiser-onboarding-wizard`
+9. `archive/feature/organiser-wizard`
+10. `archive/feature/p0-ground-truth`
+11. `archive/feature/p2-identity-orgs`
+12. `archive/feature/platform-v2`
+13. `archive/feature/superprofile-checkout`
+14. `archive/feature/trust-safety-remediation`
+15. `archive/feature/website-ux-enhancements`
+16. `archive/fix/cloud-deployment-pr9-blockers`
+17. `archive/fix/p2-wizard-e2e-flake`
+18. `archive/fix/render-docker-alignment`
+19. `archive/vercel/install-vercel-web-analytics-7s18we`
 
-Keep: `main`, `launch-mvp`, `feature/p3-location-intelligence` (PR #23).
+**Preserved per boundaries:**
+- `feature/p3-location-intelligence` (PR #23 branch) — preserved, not deleted.
+- `fix/preview-recovery-audit` — preserved, holding commit `bcb4989`.
+- Worktree `.claude/worktrees/launch-mvp` and its untracked `.playwright-mcp/` contents — preserved as is.
 
 ## 10. Milestone tracker
 
 | Milestone | Branch / PR | Status |
 |---|---|---|
 | M1 Repository truth | `feature/m1-project-state` / #24 | **Merged** @ `cd40fcf` into `launch-mvp` |
-| M2 P3 remediation | `feature/p3-location-intelligence` / #23 | **Remediated** (H-01, H-02, M-01, M-02, L-01, L-02 resolved, Migration 014 added) |
+| M2 P3 remediation | `feature/p3-location-intelligence` / #23 | **Merged** @ `7c5079e` into `launch-mvp` (H-01, H-02, M-01, M-02, L-01, L-02 resolved, Migration 014 applied on Preview `dpl_AbjNDha7i298qjrh84FZZA3hHUQv`, 100% CI pass) |
+| Owner Addendum | `launch-mvp` | **Completed** (Dynamic production DB block list + safety tests; 19 merged branches archived and deleted; `bcb4989` pushed and Phase 5.6/5.7 reports imported into `docs/history/`) |
 | M3–M10 | — | not started |
 
 ## 11. Where the detail lives

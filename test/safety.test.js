@@ -10,7 +10,11 @@ import {
   migrationPolicy, isLocalDatabaseUrl, databaseName,
   isPreviewWriteAllowed, isWriteQuery, assertPreviewWriteAllowed, PreviewWriteBlockedError
 } from '../lib/db.js';
-import { botToken, siteUrl } from '../lib/config.js';
+import {
+  botToken, siteUrl,
+  DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS, getBlockedProductionEndpoints, isBlockedProductionDatabaseUrl
+} from '../lib/config.js';
+import { previewReviewerEnabled } from '../lib/dev-personas.js';
 import { checkoutForEvent } from '../lib/payments/availability.js';
 import { assertSeedAllowed, SeedRefused } from '../scripts/seed-guard.js';
 import { planReset, assertResettable } from '../scripts/db-reset-local.js';
@@ -281,4 +285,94 @@ test('admin upcoming fill counts tickets (quantity), not booking rows', async ()
   assert.equal(r.status, 200, r.text);
   const row = r.json.insights.bookings.upcomingFill.value.find((x) => x.id === ev.id);
   assert.equal(row.confirmed, 5);
+});
+
+// ---------- production endpoint block list ----------
+
+test('production database block list refuses every listed endpoint ID across all safety rails', () => {
+  // 1. Verify default blocked endpoint includes historical/unconfirmed endpoint
+  assert.ok(DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS.includes('ep-dawn-glitter-b4mkwxkl'));
+
+  // 2. Test dynamic addition of endpoints via BLOCKED_PRODUCTION_ENDPOINTS env var
+  const customEndpoints = ['ep-prod-alpha-12345678', 'ep-prod-bravo-87654321'];
+  const testEnv = {
+    BLOCKED_PRODUCTION_ENDPOINTS: customEndpoints.join(', ')
+  };
+  const allEndpoints = getBlockedProductionEndpoints(testEnv);
+  for (const ep of DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS) {
+    assert.ok(allEndpoints.includes(ep), `expected default ${ep} in blocked list`);
+  }
+  for (const ep of customEndpoints) {
+    assert.ok(allEndpoints.includes(ep), `expected custom ${ep} in blocked list`);
+  }
+
+  // Safe URLs should NOT be blocked
+  const safePreviewUrl = 'postgres://u:p@ep-green-hall-b47clnq0.aws.neon.tech/neondb?sslmode=require';
+  assert.equal(isBlockedProductionDatabaseUrl(safePreviewUrl, testEnv), false);
+  assert.equal(isBlockedProductionDatabaseUrl(LOCAL, testEnv), false);
+  assert.equal(isBlockedProductionDatabaseUrl('', testEnv), false);
+  assert.equal(isBlockedProductionDatabaseUrl(null, testEnv), false);
+
+  // 3. For EVERY endpoint in the block list (defaults + configured extras), verify all safety gates refuse it
+  for (const endpointId of allEndpoints) {
+    const blockedUrl = `postgres://user:secret@${endpointId}.us-east-2.aws.neon.tech/neondb?sslmode=require`;
+
+    // URL detector
+    assert.equal(isBlockedProductionDatabaseUrl(blockedUrl, testEnv), true, `URL check must detect ${endpointId}`);
+
+    // Preview reviewer gate refuses
+    const reviewerEnv = {
+      ...testEnv,
+      IS_PREVIEW: 'true',
+      DATABASE_URL: blockedUrl
+    };
+    assert.equal(
+      previewReviewerEnabled(reviewerEnv),
+      false,
+      `previewReviewerEnabled must refuse blocked endpoint ${endpointId}`
+    );
+
+    // Seed guard refuses even with SEED_ALLOW_REMOTE=true
+    const seedEnv = {
+      ...testEnv,
+      DATABASE_URL: blockedUrl,
+      SEED_ALLOW_REMOTE: 'true'
+    };
+    assert.throws(
+      () => assertSeedAllowed({ kind: 'demo', e: seedEnv }),
+      /blocked production endpoint/,
+      `assertSeedAllowed must refuse blocked endpoint ${endpointId}`
+    );
+
+    // Preview write allowed refuses even with ISOLATED_PREVIEW_DB=true
+    const previewWriteEnv = {
+      ...testEnv,
+      VERCEL: '1',
+      VERCEL_ENV: 'preview',
+      ISOLATED_PREVIEW_DB: 'true',
+      DATABASE_URL: blockedUrl
+    };
+    assert.equal(
+      isPreviewWriteAllowed(previewWriteEnv),
+      false,
+      `isPreviewWriteAllowed must refuse blocked endpoint ${endpointId}`
+    );
+
+    // Migration policy refuses preview migrations even with MIGRATE_ON_PREVIEW=true and ISOLATED_PREVIEW_DB=true
+    const migrateEnv = {
+      ...testEnv,
+      VERCEL: '1',
+      VERCEL_ENV: 'preview',
+      MIGRATE_ON_PREVIEW: 'true',
+      ISOLATED_PREVIEW_DB: 'true',
+      DATABASE_URL: blockedUrl
+    };
+    const migrationResult = migrationPolicy(migrateEnv);
+    assert.equal(
+      migrationResult.run,
+      false,
+      `migrationPolicy must refuse preview migrations for blocked endpoint ${endpointId}`
+    );
+    assert.match(migrationResult.reason, /blocked production endpoint/);
+  }
 });
