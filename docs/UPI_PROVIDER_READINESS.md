@@ -97,12 +97,15 @@ flowchart TD
 
 ### Readiness Status:
 
-#### A. Code & Architectural Prerequisites (Engineering — Completed in M4.3)
+#### A. Code & Architectural Prerequisites (Engineering — Completed in M4.3 & M4.3.1)
 - [x] **Fix Webhook Signature Calculation**: Updated `verifyWebhookSignature` in `lib/upi/adapter.js` to compute `SHA256(response + saltKey) + "###" + saltIndex` on the decoded payload object. Verified with PhonePe S2S test.
-- [x] **Strict Webhook Amount Verification**: Implemented in `applySuccessfulUpiPayment` and `processUpiWebhook`; underpayment is marked `disputed` with 0 bookings created.
+- [x] **Strict Webhook Amount Verification (REV-04)**: Implemented in `applySuccessfulUpiPayment` and `processUpiWebhook`; requires safe positive integer exact paise match; currency and merchantId match; underpayment or malformed amounts are marked `disputed` with 0 bookings created.
+- [x] **Merchant ID Webhook Verification (REV-06)**: Strictly verifies webhook `merchantId === this.merchantId`. Missing, null, or mismatched IDs return HTTP 401 and are rejected before processing.
 - [x] **Enforce Authentication on `/checkout/:slug/upi`**: Gated unauthenticated users with redirect to `/signin`; guest checkout assigns guestToken and requires authenticated claim via `/api/checkout/upi/claim`.
-- [x] **Active Intent Inventory Reservation**: Added `activePaymentHolds` and `activeTierPaymentHolds` to hold seats during unexpired intents; re-checks capacity at confirmation time.
-- [x] **Fix QR Generator Bit Placement**: Corrected `lib/upi/qr.js` to prevent Dark Module overwriting and configured ISO 18004 Table 9 multi-block group capacities for Version 8.
+- [x] **Duplicate Booking Protection (REV-02)**: Prevented duplicate active bookings during intent creation (409 `already_booked`), confirmation locked transaction (queued for refund in `refund_pending`), guest claims (409), and database constraint races (SQLSTATE `23505` savepoint recovery).
+- [x] **Refund Operational Recovery & Reconciliation (REV-03)**: Permitted refunding payments in both `succeeded` and `refund_pending` states; isolated external gateway calls outside holding transactions; caught provider failures without losing audit state; added authorized manual finance reconciliation mechanism.
+- [x] **Active Intent Inventory Reservation & Tier Index (REV-07)**: Added `activePaymentHolds` and `activeTierPaymentHolds` to hold seats during unexpired intents; added migration 017 index `idx_payments_active_tier_holds`; re-checks capacity at confirmation time.
+- [x] **ISO/IEC 18004 Standard QR Compliance (REV-01, REV-05)**: Full support for QR Versions 1 through 14 (up to 362 bytes) with BCH(18, 6) Golay Version Information blocks, corrected alignment pattern placement, Dark Module preservation, user-facing 400 validation for overlong payloads, and 100% independent `jsQR` decoder validation.
 - [x] **CSS Viewport Isolation**: Added media queries in `renderUpiCheckout` toggling display between `.checkout-mobile` and `.checkout-desktop`.
 - [x] **Audit Ledger Immutability**: Added migration 016 with database trigger blocking UPDATE and DELETE on `payment_audits`.
 

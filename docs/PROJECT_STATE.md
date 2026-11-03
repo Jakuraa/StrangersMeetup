@@ -32,8 +32,10 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 | PR | Base ← Head | Head SHA | Checks on head | Latest CI run |
 |---|---|---|---|---|
 | #17 Production release: free-only MVP | `main` ← `launch-mvp` | `83a30a7` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41564501659](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41564501659) (push) success |
+| #30 M4.3 UPI Security Remediation | `launch-mvp` ← `feature/m4-3-upi-security-remediation` | `e4babe6` | `lint, unit, e2e` ✅ | PR Review Baseline for M4.3.1 |
+| (Remediation) M4.3.1 Review Remediation | `feature/m4-3-upi-security-remediation` ← `feature/m4-3-1-review-remediation` | (work branch) | `lint, unit, e2e` ✅ | Targets PR #30 branch for review remediation |
 
-**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record.
+**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #30 must not be merged automatically without owner review.
 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
@@ -41,6 +43,7 @@ PR #26 is **merged** at `46b85c1` (M3 Deployment & Database Migration Architectu
 PR #27 is **merged** at `69cafae` (M4 Payment, Booking and Revenue Readiness Audit).
 PR #28 is **merged** at `c3b4e83` (M4.1 UPI-First Checkout, Dynamic QR & Verified Payment Integration).
 PR #29 is **merged** at `c71ec8d` (M4.2 Independent UPI Payment Security & Production Readiness Audit).
+PR #30 is **open / under remediation** (M4.3 UPI Security Remediation, remediated by M4.3.1 on `feature/m4-3-1-review-remediation`).
 
 ## 4. Migrations per environment
 
@@ -48,7 +51,7 @@ PR #29 is **merged** at `c71ec8d` (M4.2 Independent UPI Payment Security & Produ
 
 | Environment | DB endpoint | Applied | Evidence |
 |---|---|---|---|
-| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`016` on `feature/m4-3-upi-security-remediation`) | CI service container; fresh each run. |
+| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`017` on `feature/m4-3-1-review-remediation`) | CI service container; fresh each run. |
 | **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `014`** (applied) | Applied via PR #23 push @ `d7836ff` (`dpl_AbjNDha7i298qjrh84FZZA3hHUQv`): `migration applied {"file":"014_location_remediation.sql"}`. |
 | **Production** | `ep-dawn-glitter-b4mkwxkl` (from earlier docs; not re-verified) | **`003` … `009`** per its last build | Build log for `main` @ `5c6652a` (`dpl_3g7aUM3V…`, 2026-10-29): `[migrate] done (0 applied; vercel production)`; that tree holds `003`–`009`. |
 
