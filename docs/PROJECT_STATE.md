@@ -43,12 +43,12 @@ PR #23 is **not merge-ready**, even though CI is green. It carries the H-01/H-02
 
 | Environment | DB endpoint | Applied | Evidence |
 |---|---|---|---|
-| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`012` on `launch-mvp`) | CI service container; fresh each run. |
-| **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `013`** | Build log for `launch-mvp` @ `9d48147` (`dpl_86inZXG2…`): `[migrate] done (0 applied; vercel preview with MIGRATE_ON_PREVIEW=true and confirmed isolated database)` → `003`–`012` are all recorded. Build log for PR #23 @ `15b923d` (`dpl_6KeQv9mx…`, 2026-11-02 08:41 UTC): `migration applied {"file":"013_location_intelligence.sql"}`. |
+| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`014` on `feature/p3-location-intelligence`) | CI service container; fresh each run. |
+| **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `013`** (applied); **`014`** (queued for application on PR #23 push) | Build log for PR #23 @ `15b923d` (`dpl_6KeQv9mx…`, 2026-11-02 08:41 UTC): `migration applied {"file":"013_location_intelligence.sql"}`. M2 remediation adds `014_location_remediation.sql` preserving 013 unchanged. |
 | **Production** | `ep-dawn-glitter-b4mkwxkl` (from earlier docs; not re-verified) | **`003` … `009`** per its last build | Build log for `main` @ `5c6652a` (`dpl_3g7aUM3V…`, 2026-10-29): `[migrate] done (0 applied; vercel production)`; that tree holds `003`–`009`. |
 
-> ⚠️ **Preview DB is ahead of `launch-mvp`.** It already has `013` from the unmerged PR #23, because all Preview branches share one isolated Preview DB. Consequences:
-> - M2 must **not edit `013_location_intelligence.sql`**. The Preview DB would never re-run it. Put every schema change in `014_*` or later.
+> ⚠️ **Preview DB is ahead of `launch-mvp`.** It already has `013` from the initial PR #23 push, because all Preview branches share one isolated Preview DB.
+> - In strict compliance with safeguards, M2 **did not edit `013_location_intelligence.sql`**. All remediation schema changes are housed in `014_location_remediation.sql`.
 > - Any future PR's migration lands on Preview at its first push, before review. Prefer to push migration PRs only when they are ready.
 
 > ⚠️ **Unreconciled — Production DB contents.** [Phase 5.4](history/phase-5-4-pr18-merge-release-candidate-sync.md) says the Production endpoint `ep-dawn-glitter-b4mkwxkl` had **0 user tables**. The 2026-10-29 Production build log says migrations had nothing pending. Both statements cannot hold for the same database. The likeliest explanation is that the Production `DATABASE_URL` was changed after 2026-10-29, but nobody has verified that. Before any Production release, the owner (or an approved read-only check) must confirm which database Production points at and its `schema_migrations` rows.
@@ -172,8 +172,8 @@ Keep: `main`, `launch-mvp`, `feature/p3-location-intelligence` (PR #23).
 
 | Milestone | Branch / PR | Status |
 |---|---|---|
-| M1 Repository truth | `feature/m1-project-state` | this PR |
-| M2 P3 remediation | `feature/p3-location-intelligence` / #23 | not started |
+| M1 Repository truth | `feature/m1-project-state` / #24 | **Merged** @ `cd40fcf` into `launch-mvp` |
+| M2 P3 remediation | `feature/p3-location-intelligence` / #23 | **Remediated** (H-01, H-02, M-01, M-02, L-01, L-02 resolved, Migration 014 added) |
 | M3–M10 | — | not started |
 
 ## 11. Where the detail lives
@@ -182,6 +182,7 @@ Keep: `main`, `launch-mvp`, `feature/p3-location-intelligence` (PR #23).
 |---|---|
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Product spec | [SPEC.md](SPEC.md) |
+| Geographic coverage & LGD directory | [GEOGRAPHIC_COVERAGE.md](GEOGRAPHIC_COVERAGE.md) |
 | Routes and roles | [ROUTES_AND_ROLES.md](ROUTES_AND_ROLES.md) |
 | Implementation plan | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) |
 | Test strategy / local testing | [TEST_STRATEGY.md](TEST_STRATEGY.md) · [LOCAL_TESTING.md](LOCAL_TESTING.md) |

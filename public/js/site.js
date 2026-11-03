@@ -649,25 +649,253 @@
     loadBlocks();
   }
 
-  /* ---------- header location selector (desktop + mobile) ---------- */
-  var citySelects = $$('[data-header-city]');
-  if (citySelects.length) {
-    var curCity = new URLSearchParams(location.search).get('city');
-    citySelects.forEach(function (sel) {
-      if (curCity) sel.value = curCity;
-      sel.addEventListener('change', function () {
-        var val = sel.value;
-        var url = new URL(location.href);
-        if (val) url.searchParams.set('city', val);
-        else url.searchParams.delete('city');
-        if (typeof window.__smLoadDiscovery === 'function') {
-          window.__smLoadDiscovery(url.pathname + url.search, true);
-        } else {
-          location.href = url.pathname + url.search;
-        }
+  /* ---------- location picker modal & discovery integration ---------- */
+  function initLocationPicker() {
+    var dialog = $('[data-location-dialog]');
+    var triggers = $$('[data-loc-trigger]');
+    var closeBtn = dialog && $('[data-loc-close]', dialog);
+    var searchInput = dialog && $('[data-loc-search]', dialog);
+    var stateFilter = dialog && $('[data-loc-state-filter]', dialog);
+    var gpsBtn = dialog && $('[data-loc-gps]', dialog);
+    var statusMsg = dialog && $('[data-loc-status]', dialog);
+    var emptyState = dialog && $('[data-loc-empty]', dialog);
+    var resetSearchBtn = dialog && $('[data-loc-reset-search]', dialog);
+    var cityItems = dialog ? $$('.loc-city-item', dialog) : [];
+    var tierSections = dialog ? $$('.loc-tier-section', dialog) : [];
+    var pillBtns = dialog ? $$('.loc-pill', dialog) : [];
+    var labels = $$('[data-loc-current-label]');
+    var citySelects = $$('[data-header-city]');
+
+    var params = new URLSearchParams(location.search);
+    var curCity = params.get('city');
+    var curLat = params.get('lat');
+    var curLng = params.get('lng');
+
+    function updateLabel(text) {
+      labels.forEach(function (lbl) { lbl.textContent = text; });
+    }
+
+    // Set initial label
+    if (curLat && curLng) {
+      updateLabel('Near You (📍 50km)');
+    } else if (curCity) {
+      var found = cityItems.filter(function (btn) {
+        return btn.getAttribute('data-city-slug') === curCity.toLowerCase();
+      })[0];
+      if (found) {
+        updateLabel(found.getAttribute('data-city-name'));
+        citySelects.forEach(function (s) { s.value = curCity; });
+      } else {
+        updateLabel(curCity.charAt(0).toUpperCase() + curCity.slice(1));
+      }
+    } else {
+      updateLabel('All Cities');
+    }
+
+    if (!dialog) return;
+
+    function openDialog() {
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', '');
+      }
+      triggers.forEach(function (t) { t.setAttribute('aria-expanded', 'true'); });
+      if (statusMsg) statusMsg.textContent = '';
+      if (searchInput) {
+        searchInput.value = '';
+        filterCities();
+        setTimeout(function () { searchInput.focus(); }, 50);
+      }
+    }
+
+    function closeDialog() {
+      if (typeof dialog.close === 'function') {
+        dialog.close();
+      } else {
+        dialog.removeAttribute('open');
+      }
+      triggers.forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+    }
+
+    triggers.forEach(function (t) {
+      t.addEventListener('click', function (e) {
+        e.preventDefault();
+        openDialog();
       });
     });
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeDialog);
+    }
+
+    dialog.addEventListener('click', function (e) {
+      if (e.target === dialog) closeDialog();
+    });
+
+    dialog.addEventListener('cancel', function () {
+      triggers.forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+    });
+
+    function filterCities() {
+      var q = (searchInput ? searchInput.value : '').trim().toLowerCase();
+      var selectedState = (stateFilter ? stateFilter.value : '').trim().toLowerCase();
+      var visibleTotal = 0;
+
+      tierSections.forEach(function (sec) {
+        var items = $$('.loc-city-item', sec);
+        var visibleInTier = 0;
+        items.forEach(function (item) {
+          var name = (item.getAttribute('data-city-name') || '').toLowerCase();
+          var slug = (item.getAttribute('data-city-slug') || '').toLowerCase();
+          var state = (item.getAttribute('data-state') || '').toLowerCase();
+          var aliases = (item.getAttribute('data-aliases') || '').toLowerCase();
+
+          var matchesState = !selectedState || state === selectedState;
+          var matchesQ = !q || name.indexOf(q) !== -1 || slug.indexOf(q) !== -1 || aliases.indexOf(q) !== -1;
+
+          var show = matchesState && matchesQ;
+          var li = item.closest('li');
+          if (li) li.hidden = !show;
+          if (show) {
+            visibleInTier++;
+            visibleTotal++;
+          }
+        });
+        sec.hidden = (visibleInTier === 0);
+      });
+
+      if (emptyState) {
+        emptyState.hidden = (visibleTotal > 0);
+      }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', filterCities);
+    if (stateFilter) stateFilter.addEventListener('change', filterCities);
+    if (resetSearchBtn) {
+      resetSearchBtn.addEventListener('click', function () {
+        if (searchInput) searchInput.value = '';
+        if (stateFilter) stateFilter.value = '';
+        filterCities();
+        if (searchInput) searchInput.focus();
+      });
+    }
+
+    function applyCity(slug, name) {
+      closeDialog();
+      updateLabel(name || 'All Cities');
+      citySelects.forEach(function (s) { s.value = slug || ''; });
+
+      var targetPath = '/events';
+      var u = new URL(location.href);
+      u.pathname = targetPath;
+      u.searchParams.delete('lat');
+      u.searchParams.delete('lng');
+      u.searchParams.delete('radius_km');
+      if (slug) {
+        u.searchParams.set('city', slug);
+      } else {
+        u.searchParams.delete('city');
+      }
+
+      var nextUrl = u.pathname + u.search;
+      if (typeof window.__smLoadDiscovery === 'function') {
+        window.__smLoadDiscovery(nextUrl, true);
+      } else {
+        location.href = nextUrl;
+      }
+    }
+
+    cityItems.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var slug = btn.getAttribute('data-city-slug') || '';
+        var name = btn.getAttribute('data-city-name') || 'All Cities';
+        applyCity(slug, name);
+      });
+    });
+
+    pillBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var slug = btn.getAttribute('data-city-slug') || '';
+        var name = btn.getAttribute('data-city-name') || 'All Cities';
+        applyCity(slug, name);
+      });
+    });
+
+    citySelects.forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var val = sel.value;
+        var found = cityItems.filter(function (b) { return b.getAttribute('data-city-slug') === val; })[0];
+        applyCity(val, found ? found.getAttribute('data-city-name') : (val ? val.toUpperCase() : 'All Cities'));
+      });
+    });
+
+    if (gpsBtn) {
+      gpsBtn.addEventListener('click', function () {
+        if (!navigator.geolocation) {
+          if (statusMsg) {
+            statusMsg.textContent = 'Geolocation is not supported by your browser.';
+            statusMsg.className = 'loc-status-msg loc-status-err';
+          }
+          return;
+        }
+
+        if (statusMsg) {
+          statusMsg.textContent = 'Locating your device…';
+          statusMsg.className = 'loc-status-msg loc-status-loading';
+        }
+        gpsBtn.disabled = true;
+
+        navigator.geolocation.getCurrentPosition(
+          function (pos) {
+            gpsBtn.disabled = false;
+            var lat = pos.coords.latitude;
+            var lng = pos.coords.longitude;
+            if (statusMsg) {
+              statusMsg.textContent = 'Location found! Finding events near you…';
+              statusMsg.className = 'loc-status-msg loc-status-ok';
+            }
+            setTimeout(function () {
+              closeDialog();
+              updateLabel('Near You (📍 50km)');
+              var targetPath = '/events';
+              var u = new URL(location.href);
+              u.pathname = targetPath;
+              u.searchParams.delete('city');
+              u.searchParams.set('lat', lat.toFixed(4));
+              u.searchParams.set('lng', lng.toFixed(4));
+              u.searchParams.set('radius_km', '50');
+
+              var nextUrl = u.pathname + u.search;
+              if (typeof window.__smLoadDiscovery === 'function') {
+                window.__smLoadDiscovery(nextUrl, true);
+              } else {
+                location.href = nextUrl;
+              }
+            }, 400);
+          },
+          function (err) {
+            gpsBtn.disabled = false;
+            if (statusMsg) {
+              statusMsg.className = 'loc-status-msg loc-status-err';
+              if (err.code === 1 /* PERMISSION_DENIED */) {
+                statusMsg.textContent = 'Location permission denied. Please select your city manually below.';
+              } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+                statusMsg.textContent = 'Location unavailable. Please select your city manually below.';
+              } else if (err.code === 3 /* TIMEOUT */) {
+                statusMsg.textContent = 'Location request timed out. Please select your city manually below.';
+              } else {
+                statusMsg.textContent = 'Could not determine location. Please select your city manually below.';
+              }
+            }
+          },
+          { timeout: 8000, enableHighAccuracy: false, maximumAge: 300000 }
+        );
+      });
+    }
   }
+
+  initLocationPicker();
 
   /* ---------- instant attendee discovery (progressive enhancement) ---------- */
   function initInstantDiscovery() {
@@ -765,10 +993,23 @@
           history.pushState({ url: url }, '', url);
         }
 
-        // Sync header city selector
-        var currentCity = new URL(url, location.origin).searchParams.get('city') || '';
+        // Sync header city selector and location label
+        var uObj = new URL(url, location.origin);
+        var currentCity = uObj.searchParams.get('city') || '';
+        var currentLat = uObj.searchParams.get('lat');
+        var currentLng = uObj.searchParams.get('lng');
         $$('[data-header-city]').forEach(function (sel) {
           sel.value = currentCity;
+        });
+        $$('[data-loc-current-label]').forEach(function (lbl) {
+          if (currentLat && currentLng) {
+            lbl.textContent = 'Near You (📍 50km)';
+          } else if (currentCity) {
+            var found = document.querySelector('.loc-city-item[data-city-slug="' + currentCity.toLowerCase() + '"]');
+            lbl.textContent = found ? found.getAttribute('data-city-name') : currentCity.charAt(0).toUpperCase() + currentCity.slice(1);
+          } else {
+            lbl.textContent = 'All Cities';
+          }
         });
 
         // Accessible announcement
