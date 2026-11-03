@@ -40,7 +40,7 @@ In strict compliance with security boundaries, this audit inspects **variable na
 ### 2.1. Free-Only MVP Baseline
 - `ENABLE_LIVE_PAYMENTS` is unset / `'false'` across all environments. Paid tickets cannot be checked out; only free guest tickets operate.
 - Ticket reservations go through free-tier booking routes (`POST /api/events/:id/book`).
-- Payment provider SDKs (Razorpay, Cashfree) have been completely expunged from the codebase in previous milestones.
+- Legacy payment provider SDKs and webhook routes have been completely expunged from the codebase in previous milestones.
 
 ### 2.2. Preview Reviewer Isolation
 - Reviewer sign-in (`POST /api/auth/preview-reviewer`) is strictly available only on Preview environments where `VERCEL_ENV === 'preview'`.
