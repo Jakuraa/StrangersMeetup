@@ -5,13 +5,18 @@
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import jsQR from 'jsqr';
 import {
   resetDb, startServer, stopServer, Client, db, callsTo, clearCalls, createEvent, signedInClient, stubUrl
 } from './helpers.js';
 import {
   encodeQrMatrix,
   generateQrSvg,
-  buildUpiUri
+  buildUpiUri,
+  VERSIONS,
+  MAX_QR_PAYLOAD_BYTES,
+  ALIGNMENT_PATTERN_POS,
+  QrPayloadTooLargeError
 } from '../lib/upi/qr.js';
 import {
   PhonePeAdapter,
@@ -199,6 +204,7 @@ test('webhook security: PhonePe adapter verifies valid signature and rejects tam
     response: Buffer.from(JSON.stringify({
       code: 'PAYMENT_SUCCESS',
       data: {
+        merchantId: 'PGTESTPAYUAT',
         merchantTransactionId: 'ORD-TEST-SIG-1',
         transactionId: 'TXN123',
         amount: 49900,
@@ -352,6 +358,8 @@ test('refunds: refund transitions payment to refunded and revokes Telegram invit
   // Confirm payment
   const succ = await applySuccessfulUpiPayment({
     orderId: intent.orderId,
+    verifiedAmountPaise: 40000,
+    merchantId: 'PGTESTPAYUAT',
     providerPaymentId: 'UTR-REFUND-1',
     actor: 'test'
   });
@@ -397,7 +405,12 @@ test('concurrency: simultaneous checkout intents respect capacity limits', async
   assert.ok(intent1.orderId);
 
   // Confirm guest 1's booking
-  await applySuccessfulUpiPayment({ orderId: intent1.orderId, actor: 'test' });
+  await applySuccessfulUpiPayment({
+    orderId: intent1.orderId,
+    verifiedAmountPaise: 20000,
+    merchantId: 'PGTESTPAYUAT',
+    actor: 'test'
+  });
 
   // Guest 2 attempts to create intent for sold out tier
   await assert.rejects(
@@ -737,6 +750,8 @@ test('CONCUR-01: Active unexpired checkout intent holds capacity & re-checks at 
   // Confirming User 2's payment detects capacity exceeded
   const confirmResult = await applySuccessfulUpiPayment({
     orderId: intent2.orderId,
+    verifiedAmountPaise: 20000,
+    merchantId: 'PGTESTPAYUAT',
     providerTxnId: 'TXN-OVERSOLD-1',
     actor: 'test:concurrency'
   });
@@ -861,4 +876,520 @@ test('DB-01: payment_audits table is strictly append-only and immutable', async 
     },
     /append-only ledger/
   );
+});
+
+// ============================================================================
+// Milestone M4.3.1: Remediate Independent Review Findings (REV-01 - REV-07)
+// ============================================================================
+
+function decodeQrMatrix(qr) {
+  const scale = 4;
+  const margin = 4;
+  const width = (qr.size + margin * 2) * scale;
+  const data = new Uint8ClampedArray(width * width * 4);
+  data.fill(255);
+  for (let r = 0; r < qr.size; r++) {
+    for (let c = 0; c < qr.size; c++) {
+      if (qr.get(r, c)) {
+        for (let y = 0; y < scale; y++) {
+          for (let x = 0; x < scale; x++) {
+            const idx = (((r + margin) * scale + y) * width + ((c + margin) * scale + x)) * 4;
+            data[idx] = 0;
+            data[idx + 1] = 0;
+            data[idx + 2] = 0;
+            data[idx + 3] = 255;
+          }
+        }
+      }
+    }
+  }
+  return jsQR(data, width, width);
+}
+
+test('REV-01: QR alignment patterns across supported versions (1-14) and independent jsQR decoding', () => {
+  // 1. Verify all versions from 1 to 14 independently decode with jsQR
+  for (let v = 1; v <= 14; v++) {
+    const minCap = v === 1 ? 8 : (VERSIONS[v - 1].dataCap + 1);
+    const prefix = `V${v}:`;
+    const payload = prefix + 'K'.repeat(minCap - prefix.length);
+    const qr = encodeQrMatrix(payload);
+    assert.equal(qr.version, v, `Expected Version ${v}`);
+
+    // Verify dark module at (size - 8, 8)
+    assert.equal(qr.get(qr.size - 8, 8), true, `Dark module must be set in Version ${v}`);
+
+    // Verify independent decoding via jsQR
+    const decoded = decodeQrMatrix(qr);
+    assert.ok(decoded, `jsQR failed to decode Version ${v}`);
+    assert.equal(decoded.data, payload, `Decoded payload mismatch for Version ${v}`);
+
+    // Verify alignment patterns do not overwrite finder patterns
+    const alignCoords = ALIGNMENT_PATTERN_POS[v] || [];
+    const len = alignCoords.length;
+    for (let i = 0; i < len; i++) {
+      for (let j = 0; j < len; j++) {
+        // Finder corners must not have alignment pattern centers
+        if ((i === 0 && j === 0) || (i === 0 && j === len - 1) || (i === len - 1 && j === 0)) {
+          continue;
+        }
+        const ar = alignCoords[i];
+        const ac = alignCoords[j];
+        // Center module must be dark
+        assert.equal(qr.get(ar, ac), true, `Alignment pattern center at (${ar}, ${ac}) must be dark in Version ${v}`);
+      }
+    }
+  }
+
+  // 2. Test long UPI URI (243 bytes, selects Version 11) with metadata
+  const longUri = buildUpiUri({
+    vpa: 'nightlifez.business@okhdfcbank',
+    name: 'NIGHTLIFEZ Experiences India Private Limited',
+    amountPaise: 1249900,
+    orderId: 'ORD-UPI-20261103-VERY-LONG-TRANSACTION-ID-XYZ9876543210',
+    note: 'Nightlifez Bangalore VIP Access Pass Tier 1 With Complimentary Drink'
+  });
+  assert.ok(Buffer.byteLength(longUri, 'utf8') > 213, 'Expected payload length to exceed Version 10 capacity');
+  const longQr = encodeQrMatrix(longUri);
+  assert.ok(longQr.version >= 11, `Expected version >= 11, got ${longQr.version}`);
+  const decodedLong = decodeQrMatrix(longQr);
+  assert.equal(decodedLong?.data, longUri, 'Long UPI URI decoded accurately via jsQR');
+});
+
+test('REV-02: Duplicate active booking prevented during intent creation (409 already_booked)', async () => {
+  const { event, tier } = await createPaidEvent({ price: 30000 });
+
+  // 1. First booking confirmed for guest1
+  await db.query(
+    `INSERT INTO bookings (event_id, user_id, ticket_type_id, quantity, status, amount_paise, payment_mode, source)
+     VALUES ($1, $2, $3, 1, 'confirmed', 30000, 'provider', 'site')`,
+    [event.id, guest1.userId, tier.id]
+  );
+
+  // 2. Attempting to create a second UPI intent for the same event must be rejected
+  await assert.rejects(
+    async () => {
+      await createUpiPaymentIntent({
+        slug: event.slug,
+        user: guest1,
+        ticketTypeId: tier.id,
+        quantity: 1
+      });
+    },
+    (err) => {
+      assert.equal(err.status, 409);
+      assert.equal(err.code, 'already_booked');
+      return true;
+    }
+  );
+});
+
+test('REV-02: Duplicate booking during webhook confirmation moves payment to refund_pending with 0 bookings', async () => {
+  const { event, tier } = await createPaidEvent({ price: 25000 });
+
+  // 1. User creates a pending intent
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest2,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  // 2. User gets an active booking confirmed out of band (or concurrent request)
+  await db.query(
+    `INSERT INTO bookings (event_id, user_id, ticket_type_id, quantity, status, amount_paise, payment_mode, source)
+     VALUES ($1, $2, $3, 1, 'confirmed', 25000, 'free', 'site')`,
+    [event.id, guest2.userId, tier.id]
+  );
+
+  // 3. Webhook arrives for the payment intent
+  const adapter = new PhonePeAdapter();
+  const innerPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: intent.orderId,
+      transactionId: `TXN-DUP-${intent.orderId}`,
+      amount: 25000,
+      state: 'COMPLETED'
+    }
+  };
+  const base64 = Buffer.from(JSON.stringify(innerPayload)).toString('base64');
+  const rawBody = JSON.stringify({ response: base64 });
+  const sig = crypto.createHash('sha256').update(`${base64}099eb0cd-0252-4e2a-8aca-eb3c6bd470f1`).digest('hex') + '###1';
+
+  const hookRes = await processUpiWebhook({
+    headers: { 'x-verify': sig },
+    rawBody,
+    clientIp: '127.0.0.1'
+  });
+
+  assert.equal(hookRes.ok, true);
+  assert.equal(hookRes.result, 'duplicate_booking');
+
+  // Verify DB state: payment transitioned to refund_pending
+  const pay = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(pay.status, 'refund_pending');
+  assert.equal(pay.failure_reason, 'duplicate_booking');
+
+  // Exactly 1 booking exists (the out-of-band one, zero duplicates created)
+  const bks = await db.query('SELECT count(*)::int AS n FROM bookings WHERE event_id = $1 AND user_id = $2', [event.id, guest2.userId]);
+  assert.equal(bks.rows[0].n, 1);
+
+  // Audit entry records duplicate_booking reason
+  const audit = await db.one(
+    `SELECT * FROM payment_audits WHERE order_id = $1 AND to_status = 'refund_pending'`,
+    [intent.orderId]
+  );
+  assert.ok(audit);
+  assert.equal(audit.details.reason, 'duplicate_booking');
+});
+
+test('REV-02: Duplicate active booking during guest claim is rejected with 409 already_booked', async () => {
+  const { event, tier } = await createPaidEvent({ price: 15000 });
+
+  // 1. Guest creates intent (no user_id)
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: null,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  // 2. Webhook confirms guest payment
+  await applySuccessfulUpiPayment({
+    orderId: intent.orderId,
+    verifiedAmountPaise: 15000,
+    merchantId: 'PGTESTPAYUAT',
+    actor: 'test'
+  });
+
+  // 3. User already has a confirmed booking for this event
+  await db.query(
+    `INSERT INTO bookings (event_id, user_id, ticket_type_id, quantity, status, amount_paise, payment_mode, source)
+     VALUES ($1, $2, $3, 1, 'confirmed', 15000, 'free', 'site')`,
+    [event.id, guest3.userId, tier.id]
+  );
+
+  // 4. User attempts to claim guest booking -> rejected with 409 already_booked
+  await assert.rejects(
+    async () => {
+      await claimUpiBooking({
+        orderId: intent.orderId,
+        guestToken: intent.guestToken,
+        user: guest3
+      });
+    },
+    (err) => {
+      assert.equal(err.status, 409);
+      assert.equal(err.code, 'already_booked');
+      return true;
+    }
+  );
+});
+
+test('REV-02: SQLSTATE 23505 defensive recovery moves payment to refund_pending without 500 error', async () => {
+  const { event, tier } = await createPaidEvent({ price: 20000 });
+
+  // Create an intent
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest1,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  // Insert a conflicting booking with same (event_id, user_id) right before confirmation
+  await db.query(
+    `INSERT INTO bookings (event_id, user_id, ticket_type_id, quantity, status, amount_paise, payment_mode, source)
+     VALUES ($1, $2, $3, 1, 'pending_payment', 20000, 'provider', 'site')`,
+    [event.id, guest1.userId, tier.id]
+  );
+
+  // Confirmation must cleanly handle the duplicate without throwing 500
+  const res = await applySuccessfulUpiPayment({
+    orderId: intent.orderId,
+    verifiedAmountPaise: 20000,
+    merchantId: 'PGTESTPAYUAT',
+    actor: 'test'
+  });
+
+  assert.equal(res.status, 'refund_pending');
+  assert.equal(res.duplicateBooking, true);
+
+  const pay = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(pay.status, 'refund_pending');
+  assert.equal(pay.failure_reason, 'duplicate_booking');
+});
+
+test('REV-03: refund_pending operational recovery via admin/finance refund and idempotent retry', async () => {
+  const { event, tier } = await createPaidEvent({ price: 35000 });
+
+  // 1. Create intent and trigger overbooking to land in refund_pending
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest2,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  // Consume event capacity
+  await db.query(`UPDATE events SET capacity = 0 WHERE id = $1`, [event.id]);
+
+  const confirmRes = await applySuccessfulUpiPayment({
+    orderId: intent.orderId,
+    verifiedAmountPaise: 35000,
+    merchantId: 'PGTESTPAYUAT',
+    actor: 'test'
+  });
+  assert.equal(confirmRes.status, 'refund_pending');
+
+  // 2. Admin/finance triggers refund for the refund_pending payment
+  const refundRes = await refundUpiOrder(intent.orderId, {
+    actor: 'admin:finance:900000001',
+    reason: 'Event sold out before payment confirmation'
+  });
+
+  assert.equal(refundRes.status, 'refunded');
+  assert.ok(refundRes.refundId);
+
+  // 3. Verify DB state: payment transitioned from refund_pending to refunded
+  const pay = await db.one('SELECT status, refund_ref FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(pay.status, 'refunded');
+  assert.equal(pay.refund_ref, refundRes.refundId);
+
+  // 4. Audit ledger preserves full trajectory: created -> pending -> refund_pending -> refunded
+  const audits = (await db.query(
+    `SELECT from_status, to_status, actor FROM payment_audits WHERE order_id = $1 ORDER BY id ASC`,
+    [intent.orderId]
+  )).rows;
+
+  const trajectory = audits.map((a) => `${a.from_status}->${a.to_status}`);
+  assert.ok(trajectory.includes('created->pending'), 'Expected created->pending');
+  assert.ok(trajectory.includes('pending->refund_pending'), 'Expected pending->refund_pending');
+  assert.ok(trajectory.includes('refund_pending->refunded'), 'Expected refund_pending->refunded');
+
+  // 5. Retry of refund is idempotent
+  const retryRes = await refundUpiOrder(intent.orderId, {
+    actor: 'admin:finance:900000001'
+  });
+  assert.equal(retryRes.status, 'refunded');
+  assert.equal(retryRes.duplicate, true);
+});
+
+test('REV-03: Provider refund failure leaves payment in refund_pending with manual finance reconciliation recovery', async () => {
+  const { event, tier } = await createPaidEvent({ price: 18000 });
+
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest1,
+    ticketTypeId: tier.id,
+    quantity: 1
+  });
+
+  await applySuccessfulUpiPayment({
+    orderId: intent.orderId,
+    verifiedAmountPaise: 18000,
+    merchantId: 'PGTESTPAYUAT',
+    actor: 'test'
+  });
+
+  // Temporarily stub refund endpoint to simulate provider 500 failure
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return {
+        status: 500,
+        body: JSON.stringify({ success: false, code: 'INTERNAL_SERVER_ERROR', message: 'Gateway error' })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  // Provider refund fails
+  await assert.rejects(
+    () => refundUpiOrder(intent.orderId, { actor: 'admin:finance' }),
+    /Payment gateway refund initiation failed/
+  );
+
+  // Payment remains safely in refund_pending with failure reason
+  const failedPay = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(failedPay.status, 'refund_pending');
+  assert.ok(failedPay.failure_reason.includes('refund_failed'));
+
+  // Finance officer performs manual reconciliation recovery
+  const reconRes = await refundUpiOrder(intent.orderId, {
+    actor: 'admin:finance:reconciler',
+    reason: 'Manual bank transfer reversal confirmed',
+    manualReconciliation: true,
+    providerRefundId: 'MANUAL-BANK-REF-999'
+  });
+
+  assert.equal(reconRes.status, 'refunded');
+  assert.equal(reconRes.refundId, 'MANUAL-BANK-REF-999');
+
+  const finalPay = await db.one('SELECT status, refund_ref FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(finalPay.status, 'refunded');
+  assert.equal(finalPay.refund_ref, 'MANUAL-BANK-REF-999');
+
+  // Restore refund stub
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS', data: { transactionId: 'TXN-REF-1' } }) };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+});
+
+test('REV-04: Mandatory verified amount rejects omitted, null, non-numeric and underpayment attacks', async () => {
+  const { event, tier } = await createPaidEvent({ price: 40000 });
+
+  // 1. Omitted amount
+  const intent1 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const res1 = await applySuccessfulUpiPayment({ orderId: intent1.orderId, verifiedAmountPaise: null });
+  assert.equal(res1.status, 'disputed');
+  assert.equal(res1.disputeReason, 'missing_or_invalid_verified_amount');
+
+  // 2. Non-numeric / NaN amount
+  const intent2 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const res2 = await applySuccessfulUpiPayment({ orderId: intent2.orderId, verifiedAmountPaise: NaN });
+  assert.equal(res2.status, 'disputed');
+  assert.equal(res2.disputeReason, 'missing_or_invalid_verified_amount');
+
+  // 3. String non-numeric amount
+  const intent3 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const res3 = await applySuccessfulUpiPayment({ orderId: intent3.orderId, verifiedAmountPaise: 'one_hundred' });
+  assert.equal(res3.status, 'disputed');
+  assert.equal(res3.disputeReason, 'missing_or_invalid_verified_amount');
+
+  // 4. Negative amount
+  const intent4 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const res4 = await applySuccessfulUpiPayment({ orderId: intent4.orderId, verifiedAmountPaise: -40000 });
+  assert.equal(res4.status, 'disputed');
+  assert.equal(res4.disputeReason, 'missing_or_invalid_verified_amount');
+
+  // 5. Underpayment
+  const intent5 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const res5 = await applySuccessfulUpiPayment({ orderId: intent5.orderId, verifiedAmountPaise: 39999 });
+  assert.equal(res5.status, 'disputed');
+  assert.equal(res5.disputeReason, 'amount_mismatch');
+
+  // 6. Currency mismatch
+  const intent6 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const res6 = await applySuccessfulUpiPayment({ orderId: intent6.orderId, verifiedAmountPaise: 40000, currency: 'USD' });
+  assert.equal(res6.status, 'disputed');
+  assert.equal(res6.disputeReason, 'currency_mismatch');
+
+  // Verify zero bookings were created for all 6 disputed attempts
+  for (const it of [intent1, intent2, intent3, intent4, intent5, intent6]) {
+    const pay = await db.one('SELECT status FROM payments WHERE order_id = $1', [it.orderId]);
+    assert.equal(pay.status, 'disputed');
+    const bk = await db.query('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [it.orderId]);
+    assert.equal(bk.rows[0].n, 0);
+  }
+});
+
+test('REV-05: Overlong QR payload byte limit returns 400 error rather than unhandled 500', async () => {
+  const { event, tier } = await createPaidEvent({ price: 10000 });
+
+  // 1. Raw QR encoder rejects payloads exceeding byte capacity
+  const giantText = 'upi://pay?' + 'x'.repeat(400);
+  assert.throws(
+    () => encodeQrMatrix(giantText),
+    (err) => {
+      assert.ok(err instanceof QrPayloadTooLargeError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+
+  // 2. Multi-byte UTF-8 calculation verifies bytes not character length
+  // 3-byte unicode character '🎉' repeated 130 times = 520 bytes > 362 bytes max
+  const multiBytePayload = 'upi://pay?tn=' + '🎉'.repeat(130);
+  assert.ok(multiBytePayload.length < 362, 'JS character length is under 362');
+  assert.ok(Buffer.byteLength(multiBytePayload, 'utf8') > 362, 'Byte length exceeds 362');
+  assert.throws(
+    () => encodeQrMatrix(multiBytePayload),
+    (err) => {
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+
+  // 3. buildUpiUri preserves full note and never silently truncates
+  const fullNote = 'Important Notice: Non-refundable ticket reservation including VIP table and drinks';
+  const uri = buildUpiUri({
+    vpa: 'test@upi',
+    name: 'Nightlifez',
+    amountPaise: 1000,
+    orderId: 'ORD-TEST-FULL-NOTE',
+    note: fullNote
+  });
+  assert.ok(uri.includes(encodeURIComponent(fullNote).replace(/%20/g, '+')));
+});
+
+test('REV-06: PhonePe webhook merchantId verification rejects missing and mismatched merchant identifiers', () => {
+  const adapter = new PhonePeAdapter({
+    merchantId: 'PGTESTPAYUAT',
+    saltKey: '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1',
+    saltIndex: '1'
+  });
+
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+
+  // 1. Missing merchantId
+  const missingIdPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantTransactionId: 'ORD-REV06-1',
+      transactionId: 'TXN1',
+      amount: 10000,
+      state: 'COMPLETED'
+    }
+  };
+  const b64Missing = Buffer.from(JSON.stringify(missingIdPayload)).toString('base64');
+  const bodyMissing = JSON.stringify({ response: b64Missing });
+  const sigMissing = crypto.createHash('sha256').update(`${b64Missing}${saltKey}`).digest('hex') + '###1';
+
+  assert.throws(
+    () => adapter.verifyWebhook({ 'x-verify': sigMissing }, bodyMissing),
+    /merchantId mismatch or missing/
+  );
+
+  // 2. Mismatched merchantId
+  const mismatchedPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'ATTACKER_MERCHANT',
+      merchantTransactionId: 'ORD-REV06-2',
+      transactionId: 'TXN2',
+      amount: 10000,
+      state: 'COMPLETED'
+    }
+  };
+  const b64Mismatch = Buffer.from(JSON.stringify(mismatchedPayload)).toString('base64');
+  const bodyMismatch = JSON.stringify({ response: b64Mismatch });
+  const sigMismatch = crypto.createHash('sha256').update(`${b64Mismatch}${saltKey}`).digest('hex') + '###1';
+
+  assert.throws(
+    () => adapter.verifyWebhook({ 'x-verify': sigMismatch }, bodyMismatch),
+    /merchantId mismatch or missing/
+  );
+
+  // 3. Valid merchantId succeeds
+  const validPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: 'ORD-REV06-3',
+      transactionId: 'TXN3',
+      amount: 10000,
+      state: 'COMPLETED'
+    }
+  };
+  const b64Valid = Buffer.from(JSON.stringify(validPayload)).toString('base64');
+  const bodyValid = JSON.stringify({ response: b64Valid });
+  const sigValid = crypto.createHash('sha256').update(`${b64Valid}${saltKey}`).digest('hex') + '###1';
+
+  const verified = adapter.verifyWebhook({ 'x-verify': sigValid }, bodyValid);
+  assert.equal(verified.merchantId, 'PGTESTPAYUAT');
+  assert.equal(verified.orderId, 'ORD-REV06-3');
 });

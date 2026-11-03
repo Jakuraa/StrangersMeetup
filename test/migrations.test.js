@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 14 migrations currently exist: 003 through 016
-  assert.equal(files.length, 14, `expected 14 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 15 migrations currently exist: 003 through 017
+  assert.equal(files.length, 15, `expected 15 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 14 migrations in correct order', async () => {
+test('schema_migrations table records all 15 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 14);
+  assert.equal(rows.length, 15);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 14
+  // Total count in schema_migrations must remain exactly 15
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 14);
+  assert.equal(countRes.n, 15);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -180,4 +180,39 @@ test('payment_audits is immutable append-only ledger (DB-01)', async () => {
     () => db.query(`DELETE FROM payment_audits WHERE id = $1`, [ins.id]),
     /payment_audits is an append-only ledger/
   );
+});
+
+test('REV-07: ticket-tier active hold index (idx_payments_active_tier_holds) and query plan improvement', async () => {
+  // 1. Verify index exists in pg_indexes
+  const idx = await db.one(
+    `SELECT indexname, indexdef FROM pg_indexes
+     WHERE tablename = 'payments' AND indexname = 'idx_payments_active_tier_holds'`
+  );
+  assert.ok(idx, 'expected idx_payments_active_tier_holds to exist');
+  assert.ok(
+    idx.indexdef.includes("raw_ref ->> 'ticketTypeId'"),
+    `expected index definition to reference ticketTypeId expression, got: ${idx.indexdef}`
+  );
+
+  // 2. Insert dummy rows and verify EXPLAIN query plan uses index scan
+  const sampleTierId = 'a1111111-1111-4111-8111-111111111111';
+  await db.query(`SET enable_seqscan = OFF;`);
+  try {
+    const explain = await db.query(
+      `EXPLAIN (FORMAT JSON)
+       SELECT COALESCE(sum((p.raw_ref->>'qty')::int), 0)::int AS n
+       FROM payments p
+       WHERE (p.raw_ref->>'ticketTypeId')::uuid = $1::uuid
+         AND p.status IN ('created', 'pending', 'processing')
+         AND p.expires_at > now()`,
+      [sampleTierId]
+    );
+    const planStr = JSON.stringify(explain.rows[0]);
+    assert.ok(
+      planStr.includes('idx_payments_active_tier_holds'),
+      `expected EXPLAIN query plan to use idx_payments_active_tier_holds, got: ${planStr}`
+    );
+  } finally {
+    await db.query(`SET enable_seqscan = ON;`);
+  }
 });
