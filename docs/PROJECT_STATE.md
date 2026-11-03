@@ -153,12 +153,15 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 | M3 Deployment & DB Migration | `feature/m3-deployment-migration` / #26 | **Merged** @ `46b85c1` into `launch-mvp` (Deployment architecture, DB migration policy, forensic production verification, environment inventory, migration test suite `test/migrations.test.js`) |
 | M4 Payment & Booking Readiness | `feature/m4-payment-booking-audit` / #27 | **Merged** @ `69cafae` into `launch-mvp` (Booking & payment architecture, payment readiness & financial safety report, booking integrity test report, 10/10 automated tests in `test/booking-integrity.test.js`) |
 | M4.1 UPI-First Checkout & Dynamic QR | `feature/m4-1-upi-checkout` / #28 | **Merged** @ `c3b4e83` into `launch-mvp` (UPI-First checkout, pure SVG dynamic QR, provider-neutral adapter with PhonePe PG primary, mobile intent links, SHA256 constant-time webhook verification, migration 015, 13/13 automated tests in `test/upi-checkout.test.js`) |
+| M4.2 UPI Security & Readiness Audit | `feature/m4-2-upi-security-audit` | **Completed** (Independent audit of M4.1 UPI checkout: identified 2 Critical and 3 High severity defects including webhook checksum formula discrepancy, missing amount validation, guest checkout crash, and concurrency overbooking risk; verdict: NOT READY FOR LIVE PAYMENTS; `ENABLE_LIVE_PAYMENTS=false` preserved) |
 | M5–M10 | — | not started |
 
 ## 11. Where the detail lives
 
 | Topic | Doc |
 |---|---|
+| UPI security audit | [UPI_SECURITY_AUDIT.md](UPI_SECURITY_AUDIT.md) |
+| UPI provider readiness assessment | [UPI_PROVIDER_READINESS.md](UPI_PROVIDER_READINESS.md) |
 | UPI-first checkout architecture | [arch/UPI_PAYMENT_INTEGRATION.md](arch/UPI_PAYMENT_INTEGRATION.md) |
 | UPI operational readiness report | [launch/UPI_READINESS_REPORT.md](launch/UPI_READINESS_REPORT.md) |
 | Booking and payment architecture | [arch/BOOKING_AND_PAYMENT_ARCHITECTURE.md](arch/BOOKING_AND_PAYMENT_ARCHITECTURE.md) |
