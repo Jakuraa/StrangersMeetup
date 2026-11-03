@@ -79,7 +79,7 @@ The platform's strict payment safety boundary remains intact across all environm
 - [x] **Webhook Idempotency**:
   - Duplicate webhook deliveries return HTTP 200 `{ ok: true, result: 'duplicate' }` and do not create duplicate bookings or duplicate tickets.
 - [x] **Zero Prohibited Names Invariant**:
-  - Scanned repository to ensure 0 occurrences of prohibited legacy provider names ("Razorpay" and "Cashfree"). Enforced via `test/superprofile-checkout.test.js`.
+  - Scanned repository to ensure 0 occurrences of prohibited legacy provider names ("Legacy Provider R" and "Legacy Provider C"). Enforced via `test/superprofile-checkout.test.js`.
 
 ---
 
