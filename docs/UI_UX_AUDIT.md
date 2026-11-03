@@ -140,7 +140,7 @@ The e2e suite additionally writes full-page admin screenshots per section and vi
 
 - Telegram Login (bot token, OIDC/widget domain), Telegram bot confirmations and private-group invite links, webhook secret, events chat id.
 - Cron (`CRON_SECRET`): hold expiry, reconcile, notifications, feed ingestion.
-- Payments: Razorpay/Cashfree keys, webhooks, refunds; `ENABLE_LIVE_PAYMENTS` must remain `false` until intentionally enabled and tested in test mode.
+- Payments: SuperProfile product links, the Zapier/Pabbly webhook and refunds on SuperProfile; `ENABLE_LIVE_PAYMENTS` (Stars labels) must remain `false` until intentionally enabled.
 - SuperProfile membership webhook; admin bootstrap Telegram id.
 - Behaviour on Vercel (the `__path` rewrite router hardening is flagged in project notes as needing a preview check), real database latency, cache headers, custom domain/HTTPS, email/DNS.
 - Safari/iOS and Firefox rendering; real-device touch behaviour; screen readers.

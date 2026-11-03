@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="75%">
+      <stop offset="0%" stop-color="#2a164d"/>
+      <stop offset="60%" stop-color="#120b24"/>
+      <stop offset="100%" stop-color="#07030f"/>
+    </radialGradient>
+    <linearGradient id="beam1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="beam2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#a855f7" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="stageglow" cx="50%" cy="100%" r="60%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#d946ef" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#07030f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Beams -->
+  <polygon points="100,0 240,0 360,360 180,360" fill="url(#beam1)"/>
+  <polygon points="540,0 400,0 280,360 460,360" fill="url(#beam2)"/>
+  <circle cx="320" cy="360" r="240" fill="url(#stageglow)"/>
+  <!-- Neon lines -->
+  <path d="M0 260 Q320 230 640 260" stroke="#06b6d4" stroke-width="2" fill="none" opacity="0.4"/>
+  <path d="M0 280 Q320 250 640 280" stroke="#ec4899" stroke-width="2" fill="none" opacity="0.4"/>
+  <!-- Ambient club silhouettes -->
+  <circle cx="160" cy="200" r="30" fill="#a855f7" opacity="0.25"/>
+  <circle cx="480" cy="190" r="35" fill="#06b6d4" opacity="0.25"/>
+</svg>

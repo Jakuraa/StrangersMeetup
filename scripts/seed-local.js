@@ -1,5 +1,5 @@
-// scripts/seed-local.js - Reproducible LOCAL dataset: six test personas (lib/dev-personas.js) and
-// events in known states, for manual testing and the browser suite. Usage: npm run seed:local
+// scripts/seed-local.js - Reproducible LOCAL dataset: test personas (lib/dev-personas.js), their
+// orgs and venues, and events in known states, for manual testing and the browser suite. Usage: npm run seed:local
 //
 // Guarded by seed-guard.js (kind 'local'): never on Vercel, never in production, and only a
 // database on this machine — there is no remote override. Every run first deletes what earlier
@@ -8,13 +8,15 @@
 import { fileURLToPath } from 'node:url';
 import '../lib/config.js'; // loads a local .env (never on Vercel)
 import { db, migrate } from '../lib/db.js';
-import { PERSONAS, PERSONA_KEYS, PERSONA_TG_IDS } from '../lib/dev-personas.js';
+import { PERSONAS, PERSONA_KEYS, PERSONA_TG_IDS, PERSONA_ORGS, REVIEWER_TG_ID } from '../lib/dev-personas.js';
+import { ensurePersonalOrg } from '../lib/services/permissions.js';
 import { assertSeedAllowed, SeedRefused } from './seed-guard.js';
 import { at } from './seed-demo.js';
 
 const HOUR = 3_600_000;
 
 // owner: persona key. tiers: [name, kind, price_paise, quantity, max_per_booking]. All is_demo=true.
+// single: { price, spUrl? } = a standard one-price event; with spUrl it is sold through SuperProfile.
 export const LOCAL_EVENTS = [
   {
     slug: 'local-board-games-night', owner: 'organiser', category: 'board_games', city: 'Chennai', area: 'Besant Nagar',
@@ -36,6 +38,16 @@ export const LOCAL_EVENTS = [
     slug: 'local-paid-workshop', owner: 'organiser', category: 'workshop', city: 'Kochi', area: 'Fort Kochi',
     title: 'Test: Pottery workshop (paid — payments off)', venue: 'Test venue — Studio 5, Princess St (private)',
     start: [13, 16, 0], hours: 2, capacity: 10, tiers: [['Workshop seat', 'paid', 149900, 10, 2]]
+  },
+  {
+    slug: 'local-sp-social', owner: 'organiser', category: 'meetup', city: 'Chennai', area: 'Alwarpet',
+    title: 'Test: Social meetup (tickets on SuperProfile)', venue: 'Test venue — 8 TTK Rd, Alwarpet (private)',
+    start: [12, 18, 0], hours: 3, capacity: 25, single: { price: 49900, spUrl: 'https://superprofile.bio/meetup_host/local-sp-social', productId: 'local-sp-social-prod' }
+  },
+  {
+    slug: 'local-sp-unlinked', owner: 'organiser', category: 'meetup', city: 'Chennai', area: 'Mylapore',
+    title: 'Test: Paid meetup (no SuperProfile product yet)', venue: 'Test venue — Mylapore tank (private)',
+    start: [14, 18, 0], hours: 3, capacity: 25, single: { price: 39900 }
   },
   {
     slug: 'local-low-seats-trek', owner: 'organiser2', category: 'weekend_trip', city: 'Bengaluru', area: 'Nandi Hills',
@@ -83,9 +95,10 @@ export const LOCAL_LEADS = [
 ];
 export const LOCAL_REPORTS = [['guest', 'Test report: someone at the last event made me uncomfortable.\nPlease review. Ref: TEST-0001']];
 
-/** Remove everything earlier runs created for the personas. Order follows the foreign keys. */
+/** Remove everything earlier runs created for the personas and synthetic reviewer. Order follows the foreign keys. */
 async function clearPersonaData(c) {
-  await c.query(`CREATE TEMP TABLE _pu ON COMMIT DROP AS SELECT id FROM users WHERE telegram_user_id = ANY($1::bigint[])`, [PERSONA_TG_IDS]);
+  const allTestTgIds = [...PERSONA_TG_IDS, REVIEWER_TG_ID];
+  await c.query(`CREATE TEMP TABLE _pu ON COMMIT DROP AS SELECT id FROM users WHERE telegram_user_id = ANY($1::bigint[])`, [allTestTgIds]);
   await c.query(`CREATE TEMP TABLE _pe ON COMMIT DROP AS
     SELECT id FROM events WHERE organiser_user_id IN (SELECT id FROM _pu) OR (is_demo AND slug LIKE 'local-%')`);
   await c.query(`CREATE TEMP TABLE _pb ON COMMIT DROP AS
@@ -94,19 +107,32 @@ async function clearPersonaData(c) {
   await c.query(`DELETE FROM notifications WHERE user_id IN (SELECT id FROM _pu) OR booking_id IN (SELECT id FROM _pb)
     OR event_id IN (SELECT id FROM _pe) OR entitlement_id IN (SELECT id FROM entitlements WHERE user_id IN (SELECT id FROM _pu))`);
   await c.query(`DELETE FROM entitlements WHERE user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM external_orders WHERE event_id IN (SELECT id FROM _pe) OR matched_booking_id IN (SELECT id FROM _pb)`);
+  await c.query(`DELETE FROM checkout_intents WHERE event_id IN (SELECT id FROM _pe) OR user_id IN (SELECT id FROM _pu)`);
   await c.query(`UPDATE bookings SET payment_id = NULL WHERE id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM payments WHERE user_id IN (SELECT id FROM _pu) OR booking_id IN (SELECT id FROM _pb)`);
   await c.query(`UPDATE bookings SET decided_by = NULL WHERE decided_by IN (SELECT id FROM _pu) AND id NOT IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM bookings WHERE id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM ticket_types WHERE event_id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM analytics_events WHERE event_id IN (SELECT id FROM _pe)`);
-  await c.query(`DELETE FROM reports WHERE user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM user_blocks WHERE blocker_user_id IN (SELECT id FROM _pu) OR blocked_user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM reports WHERE user_id IN (SELECT id FROM _pu) OR reported_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM leads WHERE payload->>'seed' = 'local'`);
   await c.query(`UPDATE event_drafts SET event_id = NULL WHERE organiser_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM events WHERE id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM event_images WHERE owner_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM event_drafts WHERE organiser_user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM _pu)`);
+  // Orgs: the personas' personal orgs and every org a persona owns (only personas are ever in them).
+  await c.query(`CREATE TEMP TABLE _po ON COMMIT DROP AS
+    SELECT id FROM organisations WHERE personal_user_id IN (SELECT id FROM _pu)
+    UNION SELECT org_id FROM org_memberships WHERE role = 'owner' AND user_id IN (SELECT id FROM _pu)`);
+  await c.query(`UPDATE events SET organiser_org_id = NULL WHERE organiser_org_id IN (SELECT id FROM _po)`);
+  await c.query(`DELETE FROM event_team WHERE org_id IN (SELECT id FROM _po) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM venues WHERE org_id IN (SELECT id FROM _po)`);
+  await c.query(`DELETE FROM org_memberships WHERE org_id IN (SELECT id FROM _po) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM organisations WHERE id IN (SELECT id FROM _po)`);
+  await c.query(`DELETE FROM user_capabilities WHERE user_id IN (SELECT id FROM _pu)`);
 }
 
 async function insertPersonas(c) {
@@ -120,6 +146,12 @@ async function insertPersonas(c) {
          age_confirmed_at = COALESCE(users.age_confirmed_at, now()), organiser_enabled = EXCLUDED.organiser_enabled, status = 'active'
        RETURNING id`, [p.tg, p.alias, Boolean(p.organiser)])).rows[0];
     ids[key] = u.id;
+    for (const cap of p.capabilities || []) {
+      await c.query(`INSERT INTO user_capabilities (user_id, capability_code, status) VALUES ($1, $2, 'claimed')`, [u.id, cap]);
+    }
+    if (p.organiser) {
+      await ensurePersonalOrg({ id: u.id, alias: p.alias }, c);
+    }
     if (p.adminRole) {
       await c.query(
         `INSERT INTO admin_users (telegram_user_id, role, active) VALUES ($1, $2, true)
@@ -131,6 +163,31 @@ async function insertPersonas(c) {
   return ids;
 }
 
+/** Team and venue orgs (PERSONA_ORGS). Returns org ids by name. */
+async function insertOrgs(c, users) {
+  const orgs = {};
+  for (const o of PERSONA_ORGS) {
+    const org = (await c.query(`INSERT INTO organisations (kind, name, verified_at) VALUES ($1, $2, now()) RETURNING id`, [o.kind, o.name])).rows[0];
+    for (const [who, role] of o.members) {
+      await c.query(`INSERT INTO org_memberships (user_id, org_id, role) VALUES ($1, $2, $3)`, [users[who], org.id, role]);
+    }
+    for (const v of o.venues || []) {
+      await c.query(`INSERT INTO venues (org_id, name, capacity, address_private, lat, lng) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [org.id, v.name, v.capacity, v.address, v.lat, v.lng]);
+    }
+    orgs[o.name] = org.id;
+  }
+  return orgs;
+}
+
+/** Which org runs a persona's events: the team org it owns, else its personal org. */
+async function eventOrgFor(c, userId) {
+  const r = (await c.query(
+    `SELECT o.id FROM org_memberships m JOIN organisations o ON o.id = m.org_id
+      WHERE m.user_id = $1 AND m.role = 'owner' ORDER BY (o.kind = 'organiser_team') DESC, o.created_at LIMIT 1`, [userId])).rows[0];
+  return r?.id || null;
+}
+
 async function insertEvents(c, users) {
   const events = {};
   for (const e of LOCAL_EVENTS) {
@@ -140,14 +197,17 @@ async function insertEvents(c, users) {
     const row = (await c.query(
       `INSERT INTO events (slug, category, title, summary, description, city, area_public, venue_private, venue_privacy,
          start_at, end_at, capacity, price_status, organizer, organiser_user_id, ticketing, requires_approval,
-         booking_questions, refund_policy, status, is_demo, published_at)
-       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'disclosed_after_booking', $8, $9, $10, 'tbd', $11, $12, 'tiers', $13,
-         $14, 'Local test data — no money changes hands.', $15, true, now())
+         booking_questions, refund_policy, status, is_demo, published_at, ticket_price_paise,
+         superprofile_url, superprofile_product_id, checkout_mode, organiser_org_id)
+       VALUES ($1, $2, $3, $4, $4, $5, $6, $7, 'disclosed_after_booking', $8, $9, $10, $16, $11, $12, $17, $13,
+         $14, 'Local test data — no money changes hands.', $15, true, now(), $18, $19, $20, $21::checkout_mode, $22)
        RETURNING id`,
       [e.slug, e.category, e.title, 'Local test event created by npm run seed:local.', e.city, e.area, e.venue, start, end,
-        e.capacity, PERSONAS[e.owner].alias, users[e.owner], Boolean(e.approval), JSON.stringify(e.questions || []), status])).rows[0];
+        e.capacity, PERSONAS[e.owner].alias, users[e.owner], Boolean(e.approval), JSON.stringify(e.questions || []), status,
+        e.single ? 'set' : 'tbd', e.single ? 'single' : 'tiers', e.single?.price ?? null, e.single?.spUrl ?? null,
+        e.single?.productId ?? null, e.single?.spUrl ? 'superprofile' : 'none', await eventOrgFor(c, users[e.owner])])).rows[0];
     const tiers = [];
-    for (const [i, [name, kind, price, quantity, max]] of e.tiers.entries()) {
+    for (const [i, [name, kind, price, quantity, max]] of (e.tiers || []).entries()) {
       tiers.push((await c.query(
         `INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking, sort_order)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, [row.id, name, kind, price, quantity, max, i])).rows[0].id);
@@ -203,6 +263,7 @@ export async function seedLocal({ e = process.env } = {}) {
   return db.tx(async (c) => {
     await clearPersonaData(c);
     const users = await insertPersonas(c);
+    await insertOrgs(c, users);
     const events = await insertEvents(c, users);
     await insertBookings(c, users, events);
     await insertDrafts(c, users);
@@ -224,7 +285,10 @@ export async function countLocal(c = db) {
             (SELECT count(*)::int FROM event_drafts WHERE organiser_user_id IN (SELECT id FROM pu)) AS drafts,
             (SELECT count(*)::int FROM analytics_events WHERE event_id IN (SELECT id FROM pe)) AS analytics,
             (SELECT count(*)::int FROM leads WHERE payload->>'seed' = 'local') AS leads,
-            (SELECT count(*)::int FROM reports WHERE user_id IN (SELECT id FROM pu)) AS reports`,
+            (SELECT count(*)::int FROM reports WHERE user_id IN (SELECT id FROM pu)) AS reports,
+            (SELECT count(DISTINCT org_id)::int FROM org_memberships WHERE user_id IN (SELECT id FROM pu)) AS orgs,
+            (SELECT count(*)::int FROM org_memberships WHERE user_id IN (SELECT id FROM pu)) AS memberships,
+            (SELECT count(*)::int FROM venues WHERE org_id IN (SELECT org_id FROM org_memberships WHERE user_id IN (SELECT id FROM pu))) AS venues`,
     [PERSONA_TG_IDS])).rows[0];
 }
 

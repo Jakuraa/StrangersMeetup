@@ -12,3 +12,9 @@ research_notes/
 reports/
 test-results/
 playwright-report/
+.mcp/
+public/img/review/
+.agents/
+.claude/
+skills-lock.json
+

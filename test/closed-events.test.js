@@ -82,14 +82,21 @@ test('a request pending when the event is cancelled cannot be approved into a bo
 });
 
 test('legacy single-price event page: past shows no Book button or invite promise', async () => {
-  const { event } = await publishTiered();
-  await db.query(`UPDATE events SET ticketing = 'single', price_status = 'set', ticket_price_paise = 50000 WHERE id = $1`, [event.id]);
-  assert.match((await new Client().get(`/events/${event.slug}`)).text, /data-book=/);
-  await makePast(event.id);
-  const page = (await new Client().get(`/events/${event.slug}`)).text;
-  assert.doesNotMatch(page, /data-book=/);
-  assert.doesNotMatch(page, /private group invite arrive/);
-  assert.match(page, /This event has ended/);
+  const orig = process.env.ENABLE_LIVE_PAYMENTS;
+  process.env.ENABLE_LIVE_PAYMENTS = 'true';
+  try {
+    const { event } = await publishTiered();
+    await db.query(`UPDATE events SET ticketing = 'single', price_status = 'set', ticket_price_paise = 50000, checkout_mode = 'superprofile',
+                                      superprofile_url = 'https://superprofile.bio/meetup/x' WHERE id = $1`, [event.id]);
+    assert.match((await new Client().get(`/events/${event.slug}`)).text, /data-sp-buy=/);
+    await makePast(event.id);
+    const page = (await new Client().get(`/events/${event.slug}`)).text;
+    assert.doesNotMatch(page, /data-sp-buy=/);
+    assert.doesNotMatch(page, /private group invite arrive/);
+    assert.match(page, /This event has ended/);
+  } finally {
+    process.env.ENABLE_LIVE_PAYMENTS = orig;
+  }
 });
 
 test('signed-out /admin is a branded access-required screen with the right status and no admin data', async () => {

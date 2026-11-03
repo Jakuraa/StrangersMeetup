@@ -1,4 +1,4 @@
-/* StrangersMeetup admin client. All authorisation is enforced server-side; this only renders.
+/* NIGHTLIFEZ admin client. All authorisation is enforced server-side; this only renders.
    DOM is built with textContent (never innerHTML with data). */
 (function () {
   'use strict';
@@ -130,7 +130,7 @@
         ['Members (active)', k.members], ['Users', k.users], ['Upcoming real events', k.upcoming_events], ['Upcoming sample events', k.upcoming_demo_events],
         ['Confirmed bookings', k.confirmed_bookings], ['Paid (test)', k.paid_test_paise, rupees], ['Paid (live)', k.paid_live_paise, rupees],
         ['Stars received', k.paid_stars], ['Failed payments', k.failed_payments], ['Invite failures', k.invite_failures],
-        ['Memberships expiring ≤7d', k.expiring_memberships], ['Refunds due', k.refunds_due], ['New leads', k.new_leads], ['New reports', k.new_reports],
+        ['Memberships expiring ≤7d', k.expiring_memberships], ['Unmatched SuperProfile orders', k.unmatched_orders], ['Flagged orders', k.flagged_orders], ['New leads', k.new_leads], ['New reports', k.new_reports],
         ['Alert subscribers', k.alert_subscribers]
       ];
       clear(main).append(el('h1', { text: 'Overview' }), el('div', { class: 'kpis' }, items.map(function (i) {
@@ -183,6 +183,9 @@
       input('refund_policy', 'Refund policy', 'textarea', ev.refund_policy, { wide: true, rows: 2 }),
       input('bookmyshow_url', 'BookMyShow URL (optional)', 'url', ev.bookmyshow_url),
       input('external_payment_url', 'External payment URL (optional)', 'url', ev.external_payment_url),
+      input('checkout_mode', 'Checkout', 'select', ev.checkout_mode || 'none', { options: ['none', 'superprofile', 'free'] }),
+      input('superprofile_url', 'SuperProfile product link (https://…superprofile.bio/…)', 'url', ev.superprofile_url),
+      input('superprofile_product_id', 'SuperProfile product id / name sent by the automation', 'text', ev.superprofile_product_id),
       input('telegram_chat_id', 'Telegram chat id (blank = events group)', 'text', ev.telegram_chat_id),
       input('cover_media_id', 'Cover media id (authorised media only)', 'text', ev.cover_media_id),
       input('food_available', 'Food available', 'checkbox', ev.food_available),
@@ -200,7 +203,8 @@
         capacity: Number(f.capacity.value), ticket_price_paise: price ? Math.round(Number(price) * 100) : null, organizer: f.organizer.value,
         gender_policy: f.gender_policy.value, summary: f.summary.value, description: f.description.value, inclusions: lines(f.inclusions.value),
         exclusions: lines(f.exclusions.value), refund_policy: f.refund_policy.value, bookmyshow_url: f.bookmyshow_url.value,
-        external_payment_url: f.external_payment_url.value, telegram_chat_id: f.telegram_chat_id.value.trim() || null,
+        external_payment_url: f.external_payment_url.value, checkout_mode: f.checkout_mode.value, superprofile_url: f.superprofile_url.value.trim() || null,
+        superprofile_product_id: f.superprofile_product_id.value.trim() || null, telegram_chat_id: f.telegram_chat_id.value.trim() || null,
         cover_media_id: f.cover_media_id.value.trim() || null, food_available: f.food_available.checked, stay_available: f.stay_available.checked, is_demo: f.is_demo.checked
       };
       (ev.id ? api('PATCH', '/api/admin/events/' + ev.id, body) : api('POST', '/api/admin/events', body))
@@ -292,6 +296,33 @@
     });
   };
 
+  /* ---------- SuperProfile orders ---------- */
+  TABS.orders = function (state, cursor) {
+    state = state || 'unmatched';
+    var q = '?state=' + encodeURIComponent(state) + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    return api('GET', '/api/admin/orders' + q).then(function (r) {
+      var finance = can(['super_admin', 'finance']);
+      var sel = el('select', { 'aria-label': 'Filter orders', onchange: function () { TABS.orders(sel.value); } }, ['unmatched', 'flagged', 'matched', 'all'].map(function (s) { return el('option', { value: s, text: s, selected: s === state }); }));
+      function link(o) {
+        return function () {
+          var id = prompt('Telegram user id of the buyer (they must have signed in once):');
+          if (!id) return;
+          api('POST', '/api/admin/orders/' + o.id + '/link', { telegramUserId: Number(id) }).then(function () { toast('Order linked and booking confirmed'); TABS.orders(state); }).catch(fail);
+        };
+      }
+      clear(main).append(el('h1', { text: 'Orders (SuperProfile)' }),
+        el('p', { class: 'muted', text: 'Every SuperProfile order we hear about. Unmatched orders wait for the buyer to /claim them in the bot; finance can link one by hand (audited). Nothing here is ever dropped.' }),
+        el('p', {}, [el('label', {}, ['Show ', sel])]),
+        el('div', { class: 'panel' }, [table([
+          ['Received', function (o) { return fmtDT(o.received_at); }], ['Order', function (o) { return o.order_id; }], ['Event', function (o) { return o.event_title || o.product_id || '—'; }],
+          ['Qty', function (o) { return o.qty; }], ['Amount', function (o) { return rupees(o.amount_paise); }],
+          ['State', function (o) { return el('span', {}, [pill(o.status), ' ', pill(o.match_state), o.flag_reason ? ' ' + o.flag_reason.replace(/_/g, ' ') : '']); }],
+          ['', function (o) { return finance && o.status === 'paid' && !o.matched_booking_id && o.event_title ? btn('Link to buyer', link(o), null, o.order_id) : ''; }]
+        ], r.orders, 'No orders in this view.', { name: 'SuperProfile orders', primary: 1 })]),
+        r.nextCursor ? el('p', {}, [btn('Older orders', function () { TABS.orders(state, r.nextCursor); })]) : '');
+    });
+  };
+
   /* ---------- memberships ---------- */
   TABS.memberships = function (q) {
     return api('GET', '/api/admin/memberships' + (q ? '?q=' + encodeURIComponent(q) : '')).then(function (r) {
@@ -321,7 +352,13 @@
       if (can(['super_admin', 'moderator'])) {
         main.append(el('h2', { text: 'Safety reports' }), el('div', { class: 'panel' }, [table([
           ['When', function (x) { return fmtDT(x.created_at); }], ['From', function (x) { return (x.alias || '') + ' (' + x.telegram_user_id + ')'; }],
-          ['Report', function (x) { return el('div', { class: 't-text', text: x.body }); }],
+          ['Report', function (x) {
+            var parts = [];
+            if (x.category && x.category !== 'other') parts.push(el('span', { class: 'pill pill-sm', text: x.category.replace(/_/g, ' ') }));
+            if (x.event_title) parts.push(el('small', { class: 'muted', text: ' · Event: ' + x.event_title }));
+            parts.push(el('div', { class: 't-text', text: x.body }));
+            return el('div', {}, parts);
+          }],
           ['Status', function (x) { return statusSelect(x.status, ['new', 'reviewing', 'actioned', 'dismissed'], function (v) { api('PATCH', '/api/admin/reports/' + x.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }, 'Status of safety report from ' + fmtDT(x.created_at)); }]
         ], r.reports, 'No reports.', { name: 'Safety reports', primary: 2 })]));
       }
@@ -451,7 +488,7 @@
   function block(title, m, render) {
     return el('div', { class: 'subpanel' }, [el('h3', { text: title }), m.available ? render(m.value, m) : unavailable(m)].concat(m.available && m.note ? [el('p', { class: 'muted small', text: m.note })] : []));
   }
-  var CAT_LABEL = { meetup: 'Meetup', dating_mixer: 'Dating mixer', nightlife: 'Nightlife', dinner_club: 'Dinner club', movie: 'Movie night', board_games: 'Board games', weekend_trip: 'Strangers trip', resort_getaway: 'Resort getaway', weekend_party: 'Weekend party', matchmaking: 'Matchmaking' };
+  var CAT_LABEL = { meetup: 'Meetup', dating_mixer: 'Dating mixer', nightlife: 'Nightlife', dinner_club: 'Dinner club', movie: 'Movie night', board_games: 'Board games', weekend_trip: 'Weekend trip', resort_getaway: 'Resort getaway', weekend_party: 'Weekend party', matchmaking: 'Matchmaking' };
   var HUMAN = { female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say', '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+' };
   function human(v) { return HUMAN[v] || CAT_LABEL[v] || String(v).replace(/_/g, ' '); }
 

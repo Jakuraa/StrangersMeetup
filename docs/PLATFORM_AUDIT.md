@@ -86,7 +86,7 @@ vanilla client JS. Migrations `003`–`008` (now `009`), each in a transaction u
 | Payment becomes paid only from a signature-verified webhook or server reconcile; client redirect ignored | Verified | `test/payments.test.js:66,105,131` |
 | Amount check | **Fixed in M1** — previously skipped when a signed event omitted the amount (`lib/services/bookings.js:162`); now fails closed | `test/safety.test.js` |
 | Live-key guard (`ENABLE_LIVE_PAYMENTS`) | Verified | `test/payments.test.js:205` |
-| Razorpay (account suspended), Cashfree (KYC pending) | **Blocked** | Owner constraint; nothing will be enabled |
+| Card payment gateways | **Dropped** | Owner decision: SuperProfile is the only checkout (see `PAYMENTS_DECISION.md`) |
 
 ### Admin and analytics
 | Item | Status | Evidence |
@@ -135,4 +135,4 @@ vanilla client JS. Migrations `003`–`008` (now `009`), each in a transaction u
 - Telegram bot token, webhook secret, bot username, chat ids, Telegram Login client id/secret.
 - Production `DATABASE_URL`, plus a **separate** preview database before setting `MIGRATE_ON_PREVIEW=true`.
 - Vercel Preview has no env vars; Git-triggered deploys need Vercel Pro (or a public repo).
-- Payments: Razorpay suspended, Cashfree KYC pending. Paid tiers remain draft-only.
+- Payments: SuperProfile is the only checkout; paid tickets are bookable only on events with a linked SuperProfile product.

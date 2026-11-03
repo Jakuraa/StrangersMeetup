@@ -1,0 +1,65 @@
+name: CI
+
+# Runs on every PR and on pushes to the long-lived branches. Needs no secrets: tests use a throwaway
+# Postgres service container and stubbed external APIs (no Telegram, SuperProfile or Vercel calls).
+on:
+  pull_request:
+  push:
+    branches: [main, launch-mvp]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: lint, unit, e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sm_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: 'true'
+      PGPASSWORD: postgres
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/sm_test
+      E2E_DATABASE_URL: postgres://postgres:postgres@localhost:5432/sm_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Unit and integration tests (real Postgres)
+        run: npm test
+      - name: Create the e2e database
+        run: psql -h localhost -U postgres -c 'CREATE DATABASE sm_e2e'
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests (Playwright + axe)
+        run: npm run test:e2e
+      - name: Upload Playwright report and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

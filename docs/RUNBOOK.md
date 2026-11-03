@@ -4,12 +4,10 @@ Health first: `GET /api/health` → `database: ok` and each config item `configu
 
 ## Webhook failures
 
-### Razorpay webhook not arriving / failing
-1. Razorpay Dashboard → Webhooks → the endpoint → delivery log. 401 = secret mismatch (`RAZORPAY_WEBHOOK_SECRET` must equal the secret set on that webhook; test and live webhooks have separate secrets). 5xx = our processing error — check Vercel logs for `payment webhook` / `request failed`.
-2. Razorpay disables a webhook after 24h of failures. Re-enable it in the dashboard.
-3. Missed payments are recovered by the daily cron (`reconcile`), or immediately:
-   `curl -H "Authorization: Bearer $CRON_SECRET" https://<site>/api/cron/reconcile`
-   It asks Razorpay about every `created` payment older than 10 minutes and applies the result through the same idempotent code path.
+### SuperProfile notifications not arriving / failing
+1. Zapier/Pabbly → the zap's task history. 401 = the `X-Webhook-Secret` header differs from `SUPERPROFILE_WEBHOOK_SECRET`; 503 = the secret is not set (or shorter than 24 chars); 400 = a mapped field is wrong (the response lists the field names); 5xx = our processing error — check Vercel logs for `superprofile webhook failed`.
+2. Admin → Orders: **unmatched** orders are paid but not tied to a person (the buyer can `/claim` them in the bot; finance can link one by hand). **flagged** orders need a decision: `amount_mismatch`, `currency_mismatch`, `event_not_published`, `duplicate_booking`, `refund_after_check_in`, `unknown_product` (link the product id on the event).
+3. Missed notifications are caught by the daily reconciliation (see `docs/SUPERPROFILE_OPS.md`), which diffs SuperProfile sales against `external_orders`. Replaying a notification is safe: it is idempotent on the order id.
 
 ### Telegram webhook
 1. `node scripts/telegram-setup.js` prints `getWebhookInfo` (pending updates, last error). Re-running it is safe.
@@ -24,9 +22,10 @@ Health first: `GET /api/health` → `database: ok` and each config item `configu
 - Retries run with backoff (up to 6 attempts); force a run: `curl -H "Authorization: Bearer $CRON_SECRET" https://<site>/api/cron/notifications`.
 
 ## Refunds
-- Admin → Bookings & payments (finance or super_admin) → **Refund** on a paid payment. Full refund via provider (Razorpay `receipt` makes it idempotent), booking → `refunded`, invites revoked, member DM'd. Stars memberships refund via `refundStarPayment` and remove the member from the tier chat.
-- **Refunds due** (Overview KPI, filter `refund_due`): payments that completed after the seat hold lapsed when the event was full or cancelled. Refund each one — the money must not be kept.
-- Cancelling an event (Admin → Events → Cancel) DMs confirmed attendees that they will be refunded; then refund each paid booking from Bookings.
+- **Tickets are refunded on SuperProfile**, not in this app. When SuperProfile reports the refund, the order becomes `refunded`, the booking `refunded`, an unused invite is revoked and a guest who already joined is removed from the group. The app refuses to refund a ticket itself (`NOT_SUPPORTED_IN_APP`).
+- Stars memberships: Admin → Bookings & payments (finance or super_admin) → **Refund** — `refundStarPayment`, and the member is removed from the tier chat.
+- A refund after check-in keeps the check-in record and flags the order `refund_after_check_in` for finance.
+- Cancelling an event (Admin → Events → Cancel) DMs confirmed attendees that they will be refunded; then refund each order on SuperProfile.
 
 ## Revoking access
 - Membership: Admin → Memberships → search → **Revoke** (removes from the tier chat via ban+unban, so the person can rejoin later if they pay again).
@@ -40,13 +39,12 @@ Health first: `GET /api/health` → `database: ok` and each config item `configu
 | `CRON_SECRET` | Set new value → redeploy | Vercel Cron picks it up automatically. |
 | `TELEGRAM_WEBHOOK_SECRET` | Set new value → redeploy → `node scripts/telegram-setup.js` | Until the script runs, Telegram updates get 401 and are retried. |
 | `TELEGRAM_BOT_TOKEN` | BotFather → `/revoke` → set new token → redeploy → setup script | Old token stops immediately. |
-| `RAZORPAY_KEY_SECRET` | Dashboard → API keys → regenerate → set → redeploy | Checkouts fail until redeployed. |
-| `RAZORPAY_WEBHOOK_SECRET` | Edit webhook secret in dashboard and env at the same time → redeploy | Deliveries in between 401 and are retried. |
+| `SUPERPROFILE_WEBHOOK_SECRET` | Set new value in Vercel → redeploy → update the `X-Webhook-Secret` header in the zap | Notifications in between 401; Zapier/Pabbly can replay them (idempotent). |
 | `DATABASE_URL` | Rotate in Neon/Supabase → set → redeploy | — |
 | `TELEGRAM_LOGIN_CLIENT_SECRET` | BotFather Login Widget → regenerate → set → redeploy | — |
 
 ## Crons (Hobby: daily 06:00 IST)
-`/api/cron/daily` runs: `expire-holds`, `reconcile`, `memberships` (3-day reminders, expiry + removal), `notifications` (retries), `cleanup` (nonces, rate limits). Each is idempotent and can be called individually with the bearer secret.
+`/api/cron/daily` runs: `expire-holds`, `memberships` (3-day reminders, expiry + removal), `notifications` (retries), `cleanup` (nonces, rate limits). Each is idempotent and can be called individually with the bearer secret.
 
 ## Database
 - Migrations: `npm run migrate` (also runs in the Vercel **Production** build; Preview builds skip unless `MIGRATE_ON_PREVIEW=true` with a separate DB). Never edit an applied migration — add a new numbered file.

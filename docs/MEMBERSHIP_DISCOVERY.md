@@ -23,7 +23,7 @@ Behaviour: idempotent on `(event, id)`; duplicates return 200 `duplicate`; bad/m
 "Your bot or mini app must use Telegram Stars for the sale of digital goods and services inside Telegram apps, regardless of any other web portals… you may have set up outside the Telegram ecosystem." Therefore:
 - The SuperProfile checkout link is shown on the **website only**. Inside the Telegram Mini App it is hidden (`data-web-only`), and the bot's `/membership` lists only Stars tiers — it never mentions or links SuperProfile.
 - A tier sold via SuperProfile cannot also get a Stars invoice from our bot (two systems would fight over group membership).
-- **Event tickets / trips** are in-person services: they are sold on the website through Razorpay (sandbox), never with Stars. Telegram's docs do not classify offline-event tickets explicitly; we do not sell them inside Telegram at all.
+- **Event tickets / trips** are in-person services: they are sold on the website through SuperProfile, never with Stars. Telegram's docs do not classify offline-event tickets explicitly; we do not sell them inside Telegram at all.
 
 ## Event discovery
 

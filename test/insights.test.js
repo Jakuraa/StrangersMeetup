@@ -133,8 +133,8 @@ test('SuperProfile webhook: 503 until configured, secret enforced, payload valid
   process.env.SUPERPROFILE_WEBHOOK_SECRET = SP_SECRET;
   assert.equal((await sp({ event: 'purchase', id: '1', product: 'Insider' }, 'wrong-secret-wrong-secret-xx')).status, 401);
   assert.equal((await sp({ event: 'purchase', id: '1', product: 'Insider' }, null)).status, 401);
-  assert.equal((await sp({ event: 'refund', id: '1', product: 'Insider' })).status, 400);
-  assert.equal((await sp({ event: 'purchase', id: '1' })).status, 400, 'product required for purchases');
+  assert.equal((await sp({ event: 'bogus', id: '1', product: 'Insider' })).status, 400);
+  assert.equal((await sp({ event: 'purchase', id: '1' })).json.result, 'unmatched', 'a purchase without a product is stored, not dropped');
 });
 
 test('SuperProfile: tier mapping, lifecycle, idempotency, email never stored', async () => {
@@ -157,8 +157,8 @@ test('SuperProfile: tier mapping, lifecycle, idempotency, email never stored', a
   assert.doesNotMatch(dump.toLowerCase(), /member\.one@example\.com|two@example\.com/);
 
   let x = await insights();
-  assert.equal(x.membership.superprofile.active.value, 2);
-  assert.equal(x.membership.superprofile.newInWindow.value, 2);
+  assert.equal(x.membership.superprofile.active.value, 1, 'an unknown product is an unmatched order, not a membership');
+  assert.equal(x.membership.superprofile.newInWindow.value, 1);
   assert.equal(x.membership.superprofile.renewalsInWindow.value, 1);
   assert.equal(x.membership.superprofile.abandonedInWindow.value, 1);
   assert.equal(x.membership.superprofile.unmappedProducts.value, 1);
@@ -167,7 +167,7 @@ test('SuperProfile: tier mapping, lifecycle, idempotency, email never stored', a
   assert.equal((await sp({ event: 'subscription_expired', id: 'exp_1', product: 'Insider Circle', email })).json.result, 'expired');
   assert.equal((await sp({ event: 'subscription_expired', id: 'exp_2', product: 'Insider Circle', email: 'nobody@example.com' })).json.result, 'expired_unknown_member');
   x = await insights();
-  assert.equal(x.membership.superprofile.active.value, 1);
+  assert.equal(x.membership.superprofile.active.value, 0);
   assert.equal(x.membership.superprofile.expiredInWindow.value, 1);
 
   const log = await finance.get('/api/admin/superprofile');

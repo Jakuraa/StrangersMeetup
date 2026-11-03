@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#2d3b26"/>
+      <stop offset="50%" stop-color="#182214"/>
+      <stop offset="100%" stop-color="#0b1009"/>
+    </radialGradient>
+    <radialGradient id="tablelamp" cx="50%" cy="20%" r="60%">
+      <stop offset="0%" stop-color="#fef08a" stop-opacity="0.6"/>
+      <stop offset="40%" stop-color="#84cc16" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#84cc16" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- Ambient table lamp glow -->
+  <circle cx="320" cy="120" r="200" fill="url(#tablelamp)"/>
+  <!-- Game board perspective -->
+  <polygon points="120,200 520,200 590,340 50,340" fill="#202e1c" stroke="#4d6b42" stroke-width="2"/>
+  <!-- Grid squares on game board -->
+  <polygon points="200,215 300,215 320,270 200,270" fill="#293b24" opacity="0.6"/>
+  <polygon points="340,215 440,215 440,270 320,270" fill="#364d30" opacity="0.6"/>
+  <!-- Dice -->
+  <rect x="230" y="270" width="34" height="34" rx="6" fill="#f8fafc" transform="rotate(14 247 287)"/>
+  <circle cx="242" cy="282" r="2.5" fill="#0f172a"/>
+  <circle cx="252" cy="292" r="2.5" fill="#0f172a"/>
+  <!-- Meeple figure -->
+  <circle cx="380" cy="265" r="7" fill="#f59e0b"/>
+  <path d="M370 290 Q380 274 390 290 L395 305 L365 305 Z" fill="#f59e0b"/>
+</svg>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a2b"/>
+      <stop offset="40%" stop-color="#2d523e"/>
+      <stop offset="70%" stop-color="#735e38"/>
+      <stop offset="100%" stop-color="#9a6234"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="50%" cy="65%" r="35%">
+      <stop offset="0%" stop-color="#fed7aa" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#f97316" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#sky)"/>
+  <!-- Sunset glow -->
+  <circle cx="320" cy="220" r="160" fill="url(#sun)"/>
+  <!-- Distant mountain ridge -->
+  <path d="M0 240 Q140 180 260 210 Q380 160 500 200 Q580 170 640 190 L640 360 L0 360 Z" fill="#203a2c" opacity="0.65"/>
+  <!-- Mid mountain ridge -->
+  <path d="M0 255 Q180 205 320 235 Q460 195 640 245 L640 360 L0 360 Z" fill="#15281e" opacity="0.85"/>
+  <!-- Foreground mountain and pine trees -->
+  <path d="M0 290 Q220 250 420 280 Q540 260 640 295 L640 360 L0 360 Z" fill="#0d1913"/>
+  <!-- Pine trees silhouette -->
+  <polygon points="120,240 130,265 110,265" fill="#0a140f"/>
+  <polygon points="120,255 135,285 105,285" fill="#0a140f"/>
+  <polygon points="170,250 178,270 162,270" fill="#0a140f"/>
+  <polygon points="170,265 182,290 158,290" fill="#0a140f"/>
+  <polygon points="490,245 498,268 482,268" fill="#0a140f"/>
+  <polygon points="490,262 502,290 478,290" fill="#0a140f"/>
+</svg>

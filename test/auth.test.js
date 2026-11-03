@@ -66,6 +66,14 @@ test('legacy Login Widget payload validates; tampering fails', async () => {
   assert.equal((await new Client().post('/api/auth/telegram', { widget: bad })).status, 401);
 });
 
+test('legacy Login Widget payload validates with extra fields and preserves last_name', async () => {
+  const good = makeWidgetData({ id: 91, first_name: 'Vikram', last_name: 'Seth', is_premium: true });
+  assert.equal((await new Client().post('/api/auth/telegram', { widget: good, ageConfirmed: true })).status, 200);
+  const u = await db.one('SELECT alias, age_confirmed_21 FROM users WHERE telegram_user_id = 91');
+  assert.equal(u.alias, 'Vikram Seth');
+  assert.equal(u.age_confirmed_21, true);
+});
+
 test('unit: validateInitData constant-time path rejects non-hex hash', () => {
   const p = new URLSearchParams(makeInitData({ id: 12 }));
   p.set('hash', 'zz');
@@ -99,4 +107,27 @@ test('auth endpoint is rate limited per IP', async () => {
   let last;
   for (let i = 0; i < 25; i++) last = await new Client({ ip: '10.9.9.9' }).post('/api/auth/telegram', { initData: 'hash=00' });
   assert.equal(last.status, 429);
+});
+
+test('signed-out /me returns 302 redirect to /signin with next preserved', async () => {
+  const r = await new Client().get('/me');
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/signin?next=%2Fme');
+  assert.match(r.headers.get('cache-control') || '', /no-store/);
+});
+
+test('signed-in user reaches /me with status 200', async () => {
+  const c = await signedInClient('guest');
+  const r = await c.get('/me');
+  assert.equal(r.status, 200);
+  assert.match(r.text, /My bookings/);
+});
+
+test('signin page explains why Telegram is used without passwords', async () => {
+  const r = await new Client().get('/signin');
+  assert.equal(r.status, 200);
+  assert.match(r.text, /Why sign in with Telegram\?/);
+  assert.match(r.text, /No passwords to manage/);
+  assert.match(r.text, /Your privacy stays protected/);
+  assert.match(r.text, /Direct venue delivery/);
 });
