@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 12 migrations currently exist: 003 through 014
-  assert.equal(files.length, 12, `expected 12 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 13 migrations currently exist: 003 through 015
+  assert.equal(files.length, 13, `expected 13 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 12 migrations in correct order', async () => {
+test('schema_migrations table records all 13 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 12);
+  assert.equal(rows.length, 13);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 12
+  // Total count in schema_migrations must remain exactly 13
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 12);
+  assert.equal(countRes.n, 13);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -126,7 +126,8 @@ test('core schema integrity: all tables, custom types, and location intelligence
     'schema_migrations', 'users', 'events', 'bookings',
     'reports', 'event_drafts', 'user_sessions',
     'organisations', 'org_memberships', 'user_blocks',
-    'location_states', 'location_districts', 'location_cities', 'location_localities'
+    'location_states', 'location_districts', 'location_cities', 'location_localities',
+    'payment_audits'
   ];
 
   for (const table of expectedTables) {
