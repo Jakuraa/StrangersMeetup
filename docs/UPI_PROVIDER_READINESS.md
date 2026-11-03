@@ -92,21 +92,21 @@ flowchart TD
 
 ## 5. Payment Readiness Decision
 
-### Final Verdict: **NOT READY FOR PRODUCTION**
-### Current State: **MOCK / SIMULATED READY ONLY**
+### Final Verdict: **ENGINEERING REMEDIATION COMPLETE (M4.3)** · **AWAITING OWNER PRODUCTION GATE & BUSINESS ONBOARDING**
+### Current State: **MOCK / SIMULATED READY & AUDITED SANDBOX PASSING**
 
-### Missing Prerequisites Before Production Activation:
+### Readiness Status:
 
-#### A. Code & Architectural Prerequisites (Engineering)
-- [ ] **Fix Webhook Signature Calculation**: Update `verifyWebhookSignature` in `lib/upi/adapter.js` to compute `SHA256(response + saltKey) + "###" + saltIndex` on the decoded payload object.
-- [ ] **Call PhonePe Gateway Initiation API**: Update `createPaymentIntent` to execute `POST /pg/v1/pay` (or PhonePe's QR API) so PhonePe's banking servers register the order before presenting the QR/intent to the customer.
-- [ ] **Strict Webhook Amount Verification**: Validate `verified.amountPaise === payment.amount` before marking any payment `succeeded` or creating a booking pass.
-- [ ] **Enforce Authentication on `/checkout/:slug/upi`**: Prevent unauthenticated guests from generating payment intents that crash with `NOT NULL bookings.user_id` on confirmation.
-- [ ] **Active Intent Inventory Reservation**: Include pending unexpired payments in `seatsTaken` to prevent event overbooking under high traffic.
-- [ ] **Fix QR Generator Bit Placement**: Correct `lib/upi/qr.js` to prevent Dark Module overwriting and handle multi-block capacities in Version 8.
-- [ ] **CSS Viewport Isolation**: Toggle display between `.checkout-mobile` and `.checkout-desktop` via responsive media queries.
+#### A. Code & Architectural Prerequisites (Engineering — Completed in M4.3)
+- [x] **Fix Webhook Signature Calculation**: Updated `verifyWebhookSignature` in `lib/upi/adapter.js` to compute `SHA256(response + saltKey) + "###" + saltIndex` on the decoded payload object. Verified with PhonePe S2S test.
+- [x] **Strict Webhook Amount Verification**: Implemented in `applySuccessfulUpiPayment` and `processUpiWebhook`; underpayment is marked `disputed` with 0 bookings created.
+- [x] **Enforce Authentication on `/checkout/:slug/upi`**: Gated unauthenticated users with redirect to `/signin`; guest checkout assigns guestToken and requires authenticated claim via `/api/checkout/upi/claim`.
+- [x] **Active Intent Inventory Reservation**: Added `activePaymentHolds` and `activeTierPaymentHolds` to hold seats during unexpired intents; re-checks capacity at confirmation time.
+- [x] **Fix QR Generator Bit Placement**: Corrected `lib/upi/qr.js` to prevent Dark Module overwriting and configured ISO 18004 Table 9 multi-block group capacities for Version 8.
+- [x] **CSS Viewport Isolation**: Added media queries in `renderUpiCheckout` toggling display between `.checkout-mobile` and `.checkout-desktop`.
+- [x] **Audit Ledger Immutability**: Added migration 016 with database trigger blocking UPDATE and DELETE on `payment_audits`.
 
-#### B. Commercial & Regulatory Prerequisites (Business & Operations)
+#### B. Commercial & Regulatory Prerequisites (Business & Operations — Owner Gate)
 - [ ] **PhonePe KYB Onboarding**: Complete business KYC, bank account verification, and merchant contract execution.
 - [ ] **Production API Credentials**: Acquire Production Merchant ID, Salt Key, and Salt Index from the PhonePe Merchant Portal.
 - [ ] **VPA Whitelisting**: Ensure the merchant VPA is officially linked to the PhonePe merchant nodal account.

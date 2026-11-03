@@ -20,12 +20,12 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 
 | Ref | SHA | What it is |
 |---|---|---|
-| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 74 commits behind `launch-mvp`. |
-| `origin/launch-mvp` | `46b85c1` | Merge of PR #26 (M3 Deployment & Database Migration). Baseline for M4. |
+| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 78 commits behind `launch-mvp`. |
+| `origin/launch-mvp` | `c71ec8d` | Merge of PR #29 (M4.2 UPI Security Audit). Baseline for M4.3. |
 | `origin/feature/p3-location-intelligence` | `d7836ff` | PR #23 feature branch head; merged into `launch-mvp` at `7c5079e`. |
 | `origin/fix/preview-recovery-audit` | `bcb4989` | Commit holding Phase 5.6/5.7 reports; pushed to origin per owner decision. |
 
-Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp` @ `83a30a7`.
+Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp` @ `c71ec8d`.
 
 ## 3. Open pull requests and CI
 
@@ -38,6 +38,9 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
 PR #26 is **merged** at `46b85c1` (M3 Deployment & Database Migration Architecture).
+PR #27 is **merged** at `69cafae` (M4 Payment, Booking and Revenue Readiness Audit).
+PR #28 is **merged** at `c3b4e83` (M4.1 UPI-First Checkout, Dynamic QR & Verified Payment Integration).
+PR #29 is **merged** at `c71ec8d` (M4.2 Independent UPI Payment Security & Production Readiness Audit).
 
 ## 4. Migrations per environment
 
@@ -45,7 +48,7 @@ PR #26 is **merged** at `46b85c1` (M3 Deployment & Database Migration Architectu
 
 | Environment | DB endpoint | Applied | Evidence |
 |---|---|---|---|
-| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`014` on `launch-mvp`) | CI service container; fresh each run. |
+| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`016` on `feature/m4-3-upi-security-remediation`) | CI service container; fresh each run. |
 | **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `014`** (applied) | Applied via PR #23 push @ `d7836ff` (`dpl_AbjNDha7i298qjrh84FZZA3hHUQv`): `migration applied {"file":"014_location_remediation.sql"}`. |
 | **Production** | `ep-dawn-glitter-b4mkwxkl` (from earlier docs; not re-verified) | **`003` … `009`** per its last build | Build log for `main` @ `5c6652a` (`dpl_3g7aUM3V…`, 2026-10-29): `[migrate] done (0 applied; vercel production)`; that tree holds `003`–`009`. |
 
@@ -153,7 +156,8 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 | M3 Deployment & DB Migration | `feature/m3-deployment-migration` / #26 | **Merged** @ `46b85c1` into `launch-mvp` (Deployment architecture, DB migration policy, forensic production verification, environment inventory, migration test suite `test/migrations.test.js`) |
 | M4 Payment & Booking Readiness | `feature/m4-payment-booking-audit` / #27 | **Merged** @ `69cafae` into `launch-mvp` (Booking & payment architecture, payment readiness & financial safety report, booking integrity test report, 10/10 automated tests in `test/booking-integrity.test.js`) |
 | M4.1 UPI-First Checkout & Dynamic QR | `feature/m4-1-upi-checkout` / #28 | **Merged** @ `c3b4e83` into `launch-mvp` (UPI-First checkout, pure SVG dynamic QR, provider-neutral adapter with PhonePe PG primary, mobile intent links, SHA256 constant-time webhook verification, migration 015, 13/13 automated tests in `test/upi-checkout.test.js`) |
-| M4.2 UPI Security & Readiness Audit | `feature/m4-2-upi-security-audit` | **Completed** (Independent audit of M4.1 UPI checkout: identified 2 Critical and 3 High severity defects including webhook checksum formula discrepancy, missing amount validation, guest checkout crash, and concurrency overbooking risk; verdict: NOT READY FOR LIVE PAYMENTS; `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M4.2 UPI Security & Readiness Audit | `feature/m4-2-upi-security-audit` / #29 | **Merged** @ `c71ec8d` into `launch-mvp` (Independent audit of M4.1 UPI checkout: identified 2 Critical and 3 High severity defects; verdict: NOT READY FOR LIVE PAYMENTS; `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M4.3 Critical UPI Security & Financial Integrity Remediation | `feature/m4-3-upi-security-remediation` | **Completed** (Resolved all 9 M4.2 findings: SEC-01 Base64 webhook signature, FIN-01 underpayment defense & dispute audit, DATA-01 auth gate & guest booking claim API, CONCUR-01 active intent capacity holds & confirmation check, AUTH-01 status polling IDOR fix, QR-01 Dark Module & multi-block interleaving fix, UI-01 responsive viewport CSS isolation, LOG-01 dedicated rate limits, DB-01 immutable `payment_audits` trigger via migration 016; 21/21 tests in `test/upi-checkout.test.js` pass, 7/7 in `test/migrations.test.js` pass, full test suite 453/453 pass; `ENABLE_LIVE_PAYMENTS=false` preserved) |
 | M5–M10 | — | not started |
 
 ## 11. Where the detail lives
