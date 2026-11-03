@@ -3,7 +3,7 @@
 // nearby event discovery, privacy preservation, and location picker HTTP endpoints.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { resetDb, startServer, stopServer, db, Client, createEvent } from './helpers.js';
+import { resetDb, startServer, stopServer, db, Client, createEvent, signedInClient } from './helpers.js';
 import {
   haversineKm,
   listStates,
@@ -11,7 +11,9 @@ import {
   listCities,
   getCityBySlug,
   listLocalities,
-  findNearbyEvents
+  findNearbyEvents,
+  resolveCity,
+  formatDistanceBand
 } from '../lib/services/locations.js';
 
 let http;
@@ -172,14 +174,14 @@ test('6. Nearby Event Discovery: Radius filtering and ordering', async () => {
   const mysCity = await db.one(`SELECT id FROM location_cities WHERE slug = 'mysuru'`);
   const cheCity = await db.one(`SELECT id FROM location_cities WHERE slug = 'chennai'`);
 
-  const evBlr = await createEvent({ title: 'BLR Rooftop Mixer', city: 'Bengaluru' });
-  await db.query(`UPDATE events SET city_id = $1, lat = 12.9716, lng = 77.5946 WHERE id = $2`, [blrCity.id, evBlr.id]);
+  const evBlr = await createEvent({ title: 'BLR Rooftop Mixer', city: 'Bengaluru', venuePrivacy: 'public' });
+  await db.query(`UPDATE events SET city_id = $1, lat = 12.9716, lng = 77.5946, coords_provenance = 'venue' WHERE id = $2`, [blrCity.id, evBlr.id]);
 
-  const evMys = await createEvent({ title: 'Mysuru Heritage Walk', city: 'Mysuru' });
-  await db.query(`UPDATE events SET city_id = $1, lat = 12.2958, lng = 76.6394 WHERE id = $2`, [mysCity.id, evMys.id]);
+  const evMys = await createEvent({ title: 'Mysuru Heritage Walk', city: 'Mysuru', venuePrivacy: 'public' });
+  await db.query(`UPDATE events SET city_id = $1, lat = 12.2958, lng = 76.6394, coords_provenance = 'venue' WHERE id = $2`, [mysCity.id, evMys.id]);
 
-  const evChe = await createEvent({ title: 'Chennai Beach Social', city: 'Chennai' });
-  await db.query(`UPDATE events SET city_id = $1, lat = 13.0827, lng = 80.2707 WHERE id = $2`, [cheCity.id, evChe.id]);
+  const evChe = await createEvent({ title: 'Chennai Beach Social', city: 'Chennai', venuePrivacy: 'public' });
+  await db.query(`UPDATE events SET city_id = $1, lat = 13.0827, lng = 80.2707, coords_provenance = 'venue' WHERE id = $2`, [cheCity.id, evChe.id]);
 
   // Search from Indiranagar, Bengaluru (12.9784, 77.6408) within 50 km:
   // Only the BLR event should be returned
@@ -242,7 +244,8 @@ test('7. Privacy Boundary: Private venue details are NEVER exposed in discovery'
   assert.equal(found.mapsUrl, null, 'Secret map link must be hidden on public discovery');
   assert.equal(found.lat, null, 'Exact coordinates must not be exposed when venue is secret');
   assert.equal(found.lng, null, 'Exact coordinates must not be exposed when venue is secret');
-  assert.ok(found.distanceKm != null, 'Approximate distance remains available for sorting');
+  assert.equal(found.distanceKm, null, 'Exact numeric distanceKm must be suppressed for secret venue to prevent trilateration');
+  assert.ok(found.distanceBand != null, 'Privacy-safe coarse distanceBand must be provided');
 });
 
 test('8. HTTP Endpoints: /api/locations and /api/events/nearby', async () => {
@@ -279,6 +282,7 @@ test('8. HTTP Endpoints: /api/locations and /api/events/nearby', async () => {
   assert.equal(resNearby.status, 200);
   assert.equal(resNearby.json.ok, true);
   assert.ok(Array.isArray(resNearby.json.events));
+  assert.ok(resNearby.headers.get('cache-control')?.includes('max-age=60'));
 
   // GET /api/events/nearby with invalid coords -> 400
   const resInvalid = await http.get('/api/events/nearby?lat=999&lng=77.59');
@@ -287,4 +291,118 @@ test('8. HTTP Endpoints: /api/locations and /api/events/nearby', async () => {
   // GET /api/events/nearby with no location -> 400
   const resMissing = await http.get('/api/events/nearby');
   assert.equal(resMissing.status, 400);
+});
+
+test('9. City Resolution: resolveCity matches canonical name, slug, aliases and returns null for unknown', async () => {
+  const byName = await resolveCity('Bengaluru');
+  assert.equal(byName?.slug, 'bengaluru');
+  assert.equal(byName?.name, 'Bengaluru');
+
+  const bySlug = await resolveCity('bengaluru');
+  assert.equal(bySlug?.id, byName?.id);
+
+  const byAliasBangalore = await resolveCity('Bangalore');
+  assert.equal(byAliasBangalore?.slug, 'bengaluru');
+
+  const byAliasMadras = await resolveCity('Madras');
+  assert.equal(byAliasMadras?.slug, 'chennai');
+
+  const byAliasKovai = await resolveCity('Kovai');
+  assert.equal(byAliasKovai?.slug, 'coimbatore');
+
+  const byAliasPondy = await resolveCity('Pondy');
+  assert.equal(byAliasPondy?.slug, 'puducherry');
+
+  // Unsupported or invalid city names must return null and never guess
+  assert.equal(await resolveCity('Atlantis'), null);
+  assert.equal(await resolveCity(''), null);
+  assert.equal(await resolveCity(null), null);
+  assert.equal(await resolveCity('X'), null);
+});
+
+test('10. Privacy Distance Bands: formatDistanceBand tiers and null handling', () => {
+  assert.equal(formatDistanceBand(0.2), '< 1 km away');
+  assert.equal(formatDistanceBand(0.9), '< 1 km away');
+  assert.equal(formatDistanceBand(1.5), '~2 km away');
+  assert.equal(formatDistanceBand(2.9), '~2 km away');
+  assert.equal(formatDistanceBand(4.2), '~5 km away');
+  assert.equal(formatDistanceBand(8.7), '~10 km away');
+  assert.equal(formatDistanceBand(18.0), '~20 km away');
+  assert.equal(formatDistanceBand(38.0), '~30–50 km away');
+  assert.equal(formatDistanceBand(75.0), '~80 km away');
+
+  assert.equal(formatDistanceBand(null), null);
+  assert.equal(formatDistanceBand(undefined), null);
+  assert.equal(formatDistanceBand('invalid'), null);
+  assert.equal(formatDistanceBand(-5), null);
+});
+
+test('11. Nearby Discovery: Bounding box pre-filter and antimeridian handling', async () => {
+  // Normal coordinate search
+  const events = await findNearbyEvents({ lat: 12.9716, lng: 77.5946, radiusKm: 25 });
+  assert.ok(Array.isArray(events));
+
+  // Extreme polar latitudes (lat clamped to [-90, 90])
+  const northPoleEvents = await findNearbyEvents({ lat: 89.9, lng: 0, radiusKm: 50 });
+  assert.ok(Array.isArray(northPoleEvents));
+
+  const southPoleEvents = await findNearbyEvents({ lat: -89.9, lng: 0, radiusKm: 50 });
+  assert.ok(Array.isArray(southPoleEvents));
+
+  // Antimeridian longitude wrap (lng near 180 / -180)
+  const wrapEvents = await findNearbyEvents({ lat: 0, lng: 179.9, radiusKm: 50 });
+  assert.ok(Array.isArray(wrapEvents));
+});
+
+test('12. Organiser Publishing: Auto-resolves city and locality, assigns coords, discoverable by GPS', async () => {
+  const orgClient = await signedInClient();
+  await db.query('UPDATE users SET organiser_enabled = true WHERE id = $1', [orgClient.userId]);
+
+  const draftRes = await orgClient.post('/api/organiser/drafts', { template: 'social' });
+  assert.equal(draftRes.status, 201);
+  const draft = draftRes.json.draft;
+
+  const d = new Date(Date.now() + 7 * 86400000 + 5.5 * 3600000).toISOString().slice(0, 10);
+  const validData = {
+    template: 'social', category: 'meetup', title: 'Indiranagar Social Mixer', timezone: 'Asia/Kolkata',
+    startLocal: `${d}T18:00`, endLocal: `${d}T21:00`, multiDay: false,
+    venue: 'Toit Brewpub', city: 'Bangalore', area: 'Indiranagar', privateVenue: false,
+    description: 'Casual networking evening for makers and tech folks.',
+    tickets: [{ id: 't1', name: 'Standard entry', kind: 'free', pricePaise: 0, quantity: 30, maxPerBooking: 2, validOn: 'all' }],
+    features: {}
+  };
+
+  const saveRes = await orgClient.req('PUT', `/api/organiser/drafts/${draft.id}`, { data: validData, step: 'preview', version: draft.version });
+  assert.equal(saveRes.status, 200);
+
+  const pubRes = await orgClient.post(`/api/organiser/drafts/${draft.id}/publish`, { version: saveRes.json.draft.version, confirm: true });
+  assert.equal(pubRes.status, 200);
+  const eventId = pubRes.json.eventId;
+
+  const evRow = await db.one(`SELECT id, city, city_id, locality_id, lat, lng, coords_provenance FROM events WHERE id = $1`, [eventId]);
+  assert.equal(evRow.city, 'Bengaluru', 'Canonical city name must be saved even if alias "Bangalore" was input');
+  assert.ok(evRow.city_id, 'city_id must be linked');
+  assert.ok(evRow.locality_id, 'locality_id for Indiranagar must be linked');
+  assert.equal(evRow.coords_provenance, 'locality', 'coords_provenance must be locality');
+  assert.ok(evRow.lat != null && evRow.lng != null, 'lat and lng must be assigned');
+
+  // Discoverable via GPS search around Indiranagar (12.9784, 77.6408)
+  const nearby = await findNearbyEvents({ lat: 12.9784, lng: 77.6408, radiusKm: 10 });
+  const found = nearby.some((e) => e.id === eventId);
+  assert.equal(found, true, 'Event must be discoverable via GPS');
+});
+
+test('13. HTTP Rate Limiting on /api/events/nearby: 60 req/min limit, 429 status and Retry-After header', async () => {
+  const testClient = new Client({ ip: '198.51.100.99' });
+  let rateLimited = false;
+  for (let i = 0; i < 65; i++) {
+    const res = await testClient.get('/api/events/nearby?lat=12.9716&lng=77.5946&radius_km=50');
+    if (res.status === 429) {
+      rateLimited = true;
+      assert.equal(res.json.error, 'rate_limited');
+      assert.ok(res.headers.get('retry-after'));
+      break;
+    }
+  }
+  assert.equal(rateLimited, true, 'Rate limit must be enforced after 60 requests in 1 minute');
 });
