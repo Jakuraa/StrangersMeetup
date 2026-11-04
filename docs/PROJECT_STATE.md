@@ -34,9 +34,10 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 | #17 Production release: free-only MVP | `main` ← `launch-mvp` | `83a30a7` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41564501659](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41564501659) (push) success |
 | #30 M4.3 UPI Security Remediation | `launch-mvp` ← `feature/m4-3-upi-security-remediation` | `e4babe6` | `lint, unit, e2e` ✅ | PR Review Baseline for M4.3.1 |
 | #31 M4.3.1 Review Remediation | `feature/m4-3-upi-security-remediation` ← `feature/m4-3-1-review-remediation` | `03bf518` | `lint, unit, e2e` ✅ | Independent Review Corrections for PR #30 |
-| (Remediation) M4.3.2 Financial Integrity Remediation | `feature/m4-3-1-review-remediation` ← `feature/m4-3-2-financial-integrity` | (work branch) | `lint, unit, e2e` ✅ | Fail-Closed Merchant Identity, Secure Manual Reconciliation & State Transition Verification |
+| #32 M4.3.2 Financial Integrity Remediation | `feature/m4-3-1-review-remediation` ← `feature/m4-3-2-financial-integrity` | `62cb0a3` | `lint, unit, e2e` ✅ · Vercel ✅ | Fail-Closed Merchant Identity & Secure Manual Refund Reconciliation |
+| (Review) M4.3.3 Final Provider Verification Integrity | `feature/m4-3-2-financial-integrity` ← `feature/m4-3-3-provider-verification` | (work branch) | `lint, unit, e2e` ✅ | Removal of Currency Defaults, Elimination of Merchant Fallback, Authentic S2S Polling & Attestation |
 
-**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #30, PR #31, and PR #17 must not be merged automatically without owner review. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
+**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
@@ -46,6 +47,7 @@ PR #28 is **merged** at `c3b4e83` (M4.1 UPI-First Checkout, Dynamic QR & Verifie
 PR #29 is **merged** at `c71ec8d` (M4.2 Independent UPI Payment Security & Production Readiness Audit).
 PR #30 is **open / preserved** (`feature/m4-3-upi-security-remediation`).
 PR #31 is **open / preserved** (`feature/m4-3-1-review-remediation`).
+PR #32 is **open / preserved** (`feature/m4-3-2-financial-integrity`).
 
 ## 4. Migrations per environment
 
