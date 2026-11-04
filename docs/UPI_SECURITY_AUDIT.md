@@ -349,3 +349,53 @@ Following independent owner review of PR #31 (`feature/m4-3-1-review-remediation
 - **Migration Suite**: 8/8 passed (`test/migrations.test.js`).
 - **Linter**: `140/140 files OK` (`npm run lint`).
 - **Absolute Safety Boundary**: `ENABLE_LIVE_PAYMENTS=false` preserved across all files and environments. Real money transactions remain 100% disabled. Merges to PR #31, PR #30, and PR #17 strictly prohibited.
+
+---
+
+## 8. Milestone M4.3.3 Final Provider Verification Integrity Review
+
+Milestone M4.3.3 implements a final zero-trust review and remediation of provider verification paths, eliminating implicit defaults, silent identity fallbacks, and unverified confirmations across PhonePe PG and mock adapters on branch `feature/m4-3-3-provider-verification`.
+
+### 1. Removal of Currency Defaults Across Verification Paths
+- **Eliminated Permissive Defaults**: Removed all instances of fallback currency defaults (`verified.currency || 'INR'` in `processUpiWebhook` and `gatewayStatus.currency || 'INR'` in `getUpiPaymentStatus`).
+- **Faithful Provider Currency Representation**: Updated `PhonePeAdapter.getPaymentStatus`, `PhonePeAdapter.verifyWebhook`, `MockUpiAdapter.getPaymentStatus`, and `MockUpiAdapter.verifyWebhook` so that missing or omitted currency from the provider response strictly remains missing (`null`), and empty string remains empty string. Never manufactures `'INR'` as proof of provider verification.
+- **Strict Currency Invariance in Confirmation**: `applySuccessfulUpiPayment` fail-closed currency verification requires that:
+  - Incoming provider currency is a non-empty string.
+  - Stored database payment currency is `'INR'`.
+  - Both values strictly equal `'INR'` (`safeEqual` / constant-time match).
+  - Missing or null currency triggers dispute reason `missing_currency`.
+  - Non-INR, lowercase, or mismatched currency triggers dispute reason `currency_mismatch`.
+  - In either failure case, the payment is moved to `status = 'disputed'`, failure reason records `Payment verification failed: Currency mismatch (<reason>)`, an immutable entry is logged in `payment_audits`, and 0 attendee bookings or Telegram invite links are created.
+
+### 2. Removal of Merchant Identity Fallback in Provider Status Verification
+- **Eliminated Fallback in `PhonePeAdapter.getPaymentStatus`**: Replaced `const statusMerchantId = (data.merchantId || this.merchantId || '').trim();` with strict extraction `data.merchantId !== undefined && data.merchantId !== null ? (typeof data.merchantId === 'string' ? data.merchantId.trim() : data.merchantId) : null;`. If the gateway response omits `merchantId`, it remains `null` and is never substituted with server configuration.
+- **Fail-Closed Three-Way Merchant Verification**: When polling gateway status (`checkGateway: true`), the returned status is passed to `applySuccessfulUpiPayment`, which enforces constant-time equality across:
+  1. `verifiedMerchantId`: Merchant ID returned in the provider status response.
+  2. `storedMerchantId`: Merchant ID recorded during intent creation in `payments.merchant_id`.
+  3. `configuredMerchantId`: Merchant ID loaded from server adapter configuration (`adapter.merchantId`).
+  - Missing or empty provider merchant ID records `missing_verified_merchant_id`.
+  - Tampered or missing stored merchant ID records `missing_stored_merchant_id`.
+  - Mismatched provider merchant ID records `merchant_mismatch`.
+  - Any failure immediately disputes the payment with 0 confirmed bookings.
+- **Provider API Limitation Disclosure**: Official PhonePe v1 Check Status API (`/pg/v1/status/{merchantId}/{orderId}`) and standard S2S webhook payloads are designed for domestic INR processing and typically omit an explicit `currency` field. If PhonePe omits `currency` or `merchantId` in standard callbacks, fail-closed enforcement prevents automatic confirmation. Authoritative verification relies on explicit provider fields; synthetic or manufactured fields are strictly disallowed.
+
+### 3. Review of Provider Status Authenticity & Safety Invariants
+- **Server-to-Server Authenticity**: Payment status polling executes strictly through authenticated server-to-server requests using PhonePe's HMAC/SHA256 `X-VERIFY` header (`SHA256(endpoint + saltKey)###saltIndex`) and `X-MERCHANT-ID`.
+- **Cryptographic Signature Verification**: Incoming webhooks are verified against `X-VERIFY` (`SHA256(base64Response + saltKey)###saltIndex`) before reading payload contents.
+- **Atomic Concurrency Guard**: Amount (positive safe integer paise match), order ID, merchant identity (three-way match), and currency (INR match) are checked atomically inside a locked PostgreSQL transaction (`SELECT ... FOR UPDATE`).
+- **Client Return URL & Browser Callback Isolation**: Browser navigations to `/checkout/:slug/upi` or client polling endpoints (`/api/checkout/upi/status/:id`) never establish payment success. Spoofed query parameters (e.g. `?status=succeeded`) are completely ignored. Polling without `check=1` only reads existing database status.
+- **Idempotency**: Repeated webhook deliveries or status poll queries on an already `succeeded` order return duplicate status without modifying database rows or creating duplicate bookings.
+- **Booking & Invite Gating**: Pending, failed, and disputed payments never create confirmed bookings or Telegram invites.
+
+### 4. Manual Refund Operational Limitation & Attestation
+- **CBS Limitation Documented**: String validation in `isValidExternalRefundRef` enforces syntactical correctness (6–120 chars, alphanumeric syntax, anti-placeholder rules), but does **not** interface with Core Banking System (CBS) host-to-host settlement rails.
+- **Operator-Attested Labeling**: All manual refund reconciliations are explicitly tagged with `attestation: 'operator_attested'` and `bankVerified: false` in `payments.raw_ref.reconciliation`, `payment_audits.details`, and audit logs.
+- **Server-Side Authorization**: Re-verified against active `super_admin` or `finance` roles in `admin_users` table; caller strings are never trusted. Public users and support roles are rejected (401/403).
+- **Anti-Fraud Rules**: Fake, placeholder, single-character repetition (`000000`, `XXXXXX`), and trivial sequences (`123456`, `abcdef`) are strictly rejected (400).
+
+### M4.3.3 Verification Summary
+- **Total Test Suite**: 472 tests total, 470 passed, 2 skipped (unconfigured Stars sandbox), 0 failed (`duration: ~51s`).
+- **UPI Checkout Suite**: 37/37 passed (`test/upi-checkout.test.js`).
+- **Migration Suite**: 8/8 passed (`test/migrations.test.js`).
+- **Linter**: `140/140 files OK` (`npm run lint`).
+- **Absolute Safety Boundary**: `ENABLE_LIVE_PAYMENTS=false` preserved across all files and environments. No real payments or refunds initiated. Merges to PR #32, PR #31, PR #30, and PR #17 strictly prohibited. Stopped for independent owner review.

@@ -21,6 +21,7 @@ import {
 import {
   PhonePeAdapter,
   MockUpiAdapter,
+  mockInstance,
   buildAppIntents
 } from '../lib/upi/adapter.js';
 import {
@@ -266,6 +267,7 @@ test('webhook confirmation: valid webhook confirms booking, updates payment, and
       merchantTransactionId: intent.orderId,
       transactionId: `TXN-${intent.orderId}`,
       amount: 50000,
+      currency: 'INR',
       state: 'COMPLETED',
       paymentInstrument: {
         type: 'UPI',
@@ -499,6 +501,7 @@ test('http routes: POST /api/payments/webhook/phonepe processes valid webhook pa
       merchantTransactionId: orderId,
       transactionId: `TXN-HTTP-${orderId}`,
       amount: 10000,
+      currency: 'INR',
       state: 'COMPLETED',
       paymentInstrument: {
         type: 'UPI',
@@ -588,6 +591,7 @@ test('FIN-01: Webhook underpayment attack rejected and marked disputed with 0 bo
       merchantTransactionId: intent.orderId,
       transactionId: `TXN-UNDERPAY-${intent.orderId}`,
       amount: 100, // Only 100 paise (₹1)
+      currency: 'INR',
       state: 'COMPLETED',
       paymentInstrument: { type: 'UPI', utr: 'UTR-ATTACK-001' }
     }
@@ -642,6 +646,7 @@ test('DATA-01: Guest checkout flow without user_id succeeds on webhook without 5
       merchantTransactionId: intent.orderId,
       transactionId: `TXN-GUEST-${intent.orderId}`,
       amount: 15000,
+      currency: 'INR',
       state: 'COMPLETED',
       paymentInstrument: { type: 'UPI', utr: 'UTR-GUEST-001' }
     }
@@ -1013,6 +1018,7 @@ test('REV-02: Duplicate booking during webhook confirmation moves payment to ref
       merchantTransactionId: intent.orderId,
       transactionId: `TXN-DUP-${intent.orderId}`,
       amount: 25000,
+      currency: 'INR',
       state: 'COMPLETED'
     }
   };
@@ -1815,4 +1821,793 @@ test('M4.3.2: Secure manual refund reconciliation authorization, evidence refere
   const finalHttpPay = await db.one('SELECT status, refund_ref FROM payments WHERE id = $1', [httpPay.id]);
   assert.equal(finalHttpPay.status, 'refunded');
   assert.equal(finalHttpPay.refund_ref, 'BANK-API-UTR-20261104');
+});
+
+test('M4.3.3: Strict currency invariant verification across webhook and status polling paths', async () => {
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const adapter = new PhonePeAdapter({ merchantId: 'PGTESTPAYUAT', saltKey, saltIndex: '1' });
+  const mockAdapter = new MockUpiAdapter({ merchantId: 'PGTESTPAYUAT' });
+
+  // 1. Adapter level: missing currency remains missing, never manufactured as 'INR'
+  // PhonePeAdapter.verifyWebhook
+  for (const testCurrency of [undefined, null, '', '   ', 'EUR', 'USD', 'INR']) {
+    const payload = {
+      code: 'PAYMENT_SUCCESS',
+      data: {
+        merchantId: 'PGTESTPAYUAT',
+        merchantTransactionId: 'ORD-CURR-TEST',
+        transactionId: 'TXN-CURR-1',
+        amount: 25000,
+        ...(testCurrency !== undefined ? { currency: testCurrency } : {}),
+        state: 'COMPLETED'
+      }
+    };
+    const b64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+    const sig = crypto.createHash('sha256').update(`${b64}${saltKey}`).digest('hex') + '###1';
+    const verified = adapter.verifyWebhook({ 'x-verify': sig }, JSON.stringify({ response: b64 }));
+
+    if (testCurrency === undefined || testCurrency === null) {
+      assert.equal(verified.currency, null, `Currency must remain null when ${testCurrency}`);
+    } else if (testCurrency === '' || testCurrency === '   ') {
+      assert.equal(verified.currency, '', 'Empty currency must remain empty string');
+    } else {
+      assert.equal(verified.currency, testCurrency.trim(), `Currency must match provider payload: ${testCurrency}`);
+    }
+  }
+
+  // MockUpiAdapter.verifyWebhook
+  for (const testCurrency of [undefined, null, '', '   ', 'GBP', 'INR']) {
+    const mockBody = {
+      merchantId: 'PGTESTPAYUAT',
+      orderId: 'ORD-MOCK-CURR',
+      amountPaise: 25000,
+      ...(testCurrency !== undefined ? { currency: testCurrency } : {}),
+      status: 'succeeded'
+    };
+    const verified = mockAdapter.verifyWebhook(
+      { 'x-webhook-secret': 'test-upi-webhook-secret' },
+      JSON.stringify(mockBody)
+    );
+    if (testCurrency === undefined || testCurrency === null) {
+      assert.equal(verified.currency, null, `Mock currency must remain null when ${testCurrency}`);
+    } else if (testCurrency === '' || testCurrency === '   ') {
+      assert.equal(verified.currency, '', 'Mock empty currency must remain empty string');
+    } else {
+      assert.equal(verified.currency, testCurrency.trim(), `Mock currency must match: ${testCurrency}`);
+    }
+  }
+
+  // 2. Webhook processing path: processUpiWebhook
+  const { event, tier } = await createPaidEvent({ price: 35000 });
+
+  // 2a. Missing currency (omitted from payload)
+  const itMissing = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pMissing = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itMissing.orderId,
+      transactionId: `TXN-MISSING-${itMissing.orderId}`,
+      amount: 35000,
+      state: 'COMPLETED'
+    }
+  };
+  const b64Missing = Buffer.from(JSON.stringify(pMissing)).toString('base64');
+  const resMissing = await processUpiWebhook({
+    headers: { 'x-verify': crypto.createHash('sha256').update(`${b64Missing}${saltKey}`).digest('hex') + '###1' },
+    rawBody: JSON.stringify({ response: b64Missing }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resMissing.ok, false);
+  assert.equal(resMissing.error, 'missing_currency');
+
+  const payMissing = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [itMissing.orderId]);
+  assert.equal(payMissing.status, 'disputed');
+  assert.ok(payMissing.failure_reason.includes('Currency mismatch (missing_currency)'));
+
+  const auditMissing = await db.one('SELECT details FROM payment_audits WHERE order_id = $1 AND to_status = $2', [itMissing.orderId, 'disputed']);
+  assert.equal(auditMissing.details.reason, 'missing_currency');
+  assert.equal(auditMissing.details.expectedCurrency, 'INR');
+
+  // 2b. Null currency
+  const itNull = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pNull = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itNull.orderId,
+      transactionId: `TXN-NULL-${itNull.orderId}`,
+      amount: 35000,
+      currency: null,
+      state: 'COMPLETED'
+    }
+  };
+  const b64Null = Buffer.from(JSON.stringify(pNull)).toString('base64');
+  const resNull = await processUpiWebhook({
+    headers: { 'x-verify': crypto.createHash('sha256').update(`${b64Null}${saltKey}`).digest('hex') + '###1' },
+    rawBody: JSON.stringify({ response: b64Null }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resNull.ok, false);
+  assert.equal(resNull.error, 'missing_currency');
+
+  // 2c. Empty currency string
+  const itEmpty = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pEmpty = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itEmpty.orderId,
+      transactionId: `TXN-EMPTY-${itEmpty.orderId}`,
+      amount: 35000,
+      currency: '   ',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Empty = Buffer.from(JSON.stringify(pEmpty)).toString('base64');
+  const resEmpty = await processUpiWebhook({
+    headers: { 'x-verify': crypto.createHash('sha256').update(`${b64Empty}${saltKey}`).digest('hex') + '###1' },
+    rawBody: JSON.stringify({ response: b64Empty }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resEmpty.ok, false);
+  assert.equal(resEmpty.error, 'missing_currency');
+
+  // 2d. Mismatched currency (USD / EUR)
+  const itMismatch = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pMismatch = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itMismatch.orderId,
+      transactionId: `TXN-USD-${itMismatch.orderId}`,
+      amount: 35000,
+      currency: 'USD',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Mismatch = Buffer.from(JSON.stringify(pMismatch)).toString('base64');
+  const resMismatch = await processUpiWebhook({
+    headers: { 'x-verify': crypto.createHash('sha256').update(`${b64Mismatch}${saltKey}`).digest('hex') + '###1' },
+    rawBody: JSON.stringify({ response: b64Mismatch }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resMismatch.ok, false);
+  assert.equal(resMismatch.error, 'currency_mismatch');
+
+  const payMismatch = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [itMismatch.orderId]);
+  assert.equal(payMismatch.status, 'disputed');
+  assert.ok(payMismatch.failure_reason.includes('Currency mismatch (currency_mismatch)'));
+
+  // 2e. Valid INR currency succeeds
+  const itValid = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pValid = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itValid.orderId,
+      transactionId: `TXN-VALID-${itValid.orderId}`,
+      amount: 35000,
+      currency: 'INR',
+      state: 'COMPLETED',
+      paymentInstrument: { type: 'UPI', utr: 'UTR-CURR-OK-1' }
+    }
+  };
+  const b64Valid = Buffer.from(JSON.stringify(pValid)).toString('base64');
+  const resValid = await processUpiWebhook({
+    headers: { 'x-verify': crypto.createHash('sha256').update(`${b64Valid}${saltKey}`).digest('hex') + '###1' },
+    rawBody: JSON.stringify({ response: b64Valid }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resValid.ok, true);
+  assert.equal(resValid.result, 'confirmed');
+
+  const payValid = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itValid.orderId]);
+  assert.equal(payValid.status, 'succeeded');
+  assert.ok(payValid.booking_id);
+
+  // 3. Status polling path: getUpiPaymentStatus({ checkGateway: true })
+  // 3a. Polling with missing currency from provider status check
+  const itPollMissing = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollMissing.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itPollMissing.orderId,
+            transactionId: `TXN-POLL-${itPollMissing.orderId}`,
+            amount: 35000,
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-POLL-1' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollResMissing = await getUpiPaymentStatus(itPollMissing.orderId, { user: guest2, checkGateway: true });
+  assert.equal(pollResMissing.status, 'disputed');
+  assert.equal(pollResMissing.disputeReason, 'missing_currency');
+
+  const payPollMissing = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [itPollMissing.orderId]);
+  assert.equal(payPollMissing.status, 'disputed');
+  assert.ok(payPollMissing.failure_reason.includes('Currency mismatch (missing_currency)'));
+
+  // 3b. Polling with null currency from provider status check
+  const itPollNull = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollNull.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itPollNull.orderId,
+            transactionId: `TXN-POLL-${itPollNull.orderId}`,
+            amount: 35000,
+            currency: null,
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-POLL-2' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollResNull = await getUpiPaymentStatus(itPollNull.orderId, { user: guest2, checkGateway: true });
+  assert.equal(pollResNull.status, 'disputed');
+  assert.equal(pollResNull.disputeReason, 'missing_currency');
+
+  // 3c. Polling with empty currency string from provider status check
+  const itPollEmpty = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollEmpty.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itPollEmpty.orderId,
+            transactionId: `TXN-POLL-${itPollEmpty.orderId}`,
+            amount: 35000,
+            currency: '',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-POLL-3' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollResEmpty = await getUpiPaymentStatus(itPollEmpty.orderId, { user: guest2, checkGateway: true });
+  assert.equal(pollResEmpty.status, 'disputed');
+  assert.equal(pollResEmpty.disputeReason, 'missing_currency');
+
+  // 3d. Polling with mismatched currency (USD) from provider status check
+  const itPollUSD = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollUSD.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itPollUSD.orderId,
+            transactionId: `TXN-POLL-${itPollUSD.orderId}`,
+            amount: 35000,
+            currency: 'USD',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-POLL-4' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollResUSD = await getUpiPaymentStatus(itPollUSD.orderId, { user: guest2, checkGateway: true });
+  assert.equal(pollResUSD.status, 'disputed');
+  assert.equal(pollResUSD.disputeReason, 'currency_mismatch');
+
+  // 3e. Polling with valid verified INR currency confirms successfully
+  const itPollOK = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollOK.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itPollOK.orderId,
+            transactionId: `TXN-POLL-${itPollOK.orderId}`,
+            amount: 35000,
+            currency: 'INR',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-POLL-5' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollResOK = await getUpiPaymentStatus(itPollOK.orderId, { user: guest2, checkGateway: true });
+  assert.equal(pollResOK.status, 'succeeded');
+  assert.ok(pollResOK.bookingId);
+
+  const payPollOK = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itPollOK.orderId]);
+  assert.equal(payPollOK.status, 'succeeded');
+  assert.equal(payPollOK.booking_id, pollResOK.bookingId);
+
+  // 3f. Mock adapter status polling: missing currency and mismatched currency fail closed
+  process.env.UPI_ADAPTER = 'mock';
+  let itMockCurFail;
+  let itMockCurMis;
+  try {
+    itMockCurFail = await createUpiPaymentIntent({ slug: event.slug, user: guest3, ticketTypeId: tier.id });
+    mockInstance.setSimulatedStatus(itMockCurFail.orderId, { status: 'succeeded', amountPaise: 35000, currency: null, merchantId: 'PGTESTPAYUAT' });
+    const pollMockFail = await getUpiPaymentStatus(itMockCurFail.orderId, { user: guest3, checkGateway: true });
+    assert.equal(pollMockFail.status, 'disputed');
+    assert.equal(pollMockFail.disputeReason, 'missing_currency');
+
+    itMockCurMis = await createUpiPaymentIntent({ slug: event.slug, user: guest3, ticketTypeId: tier.id });
+    mockInstance.setSimulatedStatus(itMockCurMis.orderId, { status: 'succeeded', amountPaise: 35000, currency: 'EUR', merchantId: 'PGTESTPAYUAT' });
+    const pollMockMis = await getUpiPaymentStatus(itMockCurMis.orderId, { user: guest3, checkGateway: true });
+    assert.equal(pollMockMis.status, 'disputed');
+    assert.equal(pollMockMis.disputeReason, 'currency_mismatch');
+  } finally {
+    delete process.env.UPI_ADAPTER;
+  }
+
+  // Restore stub
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS', data: { transactionId: 'TXN-REF-1' } }) };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  // Verify that all disputed intents created zero bookings
+  for (const it of [itMissing, itNull, itEmpty, itMismatch, itPollMissing, itPollNull, itPollEmpty, itPollUSD, itMockCurFail, itMockCurMis]) {
+    const bk = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [it.orderId]);
+    assert.equal(bk.n, 0, `Disputed intent ${it.orderId} must have 0 bookings`);
+  }
+});
+
+test('M4.3.3: Fail-closed provider status merchant identity verification without silent fallback', async () => {
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const adapter = new PhonePeAdapter({ merchantId: 'PGTESTPAYUAT', saltKey, saltIndex: '1' });
+
+  // 1. PhonePeAdapter.getPaymentStatus unit tests: missing merchantId must NOT fall back to configured merchantId
+  for (const tc of [
+    { label: 'missing', input: undefined, expected: null },
+    { label: 'null', input: null, expected: null },
+    { label: 'empty', input: '', expected: '' },
+    { label: 'whitespace', input: '   ', expected: '' },
+    { label: 'matching', input: 'PGTESTPAYUAT', expected: 'PGTESTPAYUAT' },
+    { label: 'mismatched', input: 'WRONG_MERCHANT', expected: 'WRONG_MERCHANT' }
+  ]) {
+    stubUrl('https://api-preprod.phonepe.com', (url) => {
+      if (url.includes('/pg/v1/status/')) {
+        return {
+          status: 200,
+          body: JSON.stringify({
+            success: true,
+            code: 'PAYMENT_SUCCESS',
+            data: {
+              ...(tc.input !== undefined ? { merchantId: tc.input } : {}),
+              merchantTransactionId: 'ORD-TEST-MCHK',
+              transactionId: 'TXN-MCHK-1',
+              amount: 20000,
+              currency: 'INR',
+              state: 'COMPLETED'
+            }
+          })
+        };
+      }
+      return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+    });
+
+    const res = await adapter.getPaymentStatus('ORD-TEST-MCHK');
+    assert.equal(
+      res.merchantId,
+      tc.expected,
+      `PhonePeAdapter.getPaymentStatus must return '${tc.expected}' for ${tc.label} merchantId, never fallback`
+    );
+  }
+
+  // 2. Status polling path (getUpiPaymentStatus with checkGateway: true)
+  const { event, tier } = await createPaidEvent({ price: 28000 });
+
+  // 2a. Provider returns status with missing merchantId
+  const itMissing = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itMissing.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            // merchantId omitted!
+            merchantTransactionId: itMissing.orderId,
+            transactionId: `TXN-MISSING-${itMissing.orderId}`,
+            amount: 28000,
+            currency: 'INR',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-M1' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollMissing = await getUpiPaymentStatus(itMissing.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollMissing.status, 'disputed');
+  assert.equal(pollMissing.disputeReason, 'missing_verified_merchant_id');
+
+  const payMissing = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [itMissing.orderId]);
+  assert.equal(payMissing.status, 'disputed');
+  assert.ok(payMissing.failure_reason.includes('Merchant mismatch (missing_verified_merchant_id)'));
+
+  // 2b. Provider returns status with null merchantId
+  const itNull = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itNull.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: null,
+            merchantTransactionId: itNull.orderId,
+            transactionId: `TXN-NULL-${itNull.orderId}`,
+            amount: 28000,
+            currency: 'INR',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-M2' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollNull = await getUpiPaymentStatus(itNull.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollNull.status, 'disputed');
+  assert.equal(pollNull.disputeReason, 'missing_verified_merchant_id');
+
+  // 2c. Provider returns status with empty merchantId string
+  const itEmpty = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itEmpty.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: '',
+            merchantTransactionId: itEmpty.orderId,
+            transactionId: `TXN-EMPTY-${itEmpty.orderId}`,
+            amount: 28000,
+            currency: 'INR',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-M3' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollEmpty = await getUpiPaymentStatus(itEmpty.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollEmpty.status, 'disputed');
+  assert.equal(pollEmpty.disputeReason, 'missing_verified_merchant_id');
+
+  // 2d. Provider returns status with mismatched merchantId
+  const itMismatch = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itMismatch.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'ATTACKER_MERCHANT',
+            merchantTransactionId: itMismatch.orderId,
+            transactionId: `TXN-MISMATCH-${itMismatch.orderId}`,
+            amount: 28000,
+            currency: 'INR',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-M4' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollMismatch = await getUpiPaymentStatus(itMismatch.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollMismatch.status, 'disputed');
+  assert.equal(pollMismatch.disputeReason, 'merchant_mismatch');
+
+  const payMismatch = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [itMismatch.orderId]);
+  assert.equal(payMismatch.status, 'disputed');
+  assert.ok(payMismatch.failure_reason.includes('Merchant mismatch (merchant_mismatch)'));
+
+  // 2e. Provider returns matching merchantId confirms successfully
+  const itMatching = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itMatching.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itMatching.orderId,
+            transactionId: `TXN-MATCHING-${itMatching.orderId}`,
+            amount: 28000,
+            currency: 'INR',
+            state: 'COMPLETED',
+            paymentInstrument: { type: 'UPI', utr: 'UTR-M5' }
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollMatching = await getUpiPaymentStatus(itMatching.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollMatching.status, 'succeeded');
+  assert.ok(pollMatching.bookingId);
+
+  // 3. Stored payment row merchant_id tampered to NULL fails closed
+  const itStoredNull = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  await db.query(`UPDATE payments SET merchant_id = NULL WHERE order_id = $1`, [itStoredNull.orderId]);
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itStoredNull.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: itStoredNull.orderId,
+            transactionId: `TXN-STOREDNULL-${itStoredNull.orderId}`,
+            amount: 28000,
+            currency: 'INR',
+            state: 'COMPLETED'
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollStoredNull = await getUpiPaymentStatus(itStoredNull.orderId, { user: guest2, checkGateway: true });
+  assert.equal(pollStoredNull.status, 'disputed');
+  assert.equal(pollStoredNull.disputeReason, 'missing_stored_merchant_id');
+
+  // 4. Mock adapter polling path: missing and mismatched merchantId fail closed
+  process.env.UPI_ADAPTER = 'mock';
+  let itMockM1;
+  let itMockM2;
+  try {
+    itMockM1 = await createUpiPaymentIntent({ slug: event.slug, user: guest3, ticketTypeId: tier.id });
+    mockInstance.setSimulatedStatus(itMockM1.orderId, { status: 'succeeded', amountPaise: 28000, merchantId: null, currency: 'INR' });
+    const pollMockM1 = await getUpiPaymentStatus(itMockM1.orderId, { user: guest3, checkGateway: true });
+    assert.equal(pollMockM1.status, 'disputed');
+    assert.equal(pollMockM1.disputeReason, 'missing_verified_merchant_id');
+
+    itMockM2 = await createUpiPaymentIntent({ slug: event.slug, user: guest3, ticketTypeId: tier.id });
+    mockInstance.setSimulatedStatus(itMockM2.orderId, { status: 'succeeded', amountPaise: 28000, merchantId: 'ATTACKER_MERCHANT', currency: 'INR' });
+    const pollMockM2 = await getUpiPaymentStatus(itMockM2.orderId, { user: guest3, checkGateway: true });
+    assert.equal(pollMockM2.status, 'disputed');
+    assert.equal(pollMockM2.disputeReason, 'merchant_mismatch');
+  } finally {
+    delete process.env.UPI_ADAPTER;
+  }
+
+  // Restore stub
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS', data: { transactionId: 'TXN-REF-1' } }) };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  // Zero confirmed bookings for all disputed orders
+  for (const it of [itMissing, itNull, itEmpty, itMismatch, itStoredNull, itMockM1, itMockM2]) {
+    const bk = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [it.orderId]);
+    assert.equal(bk.n, 0, `Disputed merchant check ${it.orderId} must have 0 bookings`);
+  }
+});
+
+test('M4.3.3: Manual refund operational limitation, operator attestation and idempotency', async () => {
+  const { event, tier } = await createPaidEvent({ price: 16000 });
+  const intent = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+
+  await applySuccessfulUpiPayment({
+    orderId: intent.orderId,
+    verifiedAmountPaise: 16000,
+    currency: 'INR',
+    merchantId: 'PGTESTPAYUAT'
+  });
+
+  const financeAdminUser = await db.one(
+    `INSERT INTO admin_users (telegram_user_id, role, active)
+     VALUES (980000999, 'finance', true)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET active = true, role = 'finance'
+     RETURNING *`
+  );
+
+  // Manual reconciliation includes explicit attestation labeling
+  const refundRes = await refundUpiOrder(intent.orderId, {
+    actor: `admin:${financeAdminUser.id}:finance`,
+    reason: 'Bank transfer manual reversal operator verified',
+    manualReconciliation: true,
+    externalRefundRef: 'BANK-M433-UTR-99999',
+    evidenceRef: 'AUDIT-TICKET-M433-99999'
+  });
+
+  assert.equal(refundRes.status, 'refunded');
+  assert.equal(refundRes.manualReconciliation, true);
+  assert.equal(refundRes.attestation, 'operator_attested');
+  assert.equal(refundRes.bankVerified, false);
+
+  // DB payments table raw_ref.reconciliation check
+  const pay = await db.one('SELECT raw_ref FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(pay.raw_ref.reconciliation.attestation, 'operator_attested');
+  assert.equal(pay.raw_ref.reconciliation.bankVerified, false);
+
+  // payment_audits table check
+  const auditRow = await db.one(
+    `SELECT details FROM payment_audits WHERE order_id = $1 AND to_status = 'refunded' AND actor LIKE 'admin:%'`,
+    [intent.orderId]
+  );
+  assert.equal(auditRow.details.attestation, 'operator_attested');
+  assert.equal(auditRow.details.bankVerified, false);
+
+  // Idempotent retry returns duplicate
+  const retryRes = await refundUpiOrder(intent.orderId, {
+    actor: `admin:${financeAdminUser.id}:finance`,
+    manualReconciliation: true,
+    externalRefundRef: 'BANK-M433-UTR-99999',
+    evidenceRef: 'AUDIT-TICKET-M433-99999'
+  });
+  assert.equal(retryRes.status, 'refunded');
+  assert.equal(retryRes.duplicate, true);
+});
+
+test('M4.3.3: Provider status authenticity, client return URL isolation and idempotent event safety', async () => {
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const { event, tier } = await createPaidEvent({ price: 12000 });
+
+  // 1. Client return URL and browser callback never establish payment success
+  const intent = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+
+  // Browser loads checkout with spoofed return query params
+  const spoofRes = await guest1.get(`/checkout/${event.slug}/upi?status=succeeded&orderId=${intent.orderId}&payment=paid`);
+  assert.equal(spoofRes.status, 200);
+
+  // Intent in DB remains strictly pending with 0 bookings
+  const payStillPending = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(payStillPending.status, 'pending');
+  assert.equal(payStillPending.booking_id, null);
+
+  // Client polling endpoint without check=1 does not confirm payment
+  const pollClient = await guest1.get(`/api/checkout/upi/status/${intent.orderId}`);
+  assert.equal(pollClient.status, 200);
+  assert.equal(pollClient.json.status, 'pending');
+  assert.equal(pollClient.json.bookingId, null);
+
+  // 2. Cryptographic webhook verification and idempotency
+  const payload = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: intent.orderId,
+      transactionId: `TXN-AUTH-${intent.orderId}`,
+      amount: 12000,
+      currency: 'INR',
+      state: 'COMPLETED',
+      paymentInstrument: { type: 'UPI', utr: 'UTR-AUTH-1' }
+    }
+  };
+  const b64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+  const validSig = crypto.createHash('sha256').update(`${b64}${saltKey}`).digest('hex') + '###1';
+
+  // Tampered signature is rejected
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: { 'x-verify': 'TAMPERED_HASH###1' },
+      rawBody: JSON.stringify({ response: b64 }),
+      clientIp: '127.0.0.1'
+    }),
+    /signature/i
+  );
+
+  // Valid webhook confirms payment and creates exactly 1 booking
+  const okHook = await processUpiWebhook({
+    headers: { 'x-verify': validSig },
+    rawBody: JSON.stringify({ response: b64 }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(okHook.ok, true);
+  assert.equal(okHook.result, 'confirmed');
+
+  const countAfterFirst = await db.one('SELECT count(*)::int AS n FROM bookings WHERE event_id = $1', [event.id]);
+  assert.equal(countAfterFirst.n, 1);
+
+  // Idempotent duplicate delivery: replaying webhook returns duplicate and creates 0 new bookings
+  const dupHook = await processUpiWebhook({
+    headers: { 'x-verify': validSig },
+    rawBody: JSON.stringify({ response: b64 }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(dupHook.ok, true);
+  assert.equal(dupHook.result, 'duplicate');
+
+  const countAfterDup = await db.one('SELECT count(*)::int AS n FROM bookings WHERE event_id = $1', [event.id]);
+  assert.equal(countAfterDup.n, 1);
+
+  // Status polling on already succeeded payment remains idempotent
+  const pollAfterSucceeded = await getUpiPaymentStatus(intent.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollAfterSucceeded.status, 'succeeded');
+
+  const countAfterPoll = await db.one('SELECT count(*)::int AS n FROM bookings WHERE event_id = $1', [event.id]);
+  assert.equal(countAfterPoll.n, 1);
+
+  // 3. Pending, failed and disputed payments NEVER create confirmed bookings or Telegram invites
+  const failedIntent = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  const failedPayload = {
+    code: 'PAYMENT_ERROR',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: failedIntent.orderId,
+      transactionId: `TXN-FAIL-${failedIntent.orderId}`,
+      amount: 12000,
+      currency: 'INR',
+      state: 'FAILED'
+    }
+  };
+  const b64Fail = Buffer.from(JSON.stringify(failedPayload)).toString('base64');
+  const failSig = crypto.createHash('sha256').update(`${b64Fail}${saltKey}`).digest('hex') + '###1';
+
+  await processUpiWebhook({
+    headers: { 'x-verify': failSig },
+    rawBody: JSON.stringify({ response: b64Fail }),
+    clientIp: '127.0.0.1'
+  });
+
+  const payFail = await db.one('SELECT status FROM payments WHERE order_id = $1', [failedIntent.orderId]);
+  assert.equal(payFail.status, 'failed');
+
+  const failBookings = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [failedIntent.orderId]);
+  assert.equal(failBookings.n, 0);
+
+  const failInvites = await db.one('SELECT count(*)::int AS n FROM invite_links WHERE user_id = $1', [guest2.userId]);
+  assert.equal(failInvites.n, 0);
 });
