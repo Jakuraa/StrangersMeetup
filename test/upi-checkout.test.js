@@ -359,6 +359,7 @@ test('refunds: refund transitions payment to refunded and revokes Telegram invit
   const succ = await applySuccessfulUpiPayment({
     orderId: intent.orderId,
     verifiedAmountPaise: 40000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     providerPaymentId: 'UTR-REFUND-1',
     actor: 'test'
@@ -408,6 +409,7 @@ test('concurrency: simultaneous checkout intents respect capacity limits', async
   await applySuccessfulUpiPayment({
     orderId: intent1.orderId,
     verifiedAmountPaise: 20000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     actor: 'test'
   });
@@ -751,6 +753,7 @@ test('CONCUR-01: Active unexpired checkout intent holds capacity & re-checks at 
   const confirmResult = await applySuccessfulUpiPayment({
     orderId: intent2.orderId,
     verifiedAmountPaise: 20000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     providerTxnId: 'TXN-OVERSOLD-1',
     actor: 'test:concurrency'
@@ -1059,6 +1062,7 @@ test('REV-02: Duplicate active booking during guest claim is rejected with 409 a
   await applySuccessfulUpiPayment({
     orderId: intent.orderId,
     verifiedAmountPaise: 15000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     actor: 'test'
   });
@@ -1109,6 +1113,7 @@ test('REV-02: SQLSTATE 23505 defensive recovery moves payment to refund_pending 
   const res = await applySuccessfulUpiPayment({
     orderId: intent.orderId,
     verifiedAmountPaise: 20000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     actor: 'test'
   });
@@ -1138,6 +1143,7 @@ test('REV-03: refund_pending operational recovery via admin/finance refund and i
   const confirmRes = await applySuccessfulUpiPayment({
     orderId: intent.orderId,
     verifiedAmountPaise: 35000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     actor: 'test'
   });
@@ -1189,6 +1195,7 @@ test('REV-03: Provider refund failure leaves payment in refund_pending with manu
   await applySuccessfulUpiPayment({
     orderId: intent.orderId,
     verifiedAmountPaise: 18000,
+    currency: 'INR',
     merchantId: 'PGTESTPAYUAT',
     actor: 'test'
   });
@@ -1215,20 +1222,31 @@ test('REV-03: Provider refund failure leaves payment in refund_pending with manu
   assert.equal(failedPay.status, 'refund_pending');
   assert.ok(failedPay.failure_reason.includes('refund_failed'));
 
-  // Finance officer performs manual reconciliation recovery
+  // Seed verified active finance admin in admin_users
+  const financeAdminUser = await db.one(
+    `INSERT INTO admin_users (telegram_user_id, role, active)
+     VALUES (980000001, 'finance', true)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET active = true, role = 'finance'
+     RETURNING *`
+  );
+
+  // Finance officer performs manual reconciliation recovery with verified role and documented references
   const reconRes = await refundUpiOrder(intent.orderId, {
-    actor: 'admin:finance:reconciler',
-    reason: 'Manual bank transfer reversal confirmed',
+    actor: `admin:${financeAdminUser.id}:finance`,
+    reason: 'Manual bank transfer reversal confirmed via NetBanking',
     manualReconciliation: true,
-    providerRefundId: 'MANUAL-BANK-REF-999'
+    externalRefundRef: 'BANK-REV-20261104-999',
+    evidenceRef: 'FIN-AUDIT-TICKET-2026-999'
   });
 
   assert.equal(reconRes.status, 'refunded');
-  assert.equal(reconRes.refundId, 'MANUAL-BANK-REF-999');
+  assert.equal(reconRes.refundId, 'BANK-REV-20261104-999');
 
-  const finalPay = await db.one('SELECT status, refund_ref FROM payments WHERE order_id = $1', [intent.orderId]);
+  const finalPay = await db.one('SELECT status, refund_ref, reconciled, reconciled_at FROM payments WHERE order_id = $1', [intent.orderId]);
   assert.equal(finalPay.status, 'refunded');
-  assert.equal(finalPay.refund_ref, 'MANUAL-BANK-REF-999');
+  assert.equal(finalPay.refund_ref, 'BANK-REV-20261104-999');
+  assert.equal(finalPay.reconciled, true);
+  assert.ok(finalPay.reconciled_at);
 
   // Restore refund stub
   stubUrl('https://api-preprod.phonepe.com', (url) => {
@@ -1274,7 +1292,7 @@ test('REV-04: Mandatory verified amount rejects omitted, null, non-numeric and u
 
   // 6. Currency mismatch
   const intent6 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
-  const res6 = await applySuccessfulUpiPayment({ orderId: intent6.orderId, verifiedAmountPaise: 40000, currency: 'USD' });
+  const res6 = await applySuccessfulUpiPayment({ orderId: intent6.orderId, verifiedAmountPaise: 40000, currency: 'USD', merchantId: 'PGTESTPAYUAT' });
   assert.equal(res6.status, 'disputed');
   assert.equal(res6.disputeReason, 'currency_mismatch');
 
@@ -1392,4 +1410,409 @@ test('REV-06: PhonePe webhook merchantId verification rejects missing and mismat
   const verified = adapter.verifyWebhook({ 'x-verify': sigValid }, bodyValid);
   assert.equal(verified.merchantId, 'PGTESTPAYUAT');
   assert.equal(verified.orderId, 'ORD-REV06-3');
+});
+
+test('M4.3.2: Merchant identity must fail closed across adapters and payment confirmation', async () => {
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+
+  // 1. PhonePe adapter rejects missing, null, empty string, and mismatched merchantId
+  const phonePe = new PhonePeAdapter({
+    merchantId: 'PGTESTPAYUAT',
+    saltKey,
+    saltIndex: '1'
+  });
+
+  for (const badMerchantId of [undefined, null, '', '   ', 'ATTACKER_MERCHANT']) {
+    const payload = {
+      code: 'PAYMENT_SUCCESS',
+      data: {
+        ...(badMerchantId !== undefined ? { merchantId: badMerchantId } : {}),
+        merchantTransactionId: 'ORD-M432-PHONEPE',
+        transactionId: 'TXN-P1',
+        amount: 25000,
+        state: 'COMPLETED'
+      }
+    };
+    const b64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+    const body = JSON.stringify({ response: b64 });
+    const sig = crypto.createHash('sha256').update(`${b64}${saltKey}`).digest('hex') + '###1';
+
+    assert.throws(
+      () => phonePe.verifyWebhook({ 'x-verify': sig }, body),
+      /merchantId/i,
+      `PhonePe adapter must reject bad merchantId: ${badMerchantId}`
+    );
+  }
+
+  // 2. PhonePe adapter rejects if adapter itself has missing configured merchantId
+  const unconfiguredPhonePe = new PhonePeAdapter({ merchantId: '', saltKey, saltIndex: '1' });
+  const validPayload = {
+    code: 'PAYMENT_SUCCESS',
+    data: { merchantId: 'PGTESTPAYUAT', merchantTransactionId: 'ORD-M432-1', transactionId: 'TXN1', amount: 10000, state: 'COMPLETED' }
+  };
+  const b64Valid = Buffer.from(JSON.stringify(validPayload)).toString('base64');
+  const sigValid = crypto.createHash('sha256').update(`${b64Valid}${saltKey}`).digest('hex') + '###1';
+  assert.throws(
+    () => unconfiguredPhonePe.verifyWebhook({ 'x-verify': sigValid }, JSON.stringify({ response: b64Valid })),
+    /merchant ID configuration is missing/i
+  );
+
+  // 3. Mock adapter rejects missing, null, empty string, and mismatched merchantId
+  const mockAdapter = new MockUpiAdapter({ merchantId: 'PGTESTPAYUAT' });
+
+  for (const badMerchantId of [undefined, null, '', '   ', 'ATTACKER_MERCHANT']) {
+    const mockBody = {
+      orderId: 'ORD-M432-MOCK',
+      ...(badMerchantId !== undefined ? { merchantId: badMerchantId } : {}),
+      amountPaise: 25000,
+      status: 'succeeded'
+    };
+    assert.throws(
+      () => mockAdapter.verifyWebhook({ 'x-webhook-secret': 'test-upi-webhook-secret' }, JSON.stringify(mockBody)),
+      /merchantId/i,
+      `Mock adapter must reject bad merchantId: ${badMerchantId}`
+    );
+  }
+
+  // 4. Mock adapter rejects if adapter itself has missing configured merchantId
+  const unconfiguredMock = new MockUpiAdapter({ merchantId: '' });
+  assert.throws(
+    () => unconfiguredMock.verifyWebhook(
+      { 'x-webhook-secret': 'test-upi-webhook-secret' },
+      JSON.stringify({ orderId: 'ORD-M432-MOCK', merchantId: 'PGTESTPAYUAT', amountPaise: 25000 })
+    ),
+    /merchant ID configuration is missing/i
+  );
+
+  // 5. applySuccessfulUpiPayment fail-closed merchant checks
+  const { event, tier } = await createPaidEvent({ price: 30000 });
+
+  // 5a. Missing verified merchant ID (null, undefined, empty)
+  const it1 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r1 = await applySuccessfulUpiPayment({ orderId: it1.orderId, verifiedAmountPaise: 30000, currency: 'INR', merchantId: null });
+  assert.equal(r1.status, 'disputed');
+  assert.equal(r1.disputeReason, 'missing_verified_merchant_id');
+
+  const it1b = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r1b = await applySuccessfulUpiPayment({ orderId: it1b.orderId, verifiedAmountPaise: 30000, currency: 'INR', merchantId: '   ' });
+  assert.equal(r1b.status, 'disputed');
+  assert.equal(r1b.disputeReason, 'missing_verified_merchant_id');
+
+  // 5b. Mismatched verified merchant ID
+  const it2 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r2 = await applySuccessfulUpiPayment({ orderId: it2.orderId, verifiedAmountPaise: 30000, currency: 'INR', merchantId: 'WRONG_MERCHANT' });
+  assert.equal(r2.status, 'disputed');
+  assert.equal(r2.disputeReason, 'merchant_mismatch');
+
+  // 5c. Missing stored merchant ID in database row
+  const it3 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  await db.query(`UPDATE payments SET merchant_id = NULL WHERE order_id = $1`, [it3.orderId]);
+  const r3 = await applySuccessfulUpiPayment({ orderId: it3.orderId, verifiedAmountPaise: 30000, currency: 'INR', merchantId: 'PGTESTPAYUAT' });
+  assert.equal(r3.status, 'disputed');
+  assert.equal(r3.disputeReason, 'missing_stored_merchant_id');
+
+  // 6. Currency fail-closed checks
+  // 6a. Missing currency (null, empty string, omitted)
+  const it4 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r4 = await applySuccessfulUpiPayment({ orderId: it4.orderId, verifiedAmountPaise: 30000, currency: null, merchantId: 'PGTESTPAYUAT' });
+  assert.equal(r4.status, 'disputed');
+  assert.equal(r4.disputeReason, 'missing_currency');
+
+  const it4b = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r4b = await applySuccessfulUpiPayment({ orderId: it4b.orderId, verifiedAmountPaise: 30000, currency: '', merchantId: 'PGTESTPAYUAT' });
+  assert.equal(r4b.status, 'disputed');
+  assert.equal(r4b.disputeReason, 'missing_currency');
+
+  // 6b. Currency mismatch (USD, EUR)
+  const it5 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r5 = await applySuccessfulUpiPayment({ orderId: it5.orderId, verifiedAmountPaise: 30000, currency: 'EUR', merchantId: 'PGTESTPAYUAT' });
+  assert.equal(r5.status, 'disputed');
+  assert.equal(r5.disputeReason, 'currency_mismatch');
+
+  // 7. Valid merchant ID and INR confirms successfully
+  const it6 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const r6 = await applySuccessfulUpiPayment({ orderId: it6.orderId, verifiedAmountPaise: 30000, currency: 'INR', merchantId: 'PGTESTPAYUAT' });
+  assert.equal(r6.status, 'succeeded');
+  assert.ok(r6.bookingId);
+
+  // Verify all disputed intents created zero bookings
+  for (const it of [it1, it1b, it2, it3, it4, it4b, it5]) {
+    const bkCount = await db.one(
+      `SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)`,
+      [it.orderId]
+    );
+    assert.equal(bkCount.n, 0);
+  }
+});
+
+test('M4.3.2: Secure manual refund reconciliation authorization, evidence reference and state transitions', async () => {
+  const { event, tier } = await createPaidEvent({ price: 22000 });
+
+  // Create active finance admin user
+  const financeAdmin = await db.one(
+    `INSERT INTO admin_users (telegram_user_id, role, active)
+     VALUES (980000777, 'finance', true)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET active = true, role = 'finance'
+     RETURNING *`
+  );
+
+  // 1. Unauthorized finance reconciliation rejected
+  const it1 = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  await applySuccessfulUpiPayment({ orderId: it1.orderId, verifiedAmountPaise: 22000, currency: 'INR', merchantId: 'PGTESTPAYUAT' });
+
+  // 1a. Unverified actor string
+  await assert.rejects(
+    () => refundUpiOrder(it1.orderId, {
+      actor: 'admin:finance:fake',
+      reason: 'Manual refund test without active admin row',
+      manualReconciliation: true,
+      externalRefundRef: 'BANK-UTR-987654321012',
+      evidenceRef: 'FIN-AUDIT-TICKET-101'
+    }),
+    /unauthorized_finance_role/i
+  );
+
+  // 1b. Regular user / guest actor
+  await assert.rejects(
+    () => refundUpiOrder(it1.orderId, {
+      actor: `user:${guest1.userId}`,
+      reason: 'Attendee trying to self-reconcile refund',
+      manualReconciliation: true,
+      externalRefundRef: 'BANK-UTR-987654321012',
+      evidenceRef: 'FIN-AUDIT-TICKET-101'
+    }),
+    /unauthorized_finance_role/i
+  );
+
+  // 2. Missing external refund reference rejected
+  await assert.rejects(
+    () => refundUpiOrder(it1.orderId, {
+      actor: `admin:${financeAdmin.id}:finance`,
+      reason: 'Customer requested bank reversal',
+      manualReconciliation: true,
+      externalRefundRef: null,
+      evidenceRef: 'FIN-AUDIT-TICKET-101'
+    }),
+    /invalid_external_refund_ref/i
+  );
+
+  // 3. Fabricated / placeholder external refund references rejected
+  const placeholders = [
+    'MANUAL',
+    'MANUAL-BANK-REF-999',
+    'manual-ord-12345',
+    'DUMMY-REFUND-1',
+    'TEST12345',
+    'PLACEHOLDER',
+    '0000000',
+    'XXXXXX',
+    '123456',
+    'N/A',
+    'NONE'
+  ];
+
+  for (const ph of placeholders) {
+    await assert.rejects(
+      () => refundUpiOrder(it1.orderId, {
+        actor: `admin:${financeAdmin.id}:finance`,
+        reason: 'Customer requested bank reversal',
+        manualReconciliation: true,
+        externalRefundRef: ph,
+        evidenceRef: 'FIN-AUDIT-TICKET-101'
+      }),
+      /invalid_external_refund_ref/i,
+      `Expected placeholder '${ph}' to be rejected`
+    );
+  }
+
+  // 4. Missing or placeholder evidence reference rejected
+  for (const badEvidence of [null, '', '   ', 'none', 'n/a', 'dummy', 'test', 'placeholder']) {
+    await assert.rejects(
+      () => refundUpiOrder(it1.orderId, {
+        actor: `admin:${financeAdmin.id}:finance`,
+        reason: 'Customer requested bank reversal',
+        manualReconciliation: true,
+        externalRefundRef: 'BANK-UTR-987654321012',
+        evidenceRef: badEvidence
+      }),
+      /missing_evidence_ref/i,
+      `Expected bad evidence '${badEvidence}' to be rejected`
+    );
+  }
+
+  // 5. Missing or short documented reconciliation reason rejected
+  for (const badReason of [null, '', 'short', 'refund', 'test']) {
+    await assert.rejects(
+      () => refundUpiOrder(it1.orderId, {
+        actor: `admin:${financeAdmin.id}:finance`,
+        reason: badReason,
+        manualReconciliation: true,
+        externalRefundRef: 'BANK-UTR-987654321012',
+        evidenceRef: 'FIN-AUDIT-TICKET-101'
+      }),
+      /missing_reason/i,
+      `Expected bad reason '${badReason}' to be rejected`
+    );
+  }
+
+  // 6. Authorized reconciliation with evidence reference succeeds
+  const invite = await db.one(
+    `INSERT INTO invite_links (booking_id, user_id, chat_id, link, expires_at)
+     VALUES ((SELECT booking_id FROM payments WHERE order_id = $1), $2, -1001111111111, 'https://t.me/+testm432recon', now() + interval '1 day')
+     RETURNING *`,
+    [it1.orderId, guest1.userId]
+  );
+
+  const reconRes = await refundUpiOrder(it1.orderId, {
+    actor: `admin:${financeAdmin.id}:finance`,
+    reason: 'Confirmed bank transfer reversal via HDFC Corporate UTR 987654321012',
+    manualReconciliation: true,
+    externalRefundRef: 'BANK-UTR-987654321012',
+    evidenceRef: 'FIN-AUDIT-TICKET-88421'
+  });
+
+  assert.equal(reconRes.status, 'refunded');
+  assert.equal(reconRes.refundId, 'BANK-UTR-987654321012');
+  assert.equal(reconRes.manualReconciliation, true);
+
+  // Verify database record
+  const pCheck = await db.one(
+    `SELECT status, refund_ref, reconciled, reconciled_at, raw_ref FROM payments WHERE order_id = $1`,
+    [it1.orderId]
+  );
+  assert.equal(pCheck.status, 'refunded');
+  assert.equal(pCheck.refund_ref, 'BANK-UTR-987654321012');
+  assert.equal(pCheck.reconciled, true);
+  assert.ok(pCheck.reconciled_at);
+  assert.equal(pCheck.raw_ref.reconciliation.externalRefundRef, 'BANK-UTR-987654321012');
+  assert.equal(pCheck.raw_ref.reconciliation.evidenceRef, 'FIN-AUDIT-TICKET-88421');
+
+  // Verify immutable audit ledger
+  const audits = (await db.query(
+    `SELECT from_status, to_status, actor, details FROM payment_audits WHERE order_id = $1 AND to_status = 'refunded'`,
+    [it1.orderId]
+  )).rows;
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].actor, `admin:${financeAdmin.id}:finance`);
+  assert.equal(audits[0].details.reconciliationType, 'manual_finance_reconciliation');
+  assert.equal(audits[0].details.externalRefundRef, 'BANK-UTR-987654321012');
+  assert.equal(audits[0].details.evidenceRef, 'FIN-AUDIT-TICKET-88421');
+
+  // Verify booking and invite links were revoked
+  const bkCheck = await db.one(`SELECT status FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)`, [it1.orderId]);
+  assert.equal(bkCheck.status, 'refunded');
+
+  const invCheck = await db.one(`SELECT revoked_at FROM invite_links WHERE id = $1`, [invite.id]);
+  assert.ok(invCheck.revoked_at !== null, 'Invite link must be revoked upon confirmed refund');
+
+  // 7. Duplicate reconciliation attempts are strictly idempotent
+  const dupeRes = await refundUpiOrder(it1.orderId, {
+    actor: `admin:${financeAdmin.id}:finance`,
+    reason: 'Duplicate attempt by another operator',
+    manualReconciliation: true,
+    externalRefundRef: 'BANK-UTR-987654321012',
+    evidenceRef: 'FIN-AUDIT-TICKET-88421'
+  });
+  assert.equal(dupeRes.status, 'refunded');
+  assert.equal(dupeRes.duplicate, true);
+
+  // 8. Refund state transitions: provider pending vs completed vs failed
+  // 8a. Succeeded and refund_pending can enter refund workflow
+  const itPending = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  await db.query(`UPDATE payments SET status = 'refund_pending', failure_reason = 'duplicate_booking' WHERE order_id = $1`, [itPending.orderId]);
+
+  // Provider returns pending status
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return {
+        status: 200,
+        body: JSON.stringify({ success: true, code: 'PAYMENT_PENDING', data: { transactionId: 'TXN-REF-PENDING' } })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pendingRefundRes = await refundUpiOrder(itPending.orderId, { actor: 'admin:finance' });
+  assert.equal(pendingRefundRes.status, 'refund_pending');
+
+  const payPendingCheck = await db.one('SELECT status FROM payments WHERE order_id = $1', [itPending.orderId]);
+  assert.equal(payPendingCheck.status, 'refund_pending');
+
+  // 8b. Failed provider refund remains recoverable in refund_pending
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return { status: 503, body: JSON.stringify({ success: false, code: 'SERVICE_UNAVAILABLE', message: 'Gateway down' }) };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  await assert.rejects(
+    () => refundUpiOrder(itPending.orderId, { actor: 'admin:finance' }),
+    /Payment gateway refund initiation failed/
+  );
+
+  const payFailedCheck = await db.one('SELECT status, failure_reason FROM payments WHERE order_id = $1', [itPending.orderId]);
+  assert.equal(payFailedCheck.status, 'refund_pending');
+  assert.ok(payFailedCheck.failure_reason.includes('refund_failed'));
+
+  // 8c. Recoverable via authorized manual finance reconciliation
+  const recoverRes = await refundUpiOrder(itPending.orderId, {
+    actor: `admin:${financeAdmin.id}:finance`,
+    reason: 'Manual bank reversal following gateway 503 downtime',
+    manualReconciliation: true,
+    externalRefundRef: 'BANK-RECOV-20261104-555',
+    evidenceRef: 'INCIDENT-GATEWAY-DOWN-991'
+  });
+  assert.equal(recoverRes.status, 'refunded');
+  assert.equal(recoverRes.refundId, 'BANK-RECOV-20261104-555');
+
+  // Restore refund stub
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS', data: { transactionId: 'TXN-REF-RESTORED' } }) };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  // 9. Admin HTTP endpoint POST /api/admin/payments/:id/refund enforcement
+  const itHttp = await createUpiPaymentIntent({ slug: event.slug, user: guest3, ticketTypeId: tier.id });
+  await applySuccessfulUpiPayment({ orderId: itHttp.orderId, verifiedAmountPaise: 22000, currency: 'INR', merchantId: 'PGTESTPAYUAT' });
+  const httpPay = await db.one('SELECT id FROM payments WHERE order_id = $1', [itHttp.orderId]);
+
+  // Signed out gets 401
+  const anon = new Client();
+  assert.equal((await anon.post(`/api/admin/payments/${httpPay.id}/refund`, {})).status, 401);
+
+  // Regular user gets 403
+  assert.equal((await guest1.post(`/api/admin/payments/${httpPay.id}/refund`, {})).status, 403);
+
+  // Admin without finance role gets 403
+  const managerUser = await signedInClient({ tgId: 980000888 });
+  await admin.post('/api/admin/admins', { telegram_user_id: managerUser.tgId, role: 'event_manager' });
+  assert.equal((await managerUser.post(`/api/admin/payments/${httpPay.id}/refund`, {})).status, 403);
+
+  // Finance client via HTTP
+  const financeClient = await signedInClient({ tgId: financeAdmin.telegram_user_id });
+
+  // Placeholder reference returns 400
+  const phRes = await financeClient.post(`/api/admin/payments/${httpPay.id}/refund`, {
+    manualReconciliation: true,
+    externalRefundRef: 'MANUAL',
+    evidenceRef: 'TICKET-1',
+    reason: 'Testing placeholder rejection via API'
+  });
+  assert.equal(phRes.status, 400);
+
+  // Valid manual reconciliation via HTTP returns 200
+  const okRes = await financeClient.post(`/api/admin/payments/${httpPay.id}/refund`, {
+    manualReconciliation: true,
+    externalRefundRef: 'BANK-API-UTR-20261104',
+    evidenceRef: 'FIN-TICKET-API-2026',
+    reason: 'Confirmed bank refund processed via finance portal'
+  });
+  assert.equal(okRes.status, 200);
+
+  const finalHttpPay = await db.one('SELECT status, refund_ref FROM payments WHERE id = $1', [httpPay.id]);
+  assert.equal(finalHttpPay.status, 'refunded');
+  assert.equal(finalHttpPay.refund_ref, 'BANK-API-UTR-20261104');
 });
