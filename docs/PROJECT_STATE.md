@@ -37,7 +37,7 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 | #32 M4.3.2 Financial Integrity Remediation | `feature/m4-3-1-review-remediation` ← `feature/m4-3-2-financial-integrity` | `62cb0a3` | `lint, unit, e2e` ✅ · Vercel ✅ | Fail-Closed Merchant Identity & Secure Manual Refund Reconciliation |
 | #33 M4.3.3 Final Provider Verification Integrity | `feature/m4-3-2-financial-integrity` ← `feature/m4-3-3-provider-verification` | `4c54711` | `lint, unit, e2e` ✅ · Vercel ✅ | Removal of Currency Defaults, Elimination of Merchant Fallback, Authentic S2S Polling & Attestation |
 | #34 M4.3.4 Provider Contract Decision & M4 Closure | `feature/m4-3-3-provider-verification` ← `feature/m4-3-4-contract-decision` | `1e5bd19` | `lint, unit, e2e` ✅ | PhonePe Contract Determination (Outcome B), Full Regression Suite, Audit & Milestone M4 Closure |
-| #35 M5 Telegram & Operational Workflows | `feature/m4-3-4-contract-decision` ← `feature/m5-telegram-operational-workflows` | pending | `lint, unit, e2e` ✅ | Telegram Identity & Account Linking, Event Private Group Isolation (No Shared Group), Operational Notifications with Quiet Hours, /report Workflow |
+| #35 M5 Telegram & Operational Workflows | `feature/m4-3-4-contract-decision` ← `feature/m5-telegram-operational-workflows` | `262f4f0` | `lint, unit, e2e` ✅ | Telegram Identity & Account Linking, Event Private Group Isolation (No Shared Group), Operational Notifications with Quiet Hours, /report Workflow |
 
 **Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #35, PR #34, PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
 
