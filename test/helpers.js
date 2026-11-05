@@ -189,12 +189,13 @@ export async function signedInClient({ ageConfirmed = true, tgId } = {}) {
 export async function createEvent(overrides = {}) {
   const slug = overrides.slug || `test-event-${crypto.randomBytes(4).toString('hex')}`;
   const row = await db.one(
-    `INSERT INTO events (slug, category, title, city, city_id, lat, lng, coords_provenance, start_at, end_at, capacity, ticket_price_paise, price_status, status, is_demo, published_at, venue_private, venue_privacy)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + interval '10 days', now() + interval '10 days 3 hours', $9, $10, $11, $12, $13, now(), $14, $15) RETURNING *`,
+    `INSERT INTO events (slug, category, title, city, city_id, lat, lng, coords_provenance, start_at, end_at, capacity, ticket_price_paise, price_status, status, is_demo, published_at, venue_private, venue_privacy, telegram_chat_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + interval '10 days', now() + interval '10 days 3 hours', $9, $10, $11, $12, $13, now(), $14, $15, $16) RETURNING *`,
     [slug, overrides.category || 'meetup', overrides.title || 'Test Meetup', overrides.city || 'Chennai',
       overrides.city_id ?? null, overrides.lat ?? null, overrides.lng ?? null, overrides.coords_provenance || (overrides.lat != null ? 'venue' : 'none'),
       overrides.capacity ?? 10, overrides.price === null ? null : (overrides.price ?? 49900),
       overrides.price === null ? 'tbd' : 'set', overrides.status || 'published', overrides.isDemo ?? false,
-      overrides.venue || 'Secret Cafe, 12 Beach Rd', overrides.venuePrivacy || 'disclosed_after_booking']);
+      overrides.venue || 'Secret Cafe, 12 Beach Rd', overrides.venuePrivacy || 'disclosed_after_booking',
+      overrides.telegram_chat_id !== undefined ? overrides.telegram_chat_id : -1001111111111]);
   return row;
 }
