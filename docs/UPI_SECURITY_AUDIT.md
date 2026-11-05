@@ -428,7 +428,7 @@ Milestone M4.3.4 delivers the definitive provider-verification contract determin
 
 ### 9.2 Safe Integration Approach: Adoption of Outcome B
 
-- **Outcome B (Adopted)**: PhonePe cannot currently meet the required verification standard without synthetic adapter defaults. Keep it sandbox-only, keep live payments blocked (`ENABLE_LIVE_PAYMENTS=false`), close M4 cleanly, and recommend adopting a modern provider (such as Razorpay or Cashfree) for M5 live checkout.
+- **Outcome B (Adopted)**: PhonePe cannot currently meet the required verification standard without synthetic adapter defaults. Keep it sandbox-only, keep live payments blocked (`ENABLE_LIVE_PAYMENTS=false`), close M4 cleanly, and recommend adopting a zero-trust payment provider supplying explicit ISO currency evidence and signed webhook entities for M5 live checkout.
 - **Trade-off Analysis**: Outcome A (manufacturing defaults) weakens zero-trust invariants; Outcome C (indefinite pause) delays milestone closure for external vendor roadmaps. Outcome B guarantees zero financial exposure, absolute audit conformance, and immediate M4 closure readiness.
 
 ---

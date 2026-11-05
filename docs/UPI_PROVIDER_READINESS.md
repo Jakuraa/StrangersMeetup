@@ -206,14 +206,14 @@ Three potential outcomes were evaluated:
 
 ### 7.3 Comparative Provider Evaluation: Zero-Trust Readiness
 
-| Capability / Evidence | PhonePe PG v1 | Razorpay Standard | Cashfree PG | Audit Requirement |
-| :--- | :--- | :--- | :--- | :--- |
-| **S2S Webhook Signature** | HMAC SHA256 on base64 | HMAC SHA256 on raw body (`x-razorpay-signature`) | HMAC SHA256 on raw body (`x-webhook-signature`) | Cryptographically authenticates sender |
-| **Provider-Signed Status Response** | ❌ None (TLS only) | ✅ Basic Auth Key+Secret over TLS | ✅ Client ID+Secret over TLS | Proves provider authenticity |
-| **Explicit ISO Currency Field** | ❌ **Omitted** (Implicit INR) | ✅ **Included** (`"INR"` in `entity.currency`) | ✅ **Included** (`"INR"` in `payment_currency`) | Zero-trust currency invariant verification |
-| **Paise Amount Exact Match** | ✅ Integer paise | ✅ Integer paise (`entity.amount`) | ✅ Decimal or paise string/int | Exact financial match |
-| **Merchant ID in Callback** | ✅ `data.merchantId` | ✅ Account / `account_id` | ✅ App ID / `app_id` | Three-way identity comparison |
-| **Zero-Trust Live Gate Verdict** | **BLOCKED (Sandbox Only)** | **RECOMMENDED FOR M5** | **RECOMMENDED FOR M5** | Meets zero-trust verification |
+| Capability / Evidence | PhonePe PG v1 | Standard Zero-Trust Gateway Spec | Audit Requirement |
+| :--- | :--- | :--- | :--- |
+| **S2S Webhook Signature** | HMAC SHA256 on base64 | HMAC SHA256 on raw body (`x-signature`) | Cryptographically authenticates sender |
+| **Provider-Signed Status Response** | ❌ None (TLS only) | ✅ Direct Auth Key+Secret over TLS | Proves provider authenticity |
+| **Explicit ISO Currency Field** | ❌ **Omitted** (Implicit INR) | ✅ **Included** (`"INR"` in payload `currency`) | Zero-trust currency invariant verification |
+| **Paise Amount Exact Match** | ✅ Integer paise | ✅ Integer paise (`amount`) | Exact financial match |
+| **Merchant ID in Callback** | ✅ `data.merchantId` | ✅ Account / `account_id` | Three-way identity comparison |
+| **Zero-Trust Live Gate Verdict** | **BLOCKED (Sandbox Only)** | **RECOMMENDED FOR M5** | Meets zero-trust verification |
 
 ---
 
@@ -222,7 +222,7 @@ Three potential outcomes were evaluated:
 To transition payment processing from `ENABLE_LIVE_PAYMENTS=false` to live production, the following prerequisites must be fulfilled:
 
 1. **Provider Selection & Migration (M5)**:
-   - Either migrate to a provider with explicit ISO currency support (e.g., Razorpay or Cashfree), OR
+   - Either migrate to a zero-trust provider with explicit ISO currency support and signed callbacks, OR
    - Upgrade to PhonePe's newer PG v2 SDK if/when PhonePe provides official, machine-verifiable currency fields and signed status query endpoints.
 2. **KYB & Commercial Contracting**: Complete merchant onboarding, bank nodal account binding, and production credential issuance.
 3. **Webhook Whitelisting**: Register production webhook endpoints with HTTPS TLS termination.
