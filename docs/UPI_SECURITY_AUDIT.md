@@ -399,3 +399,100 @@ Milestone M4.3.3 implements a final zero-trust review and remediation of provide
 - **Migration Suite**: 8/8 passed (`test/migrations.test.js`).
 - **Linter**: `140/140 files OK` (`npm run lint`).
 - **Absolute Safety Boundary**: `ENABLE_LIVE_PAYMENTS=false` preserved across all files and environments. No real payments or refunds initiated. Merges to PR #32, PR #31, PR #30, and PR #17 strictly prohibited. Stopped for independent owner review.
+
+---
+
+## 9. Milestone M4.3.4 Final Payment Provider Contract Determination, Audit & M4 Closure
+
+Milestone M4.3.4 delivers the definitive provider-verification contract determination and closes Milestone M4 with an independently reviewable architectural decision, comprehensive regression tests, full system audit, and formalized exit criteria.
+
+### 9.1 Technical Contract Determination: PhonePe API v1
+
+1. **Merchant Identity Verification**:
+   - The status query `GET /pg/v1/status/{merchantId}/{orderId}` executes over TLS with client authentication (`X-VERIFY: SHA256(path + saltKey)###saltIndex` and `X-MERCHANT-ID`).
+   - While PhonePe authenticates the request, the HTTP response body is **plain unsigned JSON**.
+   - If a provider status response omits `data.merchantId`, relying on the URL path would require client/adapter-side identity synthesis. Under zero-trust rules, omitted fields remain `null` and fail closed (`missing_verified_merchant_id`), preventing rogue or cross-merchant substitution.
+2. **Currency Invariant Determination**:
+   - PhonePe is strictly a domestic Indian payment gateway operating under RBI/NPCI regulations. Amounts are in Indian paise (1 INR = 100 paise).
+   - However, PhonePe's official API schema (both GET status responses and S2S webhook callbacks) **never returns a `currency` field**.
+   - Under the zero-trust verification standard (`applySuccessfulUpiPayment`), payment confirmation strictly requires affirmative provider evidence that `currency === 'INR'`. When the adapter faithfully extracts `data.currency`, it evaluates to `null`, triggering a fail-closed dispute (`missing_currency`).
+   - Synthetic adapter defaults (`currency: 'INR'`) are strictly prohibited because they manufacture provider evidence not returned in the payload.
+3. **Cryptographic Signing Analysis**:
+   - S2S Webhooks are signed via `X-VERIFY: SHA256(base64Response + saltKey)###saltIndex`. Decoded fields (`merchantId`, `amount`, `merchantTransactionId`, `state`) are cryptographically authenticated. Currency is omitted.
+   - Status GET responses are **not signed** by PhonePe.
+4. **Forgery and Mismatch Resistance**:
+   - Webhooks with forged, invalid, or missing signatures are rejected (HTTP 401).
+   - Amount mismatches (underpayment or overpayment), currency mismatches, or merchant mismatches transition payments to `disputed` with 0 bookings and 0 Telegram invites.
+
+---
+
+### 9.2 Safe Integration Approach: Adoption of Outcome B
+
+- **Outcome B (Adopted)**: PhonePe cannot currently meet the required verification standard without synthetic adapter defaults. Keep it sandbox-only, keep live payments blocked (`ENABLE_LIVE_PAYMENTS=false`), close M4 cleanly, and recommend adopting a zero-trust payment provider supplying explicit ISO currency evidence and signed webhook entities for M5 live checkout.
+- **Trade-off Analysis**: Outcome A (manufacturing defaults) weakens zero-trust invariants; Outcome C (indefinite pause) delays milestone closure for external vendor roadmaps. Outcome B guarantees zero financial exposure, absolute audit conformance, and immediate M4 closure readiness.
+
+---
+
+### 9.3 M4.3.4 Regression Test Matrix (`test/upi-checkout.test.js`)
+
+| Test Scenario | Attack / Edge Vector Tested | Expected Result | Actual Result |
+|:---|:---|:---|:---|
+| **Missing Merchant ID (Polling)** | Gateway status response omits `data.merchantId` | Fail-closed, status `disputed`, reason `missing_verified_merchant_id`, 0 bookings | ✅ PASS |
+| **Mismatched Merchant ID (Polling)** | Gateway status returns `ATTACKER_MERCHANT_ID` | Fail-closed, status `disputed`, reason `merchant_mismatch`, 0 bookings | ✅ PASS |
+| **Missing Merchant ID (Webhook)** | Decoded payload omits `merchantId` | Rejects with `WebhookSignatureError`, status remains `pending`, 0 bookings | ✅ PASS |
+| **Mismatched Merchant ID (Webhook)** | Decoded payload contains `ROGUE_MERCHANT` | Rejects with `WebhookSignatureError`, status remains `pending`, 0 bookings | ✅ PASS |
+| **Native PhonePe Missing Currency** | Real native PhonePe payload (no `currency` field) | Fail-closed, status `disputed`, reason `missing_currency`, 0 bookings | ✅ PASS |
+| **Foreign Currency Injection** | Webhook payload contains `currency: 'USD'` | Fail-closed, status `disputed`, reason `currency_mismatch`, 0 bookings | ✅ PASS |
+| **Forged Webhook Signature** | Attacker sends forged `X-VERIFY` hash | Rejects with `WebhookSignatureError`, status remains `pending`, 0 bookings | ✅ PASS |
+| **Missing Webhook Signature Header** | Attacker omits `X-VERIFY` header | Rejects with `WebhookSignatureError` (missing header), 0 bookings | ✅ PASS |
+| **Corrupted Base64 Payload** | Body contains unparseable / malformed string | Rejects with 400 `invalid_payload` / signature error, 0 bookings | ✅ PASS |
+| **Gateway 502 Outage (Polling)** | Status polling receives HTTP 502 / network error | Adapter throws `GATEWAY_ERROR`, polling service logs warning, DB remains `pending` | ✅ PASS |
+| **Underpayment Attack** | Webhook reports 1,000 paise instead of 45,000 paise | Fail-closed, status `disputed`, reason `amount_mismatch`, 0 bookings | ✅ PASS |
+| **Overpayment Attack** | Webhook reports 50,000 paise instead of 45,000 paise | Fail-closed, status `disputed`, reason `amount_mismatch`, 0 bookings | ✅ PASS |
+| **Unknown Order ID** | Webhook reports non-existent order | Rejects with 404 `Payment not found`, 0 bookings | ✅ PASS |
+| **Replayed Webhooks** | Succeeded payment receives identical replayed webhook | Idempotent, returns `duplicate: true`, booking count remains exactly 1 | ✅ PASS |
+| **Duplicate Polling** | Succeeded payment polled with `checkGateway: true` | Idempotent, returns `succeeded`, duplicate status, booking count remains 1 | ✅ PASS |
+| **Client Return URL Spoofing** | Attendee visits return URL with fake success parameters | Render view only, DB status remains `pending`, 0 bookings, 0 invites | ✅ PASS |
+| **Client Polling Endpoint Isolation** | Attendee polls status without `checkGateway` | Reads existing DB status (`pending`), 0 state transitions | ✅ PASS |
+| **Pending State Gating** | Payment in `pending` state | 0 bookings created, 0 Telegram invites created | ✅ PASS |
+| **Failed State Gating** | Gateway reports `PAYMENT_ERROR` (`failed`) | Payment status updates to `failed`, 0 bookings, 0 invites | ✅ PASS |
+| **Disputed State Gating** | Payment verification fails (`disputed`) | Payment status updates to `disputed`, 0 bookings, 0 invites | ✅ PASS |
+| **Refund State & Invite Revocation** | Succeeded payment is refunded | Status `refunded`, booking `refunded`, Telegram invite revoked (`revoked_at IS NOT NULL`) | ✅ PASS |
+| **Comprehensive Gating Verification** | Across all 12 negative/unverified test cases | 0 bookings and 0 Telegram invites in database | ✅ PASS |
+
+---
+
+### 9.4 Final M4 System Audit Summary
+
+1. **Booking Integrity & Concurrency**:
+   - Double booking is blocked at intent creation (409 `already_booked`), confirmation (moves payment to `refund_pending`), and guest claim (409).
+   - SQLSTATE `23505` unique constraint races are defensively caught in `SAVEPOINT sp_confirm_booking`.
+   - Inventory capacity holds are enforced via `activePaymentHolds` and partial index `idx_payments_active_tier_holds`.
+2. **Refund & Reconciliation Controls**:
+   - Both `succeeded` and `refund_pending` payments can be refunded via `refundUpiOrder`.
+   - Provider failures leave payment recoverable in `refund_pending` without rolling back audit history.
+   - Manual finance reconciliation enforces verified database roles (`super_admin`, `finance`), anti-placeholder external reference validation (bank UTR, PG refund ARN), and mandatory evidence tracking.
+   - All manual reconciliations are explicitly tagged `operator_attested: true` and `bankVerified: false`.
+3. **Payment Audit Logs & Ledger Immutability**:
+   - `payment_audits` is strictly append-only; migration 016 database trigger prevents UPDATE and DELETE.
+   - Every status transition, dispute reason, and reconciliation event is immutably logged with actor, timestamp, and details JSON.
+4. **Idempotency & Isolation**:
+   - Replayed webhooks and polling checks return `duplicate: true` with zero duplicate bookings.
+   - Multi-tenant event and attendee boundaries are strictly isolated; cross-organiser inspection is forbidden.
+5. **Payment Provider Configuration & Live Gating**:
+   - Adapter merchant ID configuration is verified across verified, stored, and server identities.
+   - `ENABLE_LIVE_PAYMENTS=false` is enforced across all environments.
+
+---
+
+### 9.5 M4 Exit Criteria Pass/Fail Checklist
+
+- [x] **Booking Integrity**: **PASS** (Zero overselling under concurrency, double-booking prevention, 0 bookings on unverified payments).
+- [x] **Payment Verification Architecture**: **PASS** (Safe integer paise amount check, three-way merchant ID comparison, exact currency check, atomic locked transaction gating).
+- [x] **Provider Contract Evidence**: **PASS (for Architecture & Mock) / BLOCKED (for Live PhonePe)** (PhonePe v1 cannot supply machine-verifiable currency; safely classified as Sandbox-only under Outcome B).
+- [x] **Refund and Reconciliation Controls**: **PASS** (Automated provider refunds, operational recovery from `refund_pending`, authorized manual finance reconciliation with anti-fraud rules and CBS limitation disclosures).
+- [x] **Security Tests**: **PASS** (All 38/38 UPI tests passing, including 22 specific M4.3.4 regression vectors; 471/471 full unit/integration suite passing).
+- [x] **Documentation**: **PASS** (`UPI_PROVIDER_READINESS.md`, `UPI_SECURITY_AUDIT.md`, `PROJECT_STATE.md` fully synchronized and up to date).
+- [x] **Production Payment Activation Prerequisites**: **PASS (DOCUMENTED & GATED)** (`ENABLE_LIVE_PAYMENTS=false` preserved; clear M5 roadmap for zero-trust provider migration).
+
+**Milestone M4 Verdict: FORMALLY CLOSED (Live Payments Safely Disabled).**

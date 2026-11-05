@@ -129,3 +129,101 @@ The safety switch remains locked:
 ENABLE_LIVE_PAYMENTS=false
 ```
 Under no circumstances should this flag be set to `true` until all engineering defects in Section 5A are resolved, verified by automated tests, and formal business signoff in Section 5B is granted.
+
+---
+
+## 7. M4.3.4 Final Payment Provider Contract Determination & Safe Integration Decision
+
+### 7.1 Detailed Technical Analysis of PhonePe API v1 Contract
+
+An exhaustive inspection of PhonePe's official API specifications and the concrete adapter implementation (`lib/upi/adapter.js`, `lib/services/upi-payments.js`) established the following technical boundaries:
+
+#### 1. Authenticated Status Request URL vs Missing JSON `merchantId`
+- **Outbound Check Status Request**:
+  - Endpoint: `GET /apis/pg-sandbox/pg/v1/status/{merchantId}/{merchantTransactionId}`
+  - Transport Security: Server-to-server HTTPS (TLS 1.2/1.3) directly to PhonePe.
+  - Caller Authentication: `X-MERCHANT-ID: {merchantId}` and `X-VERIFY: SHA256('/pg/v1/status/' + merchantId + '/' + orderId + saltKey) + '###' + saltIndex`.
+  - PhonePe authenticates the caller using the shared `saltKey` and verifies that the transaction belongs to the path-specified `{merchantId}`. Unmatched requests are rejected with HTTP 401/403 `AUTHORIZATION_FAILED`.
+- **Response Merchant Identity Determination**:
+  - In PhonePe's standard v1 response JSON, `data.merchantId` is documented to echo the merchant identifier.
+  - However, the HTTP GET response body is **plain unsigned JSON**. PhonePe provides no cryptographic response signature or response HMAC header (unlike webhooks, which include `X-VERIFY`).
+  - If a gateway status response omits `data.merchantId` or returns null/empty, relying on the URL path alone would require the client adapter to "assume" or "synthesize" merchant identity.
+  - Under the strict zero-trust financial integrity policy established in M4.3.2 and M4.3.3, identity synthesis is prohibited. If `merchantId` is absent from the provider payload, it remains `null` and fails closed (`missing_verified_merchant_id`), preventing rogue or cross-merchant substitution.
+
+#### 2. Documented Domestic UPI Contract vs Missing Currency Field
+- **The Statutory Contract**:
+  - PhonePe PG v1/v2 operates under the regulatory jurisdiction of the Reserve Bank of India (RBI) and National Payments Corporation of India (NPCI) exclusively for domestic UPI and Indian banking instruments.
+  - The business and regulatory contract is strictly denominated in Indian Rupees (INR) with amounts expressed in integer paise (1 INR = 100 paise).
+  - Multi-currency processing does not exist on PhonePe's domestic UPI Standard Checkout.
+- **The Technical Contract**:
+  - PhonePe's official API schema (status check response and S2S callback payloads) **never includes a `currency` field**.
+  - `data.currency` is strictly `undefined` in authentic PhonePe payloads.
+- **Zero-Trust Invariant Conflict**:
+  - The core verification engine (`applySuccessfulUpiPayment`) strictly requires affirmative evidence that `currency === 'INR'` and matches `payment.currency`.
+  - When the adapter faithfully extracts `data.currency`, it evaluates to `null`.
+  - Without synthetic defaults, every native PhonePe transaction is disputed with `Payment verification failed: Currency mismatch (missing_currency)`.
+  - Injecting a hardcoded default (`currency: 'INR'`) inside the adapter would manufacture evidence that the provider did not supply, violating the project's zero-trust audit guarantees.
+
+#### 3. Cryptographic Authentication: Signed vs Unsigned Fields
+- **S2S Webhook (`POST /api/payments/webhook/phonepe`)**:
+  - Header: `X-VERIFY: SHA256(base64Response + saltKey) + "###" + saltIndex`.
+  - Body: `{ "response": "<base64_string>" }`.
+  - Because `X-VERIFY` is calculated over the entire base64 string, every field inside the decoded `data` object (`merchantId`, `merchantTransactionId`, `transactionId`, `amount`, `state`, `paymentInstrument`) is cryptographically signed and authenticated by PhonePe using the shared merchant secret.
+  - However, `currency` is completely absent from this signed payload.
+- **Status Polling API (`GET /pg/v1/status/...`)**:
+  - The outbound request is authenticated by the merchant; the inbound response is **NOT signed** by PhonePe. Authenticity relies entirely on TLS transport security to the PhonePe host.
+
+#### 4. Distinguishing Authentic from Fabricated or Mismatched Responses
+- The current implementation reliably distinguishes authentic from forged responses:
+  - Webhooks with invalid, tampered, or missing `X-VERIFY` signatures are immediately rejected with `WebhookSignatureError` (HTTP 401).
+  - Webhooks with mismatched or missing `merchantId` are rejected before database writes.
+  - Status queries with mismatched `merchantId`, underpayment/overpayment, or missing currency fail closed and transition the payment to `disputed` with 0 bookings and 0 Telegram invites created.
+  - Database-level immutable audit logging records every verification failure in `payment_audits`.
+
+---
+
+### 7.2 Decision: Safe Integration Approach
+
+Three potential outcomes were evaluated:
+
+- **Outcome A (Rejected)**: *PhonePe safely supported with adapter-level domestic contract assumptions.*
+  - Would require mapping PhonePe's domestic banking contract to synthetic `currency: 'INR'` at the adapter boundary.
+  - **Why Rejected**: Directly contradicts M4.3.3 integrity findings, manufactures provider evidence not present in JSON payloads, weakens the zero-trust verification standard, and violates Non-Negotiable Safeguard #5.
+
+- **Outcome B (ADOPTED)**: *PhonePe cannot currently meet the required verification standard. Keep it sandbox-only and recommend a provider whose documented API supplies the required merchant, amount, order and currency evidence.*
+  - **Verdict**: **FORMALLY ADOPTED**.
+  - **Rationale**:
+    1. PhonePe v1 API cannot supply machine-verifiable currency evidence without client-side assumptions.
+    2. PhonePe status GET responses are not cryptographically signed by the provider.
+    3. Under the fail-closed zero-trust financial integrity architecture, PhonePe payments must remain sandbox/mock only.
+    4. Production live-payment capability for PhonePe is marked **BLOCKED**.
+    5. Milestone M4 can safely close with `ENABLE_LIVE_PAYMENTS=false` preserved across all environments, with zero real financial exposure.
+
+- **Outcome C (Rejected)**: *Wait for additional provider integration or contract confirmation before architecture approval.*
+  - **Why Rejected**: Postpones closure indefinitely without technical merit. The platform's booking integrity, seat allocation, refund controls, and audit ledger are fully built, audited, and tested.
+
+---
+
+### 7.3 Comparative Provider Evaluation: Zero-Trust Readiness
+
+| Capability / Evidence | PhonePe PG v1 | Standard Zero-Trust Gateway Spec | Audit Requirement |
+| :--- | :--- | :--- | :--- |
+| **S2S Webhook Signature** | HMAC SHA256 on base64 | HMAC SHA256 on raw body (`x-signature`) | Cryptographically authenticates sender |
+| **Provider-Signed Status Response** | ❌ None (TLS only) | ✅ Direct Auth Key+Secret over TLS | Proves provider authenticity |
+| **Explicit ISO Currency Field** | ❌ **Omitted** (Implicit INR) | ✅ **Included** (`"INR"` in payload `currency`) | Zero-trust currency invariant verification |
+| **Paise Amount Exact Match** | ✅ Integer paise | ✅ Integer paise (`amount`) | Exact financial match |
+| **Merchant ID in Callback** | ✅ `data.merchantId` | ✅ Account / `account_id` | Three-way identity comparison |
+| **Zero-Trust Live Gate Verdict** | **BLOCKED (Sandbox Only)** | **RECOMMENDED FOR M5** | Meets zero-trust verification |
+
+---
+
+### 7.4 Prerequisites for Production Payment Activation (Owner / Provider Action)
+
+To transition payment processing from `ENABLE_LIVE_PAYMENTS=false` to live production, the following prerequisites must be fulfilled:
+
+1. **Provider Selection & Migration (M5)**:
+   - Either migrate to a zero-trust provider with explicit ISO currency support and signed callbacks, OR
+   - Upgrade to PhonePe's newer PG v2 SDK if/when PhonePe provides official, machine-verifiable currency fields and signed status query endpoints.
+2. **KYB & Commercial Contracting**: Complete merchant onboarding, bank nodal account binding, and production credential issuance.
+3. **Webhook Whitelisting**: Register production webhook endpoints with HTTPS TLS termination.
+4. **₹1 Financial Pilot**: Execute an end-to-end live ₹1 payment and subsequent refund under supervision on a dedicated staging branch before enabling production traffic.

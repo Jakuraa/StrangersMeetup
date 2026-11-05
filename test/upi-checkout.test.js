@@ -2611,3 +2611,531 @@ test('M4.3.3: Provider status authenticity, client return URL isolation and idem
   const failInvites = await db.one('SELECT count(*)::int AS n FROM invite_links WHERE user_id = $1', [guest2.userId]);
   assert.equal(failInvites.n, 0);
 });
+
+test('M4.3.4: Final provider verification contract decision & regression suite', async () => {
+  const saltKey = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
+  const adapter = new PhonePeAdapter({ merchantId: 'PGTESTPAYUAT', saltKey, saltIndex: '1' });
+  const { event, tier } = await createPaidEvent({ price: 45000 });
+
+  // -------------------------------------------------------------
+  // 1. Missing and mismatched merchant identity
+  // -------------------------------------------------------------
+  // 1a. Status polling with missing merchantId -> disputed (missing_verified_merchant_id)
+  const itPollMissingMerch = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollMissingMerch.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            // merchantId omitted
+            merchantTransactionId: itPollMissingMerch.orderId,
+            transactionId: `TXN-P-NOMERCH-${itPollMissingMerch.orderId}`,
+            amount: 45000,
+            currency: 'INR',
+            state: 'COMPLETED'
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollNoMerch = await getUpiPaymentStatus(itPollMissingMerch.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollNoMerch.status, 'disputed');
+  assert.equal(pollNoMerch.disputeReason, 'missing_verified_merchant_id');
+
+  const payNoMerchDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itPollMissingMerch.orderId]);
+  assert.equal(payNoMerchDb.status, 'disputed');
+  assert.equal(payNoMerchDb.booking_id, null);
+
+  // 1b. Status polling with mismatched merchantId -> disputed (merchant_mismatch)
+  const itPollWrongMerch = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itPollWrongMerch.orderId}`)) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'ATTACKER_MERCHANT_ID',
+            merchantTransactionId: itPollWrongMerch.orderId,
+            transactionId: `TXN-P-WRONGMERCH-${itPollWrongMerch.orderId}`,
+            amount: 45000,
+            currency: 'INR',
+            state: 'COMPLETED'
+          }
+        })
+      };
+    }
+    return { status: 200, body: JSON.stringify({ success: true, code: 'PAYMENT_SUCCESS' }) };
+  });
+
+  const pollWrongMerch = await getUpiPaymentStatus(itPollWrongMerch.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollWrongMerch.status, 'disputed');
+  assert.equal(pollWrongMerch.disputeReason, 'merchant_mismatch');
+
+  const payWrongMerchDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itPollWrongMerch.orderId]);
+  assert.equal(payWrongMerchDb.status, 'disputed');
+  assert.equal(payWrongMerchDb.booking_id, null);
+
+  // 1c. Webhook with missing merchantId -> fails signature verification
+  const itHookMissingMerch = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pNoMerch = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      // merchantId omitted
+      merchantTransactionId: itHookMissingMerch.orderId,
+      transactionId: `TXN-H-NOMERCH-${itHookMissingMerch.orderId}`,
+      amount: 45000,
+      currency: 'INR',
+      state: 'COMPLETED'
+    }
+  };
+  const b64NoMerch = Buffer.from(JSON.stringify(pNoMerch)).toString('base64');
+  const sigNoMerch = crypto.createHash('sha256').update(`${b64NoMerch}${saltKey}`).digest('hex') + '###1';
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: { 'x-verify': sigNoMerch },
+      rawBody: JSON.stringify({ response: b64NoMerch }),
+      clientIp: '127.0.0.1'
+    }),
+    /merchantId is missing/i
+  );
+  const payHookNoMerchDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itHookMissingMerch.orderId]);
+  assert.equal(payHookNoMerchDb.status, 'pending');
+  assert.equal(payHookNoMerchDb.booking_id, null);
+
+  // 1d. Webhook with mismatched merchantId -> fails signature verification
+  const itHookWrongMerch = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pWrongMerch = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'ROGUE_MERCHANT',
+      merchantTransactionId: itHookWrongMerch.orderId,
+      transactionId: `TXN-H-WRONGMERCH-${itHookWrongMerch.orderId}`,
+      amount: 45000,
+      currency: 'INR',
+      state: 'COMPLETED'
+    }
+  };
+  const b64WrongMerch = Buffer.from(JSON.stringify(pWrongMerch)).toString('base64');
+  const sigWrongMerch = crypto.createHash('sha256').update(`${b64WrongMerch}${saltKey}`).digest('hex') + '###1';
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: { 'x-verify': sigWrongMerch },
+      rawBody: JSON.stringify({ response: b64WrongMerch }),
+      clientIp: '127.0.0.1'
+    }),
+    /merchantId mismatch/i
+  );
+  const payHookWrongMerchDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itHookWrongMerch.orderId]);
+  assert.equal(payHookWrongMerchDb.status, 'pending');
+  assert.equal(payHookWrongMerchDb.booking_id, null);
+
+  // -------------------------------------------------------------
+  // 2. Missing currency and documented domestic INR invariant
+  // -------------------------------------------------------------
+  // 2a. Real native PhonePe payload (currency field completely omitted) -> fail closed, disputed (missing_currency)
+  const itPhonePeNative = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pNativePhonePe = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itPhonePeNative.orderId,
+      transactionId: `TXN-PHONEPE-NATIVE-${itPhonePeNative.orderId}`,
+      amount: 45000,
+      state: 'COMPLETED'
+      // NOTE: native PhonePe API v1 never supplies currency field
+    }
+  };
+  const b64Native = Buffer.from(JSON.stringify(pNativePhonePe)).toString('base64');
+  const sigNative = crypto.createHash('sha256').update(`${b64Native}${saltKey}`).digest('hex') + '###1';
+  const resNative = await processUpiWebhook({
+    headers: { 'x-verify': sigNative },
+    rawBody: JSON.stringify({ response: b64Native }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resNative.ok, false);
+  assert.equal(resNative.error, 'missing_currency');
+  const payNativeDb = await db.one('SELECT status, failure_reason, booking_id FROM payments WHERE order_id = $1', [itPhonePeNative.orderId]);
+  assert.equal(payNativeDb.status, 'disputed');
+  assert.ok(payNativeDb.failure_reason.includes('Currency mismatch (missing_currency)'));
+  assert.equal(payNativeDb.booking_id, null);
+
+  // 2b. Foreign currency (USD) -> disputed (currency_mismatch)
+  const itForeignCurr = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pForeignCurr = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itForeignCurr.orderId,
+      transactionId: `TXN-USD-${itForeignCurr.orderId}`,
+      amount: 45000,
+      currency: 'USD',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Foreign = Buffer.from(JSON.stringify(pForeignCurr)).toString('base64');
+  const sigForeign = crypto.createHash('sha256').update(`${b64Foreign}${saltKey}`).digest('hex') + '###1';
+  const resForeign = await processUpiWebhook({
+    headers: { 'x-verify': sigForeign },
+    rawBody: JSON.stringify({ response: b64Foreign }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resForeign.ok, false);
+  assert.equal(resForeign.error, 'currency_mismatch');
+  const payForeignDb = await db.one('SELECT status, failure_reason, booking_id FROM payments WHERE order_id = $1', [itForeignCurr.orderId]);
+  assert.equal(payForeignDb.status, 'disputed');
+  assert.ok(payForeignDb.failure_reason.includes('Currency mismatch (currency_mismatch)'));
+  assert.equal(payForeignDb.booking_id, null);
+
+  // -------------------------------------------------------------
+  // 3. Forged or unauthenticated provider responses
+  // -------------------------------------------------------------
+  // 3a. Forged webhook signature
+  const itForgedSig = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pForgedSig = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itForgedSig.orderId,
+      transactionId: `TXN-FORGED-${itForgedSig.orderId}`,
+      amount: 45000,
+      currency: 'INR',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Forged = Buffer.from(JSON.stringify(pForgedSig)).toString('base64');
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: { 'x-verify': '0000000000000000000000000000000000000000000000000000000000000000###1' },
+      rawBody: JSON.stringify({ response: b64Forged }),
+      clientIp: '127.0.0.1'
+    }),
+    /signature/i
+  );
+  const payForgedSigDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itForgedSig.orderId]);
+  assert.equal(payForgedSigDb.status, 'pending');
+  assert.equal(payForgedSigDb.booking_id, null);
+
+  // 3b. Missing signature header
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: {},
+      rawBody: JSON.stringify({ response: b64Forged }),
+      clientIp: '127.0.0.1'
+    }),
+    /missing header/i
+  );
+
+  // 3c. Corrupted/unparseable base64 body
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: { 'x-verify': 'fake###1' },
+      rawBody: JSON.stringify({ response: 'NOT_VALID_BASE64_JSON_!@#' }),
+      clientIp: '127.0.0.1'
+    }),
+    /signature/i
+  );
+
+  // 3d. Status polling gateway error (HTTP 502 / network failure) leaves DB status pending
+  const itGatewayErr = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes(`/pg/v1/status/PGTESTPAYUAT/${itGatewayErr.orderId}`)) {
+      return { status: 502, body: 'Bad Gateway' };
+    }
+    return { status: 200, body: '{}' };
+  });
+
+  // Direct adapter call throws PaymentAdapterError
+  await assert.rejects(
+    () => adapter.getPaymentStatus(itGatewayErr.orderId),
+    /PhonePe status check failed with HTTP 502/i
+  );
+
+  // Status service endpoint gracefully catches gateway failure, does NOT crash, and leaves DB pending
+  const pollGatewayErr = await getUpiPaymentStatus(itGatewayErr.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollGatewayErr.status, 'pending');
+
+  const payGatewayErrDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itGatewayErr.orderId]);
+  assert.equal(payGatewayErrDb.status, 'pending');
+  assert.equal(payGatewayErrDb.booking_id, null);
+
+  // -------------------------------------------------------------
+  // 4. Wrong amount and order ID
+  // -------------------------------------------------------------
+  // 4a. Underpayment attack (paid 1000 paise instead of 45000 paise)
+  const itUnderpaid = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pUnderpaid = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itUnderpaid.orderId,
+      transactionId: `TXN-UNDER-${itUnderpaid.orderId}`,
+      amount: 1000,
+      currency: 'INR',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Under = Buffer.from(JSON.stringify(pUnderpaid)).toString('base64');
+  const sigUnder = crypto.createHash('sha256').update(`${b64Under}${saltKey}`).digest('hex') + '###1';
+  const resUnder = await processUpiWebhook({
+    headers: { 'x-verify': sigUnder },
+    rawBody: JSON.stringify({ response: b64Under }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resUnder.ok, false);
+  assert.equal(resUnder.error, 'amount_mismatch');
+  const payUnderDb = await db.one('SELECT status, failure_reason, booking_id FROM payments WHERE order_id = $1', [itUnderpaid.orderId]);
+  assert.equal(payUnderDb.status, 'disputed');
+  assert.ok(payUnderDb.failure_reason.includes('Amount mismatch'));
+  assert.equal(payUnderDb.booking_id, null);
+
+  // 4b. Overpayment attack (paid 50000 paise instead of 45000 paise)
+  const itOverpaid = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pOverpaid = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itOverpaid.orderId,
+      transactionId: `TXN-OVER-${itOverpaid.orderId}`,
+      amount: 50000,
+      currency: 'INR',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Over = Buffer.from(JSON.stringify(pOverpaid)).toString('base64');
+  const sigOver = crypto.createHash('sha256').update(`${b64Over}${saltKey}`).digest('hex') + '###1';
+  const resOver = await processUpiWebhook({
+    headers: { 'x-verify': sigOver },
+    rawBody: JSON.stringify({ response: b64Over }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(resOver.ok, false);
+  assert.equal(resOver.error, 'amount_mismatch');
+  const payOverDb = await db.one('SELECT status, failure_reason, booking_id FROM payments WHERE order_id = $1', [itOverpaid.orderId]);
+  assert.equal(payOverDb.status, 'disputed');
+  assert.equal(payOverDb.booking_id, null);
+
+  // 4c. Unknown order ID
+  const pUnknownOrder = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: 'ORD-UNKNOWN-DOES-NOT-EXIST-999',
+      transactionId: 'TXN-UNK-1',
+      amount: 45000,
+      currency: 'INR',
+      state: 'COMPLETED'
+    }
+  };
+  const b64Unknown = Buffer.from(JSON.stringify(pUnknownOrder)).toString('base64');
+  const sigUnknown = crypto.createHash('sha256').update(`${b64Unknown}${saltKey}`).digest('hex') + '###1';
+  await assert.rejects(
+    () => processUpiWebhook({
+      headers: { 'x-verify': sigUnknown },
+      rawBody: JSON.stringify({ response: b64Unknown }),
+      clientIp: '127.0.0.1'
+    }),
+    /payment not found/i
+  );
+
+  // -------------------------------------------------------------
+  // 5. Replayed webhooks and duplicate polling
+  // -------------------------------------------------------------
+  const itIdempotent = await createUpiPaymentIntent({ slug: event.slug, user: guest1, ticketTypeId: tier.id });
+  const pValid = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itIdempotent.orderId,
+      transactionId: `TXN-VALID-${itIdempotent.orderId}`,
+      amount: 45000,
+      currency: 'INR',
+      state: 'COMPLETED',
+      paymentInstrument: { type: 'UPI', utr: 'UTR-IDEMP-45000' }
+    }
+  };
+  const b64Valid = Buffer.from(JSON.stringify(pValid)).toString('base64');
+  const sigValid = crypto.createHash('sha256').update(`${b64Valid}${saltKey}`).digest('hex') + '###1';
+
+  // First delivery: confirms payment, creates 1 booking
+  const hookFirst = await processUpiWebhook({
+    headers: { 'x-verify': sigValid },
+    rawBody: JSON.stringify({ response: b64Valid }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(hookFirst.ok, true);
+  assert.equal(hookFirst.result, 'confirmed');
+
+  const payConfirmed = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itIdempotent.orderId]);
+  assert.equal(payConfirmed.status, 'succeeded');
+  assert.ok(payConfirmed.booking_id);
+
+  // Attach an active invite link to the confirmed booking
+  const invite1 = await db.one(
+    `INSERT INTO invite_links (booking_id, user_id, chat_id, link, expires_at)
+     VALUES ($1, $2, -1001111111111, 'https://t.me/+testidemp', now() + interval '1 day') RETURNING *`,
+    [payConfirmed.booking_id, guest1.userId]
+  );
+
+  const bookingsCount1 = await db.one('SELECT count(*)::int AS n FROM bookings WHERE id = $1', [payConfirmed.booking_id]);
+  const inviteCount1 = await db.one('SELECT count(*)::int AS n FROM invite_links WHERE booking_id = $1', [payConfirmed.booking_id]);
+
+  // Second delivery (replay): returns duplicate: true, 0 new bookings, 0 new invites
+  const hookReplay = await processUpiWebhook({
+    headers: { 'x-verify': sigValid },
+    rawBody: JSON.stringify({ response: b64Valid }),
+    clientIp: '127.0.0.1'
+  });
+  assert.equal(hookReplay.ok, true);
+  assert.equal(hookReplay.result, 'duplicate');
+
+  const bookingsCountAfterReplay = await db.one('SELECT count(*)::int AS n FROM bookings WHERE id = $1', [payConfirmed.booking_id]);
+  const inviteCountAfterReplay = await db.one('SELECT count(*)::int AS n FROM invite_links WHERE booking_id = $1', [payConfirmed.booking_id]);
+  assert.equal(bookingsCountAfterReplay.n, bookingsCount1.n);
+  assert.equal(inviteCountAfterReplay.n, inviteCount1.n);
+
+  // Status polling on succeeded payment: returns succeeded, duplicate: true
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    return {
+      status: 200,
+      body: JSON.stringify({
+        success: true,
+        code: 'PAYMENT_SUCCESS',
+        data: pValid.data
+      })
+    };
+  });
+  const pollAfterSuccess = await getUpiPaymentStatus(itIdempotent.orderId, { user: guest1, checkGateway: true });
+  assert.equal(pollAfterSuccess.status, 'succeeded');
+  assert.equal(pollAfterSuccess.bookingId, payConfirmed.booking_id);
+
+  // -------------------------------------------------------------
+  // 6. Client return URL spoofing
+  // -------------------------------------------------------------
+  const itSpoof = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+
+  // Malicious attendee browses return URL with injected success query parameters
+  const clientSpoofGet = await guest2.get(
+    `/checkout/${event.slug}/upi?orderId=${itSpoof.orderId}&status=succeeded&amount=45000&verified=true&paid=1`
+  );
+  assert.equal(clientSpoofGet.status, 200);
+
+  // Database status is completely unaffected (remains pending)
+  const paySpoofedDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itSpoof.orderId]);
+  assert.equal(paySpoofedDb.status, 'pending');
+  assert.equal(paySpoofedDb.booking_id, null);
+
+  // Client polling without checkGateway does not transition state
+  const clientPollStatus = await guest2.get(`/api/checkout/upi/status/${itSpoof.orderId}`);
+  assert.equal(clientPollStatus.status, 200);
+  assert.equal(clientPollStatus.json.status, 'pending');
+  assert.equal(clientPollStatus.json.bookingId, null);
+
+  // -------------------------------------------------------------
+  // 7. Pending, failed, disputed and refunded states
+  // -------------------------------------------------------------
+  // Pending state: 0 bookings, 0 invites
+  const bookingsPending = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [itSpoof.orderId]);
+  assert.equal(bookingsPending.n, 0);
+
+  // Failed state: gateway reports failure -> status transitions to failed, 0 bookings, 0 invites
+  const itFailed = await createUpiPaymentIntent({ slug: event.slug, user: guest2, ticketTypeId: tier.id });
+  const pFailed = {
+    code: 'PAYMENT_ERROR',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: itFailed.orderId,
+      transactionId: `TXN-FAILED-${itFailed.orderId}`,
+      amount: 45000,
+      currency: 'INR',
+      state: 'FAILED'
+    }
+  };
+  const b64Failed = Buffer.from(JSON.stringify(pFailed)).toString('base64');
+  const sigFailed = crypto.createHash('sha256').update(`${b64Failed}${saltKey}`).digest('hex') + '###1';
+  await processUpiWebhook({
+    headers: { 'x-verify': sigFailed },
+    rawBody: JSON.stringify({ response: b64Failed }),
+    clientIp: '127.0.0.1'
+  });
+  const payFailedDb = await db.one('SELECT status, booking_id FROM payments WHERE order_id = $1', [itFailed.orderId]);
+  assert.equal(payFailedDb.status, 'failed');
+  assert.equal(payFailedDb.booking_id, null);
+  const bookingsFailed = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [itFailed.orderId]);
+  assert.equal(bookingsFailed.n, 0);
+
+  // Disputed state: underpayment -> status transitions to disputed, 0 bookings, 0 invites
+  const bookingsDisputed = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [itUnderpaid.orderId]);
+  assert.equal(bookingsDisputed.n, 0);
+
+  // Refunded state: refunding itIdempotent (which was succeeded) revokes invite links and cancels booking
+  stubUrl('https://api-preprod.phonepe.com', (url) => {
+    if (url.includes('/pg/v1/refund')) {
+      return {
+        status: 200,
+        body: JSON.stringify({
+          success: true,
+          code: 'PAYMENT_SUCCESS',
+          data: {
+            merchantId: 'PGTESTPAYUAT',
+            merchantTransactionId: `RFND-${itIdempotent.orderId}`,
+            transactionId: `TXN-RFND-${itIdempotent.orderId}`,
+            amount: 45000,
+            state: 'COMPLETED'
+          }
+        })
+      };
+    }
+    return { status: 200, body: '{}' };
+  });
+
+  const refundRes = await refundUpiOrder(itIdempotent.orderId, {
+    actor: 'admin:finance_user',
+    reason: 'Customer requested refund via regression test'
+  });
+  assert.equal(refundRes.status, 'refunded');
+
+  const payRefundedDb = await db.one('SELECT status, refund_ref FROM payments WHERE order_id = $1', [itIdempotent.orderId]);
+  assert.equal(payRefundedDb.status, 'refunded');
+  assert.ok(payRefundedDb.refund_ref);
+
+  const bookingRefunded = await db.one('SELECT status FROM bookings WHERE id = $1', [payConfirmed.booking_id]);
+  assert.equal(bookingRefunded.status, 'refunded');
+
+  const inviteCheck = await db.one('SELECT revoked_at FROM invite_links WHERE id = $1', [invite1.id]);
+  assert.ok(inviteCheck.revoked_at !== null, 'Telegram invite link must be revoked upon refund');
+
+  // -------------------------------------------------------------
+  // 8. Strict gating: No booking confirmation or Telegram invite without authoritative payment verification
+  // -------------------------------------------------------------
+  const allUnverifiedOrders = [
+    itPollMissingMerch.orderId,
+    itPollWrongMerch.orderId,
+    itHookMissingMerch.orderId,
+    itHookWrongMerch.orderId,
+    itPhonePeNative.orderId,
+    itForeignCurr.orderId,
+    itForgedSig.orderId,
+    itGatewayErr.orderId,
+    itUnderpaid.orderId,
+    itOverpaid.orderId,
+    itSpoof.orderId,
+    itFailed.orderId
+  ];
+
+  for (const ord of allUnverifiedOrders) {
+    const bRow = await db.one('SELECT count(*)::int AS n FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1)', [ord]);
+    assert.equal(bRow.n, 0, `Unverified order ${ord} must have 0 bookings`);
+    const invRow = await db.one(
+      'SELECT count(*)::int AS n FROM invite_links WHERE booking_id IN (SELECT id FROM bookings WHERE payment_id = (SELECT id FROM payments WHERE order_id = $1))',
+      [ord]
+    );
+    assert.equal(invRow.n, 0, `Unverified order ${ord} must have 0 invite links`);
+  }
+});
