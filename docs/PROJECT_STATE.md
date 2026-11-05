@@ -35,9 +35,10 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 | #30 M4.3 UPI Security Remediation | `launch-mvp` ← `feature/m4-3-upi-security-remediation` | `e4babe6` | `lint, unit, e2e` ✅ | PR Review Baseline for M4.3.1 |
 | #31 M4.3.1 Review Remediation | `feature/m4-3-upi-security-remediation` ← `feature/m4-3-1-review-remediation` | `03bf518` | `lint, unit, e2e` ✅ | Independent Review Corrections for PR #30 |
 | #32 M4.3.2 Financial Integrity Remediation | `feature/m4-3-1-review-remediation` ← `feature/m4-3-2-financial-integrity` | `62cb0a3` | `lint, unit, e2e` ✅ · Vercel ✅ | Fail-Closed Merchant Identity & Secure Manual Refund Reconciliation |
-| (Review) M4.3.3 Final Provider Verification Integrity | `feature/m4-3-2-financial-integrity` ← `feature/m4-3-3-provider-verification` | (work branch) | `lint, unit, e2e` ✅ | Removal of Currency Defaults, Elimination of Merchant Fallback, Authentic S2S Polling & Attestation |
+| #33 M4.3.3 Final Provider Verification Integrity | `feature/m4-3-2-financial-integrity` ← `feature/m4-3-3-provider-verification` | `4c54711` | `lint, unit, e2e` ✅ · Vercel ✅ | Removal of Currency Defaults, Elimination of Merchant Fallback, Authentic S2S Polling & Attestation |
+| (Closure) M4.3.4 Provider Contract Decision & M4 Closure | `feature/m4-3-3-provider-verification` ← `feature/m4-3-4-contract-decision` | (work branch) | `lint, unit, e2e` ✅ | PhonePe Contract Determination (Outcome B), Full Regression Suite, Audit & Milestone M4 Closure |
 
-**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
+**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
@@ -48,6 +49,7 @@ PR #29 is **merged** at `c71ec8d` (M4.2 Independent UPI Payment Security & Produ
 PR #30 is **open / preserved** (`feature/m4-3-upi-security-remediation`).
 PR #31 is **open / preserved** (`feature/m4-3-1-review-remediation`).
 PR #32 is **open / preserved** (`feature/m4-3-2-financial-integrity`).
+PR #33 is **open / preserved** (`feature/m4-3-3-provider-verification`).
 
 ## 4. Migrations per environment
 
@@ -164,8 +166,12 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 | M4 Payment & Booking Readiness | `feature/m4-payment-booking-audit` / #27 | **Merged** @ `69cafae` into `launch-mvp` (Booking & payment architecture, payment readiness & financial safety report, booking integrity test report, 10/10 automated tests in `test/booking-integrity.test.js`) |
 | M4.1 UPI-First Checkout & Dynamic QR | `feature/m4-1-upi-checkout` / #28 | **Merged** @ `c3b4e83` into `launch-mvp` (UPI-First checkout, pure SVG dynamic QR, provider-neutral adapter with PhonePe PG primary, mobile intent links, SHA256 constant-time webhook verification, migration 015, 13/13 automated tests in `test/upi-checkout.test.js`) |
 | M4.2 UPI Security & Readiness Audit | `feature/m4-2-upi-security-audit` / #29 | **Merged** @ `c71ec8d` into `launch-mvp` (Independent audit of M4.1 UPI checkout: identified 2 Critical and 3 High severity defects; verdict: NOT READY FOR LIVE PAYMENTS; `ENABLE_LIVE_PAYMENTS=false` preserved) |
-| M4.3 Critical UPI Security & Financial Integrity Remediation | `feature/m4-3-upi-security-remediation` | **Completed** (Resolved all 9 M4.2 findings: SEC-01 Base64 webhook signature, FIN-01 underpayment defense & dispute audit, DATA-01 auth gate & guest booking claim API, CONCUR-01 active intent capacity holds & confirmation check, AUTH-01 status polling IDOR fix, QR-01 Dark Module & multi-block interleaving fix, UI-01 responsive viewport CSS isolation, LOG-01 dedicated rate limits, DB-01 immutable `payment_audits` trigger via migration 016; 21/21 tests in `test/upi-checkout.test.js` pass, 7/7 in `test/migrations.test.js` pass, full test suite 453/453 pass; `ENABLE_LIVE_PAYMENTS=false` preserved) |
-| M5–M10 | — | not started |
+| M4.3 Critical UPI Security & Financial Integrity Remediation | `feature/m4-3-upi-security-remediation` / #30 | **Completed** (Resolved all 9 M4.2 findings: SEC-01 Base64 webhook signature, FIN-01 underpayment defense & dispute audit, DATA-01 auth gate & guest booking claim API, CONCUR-01 active intent capacity holds & confirmation check, AUTH-01 status polling IDOR fix, QR-01 Dark Module & multi-block interleaving fix, UI-01 responsive viewport CSS isolation, LOG-01 dedicated rate limits, DB-01 immutable `payment_audits` trigger via migration 016; 21/21 tests in `test/upi-checkout.test.js` pass, 7/7 in `test/migrations.test.js` pass, full test suite 453/453 pass; `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M4.3.1 Review Remediation | `feature/m4-3-1-review-remediation` / #31 | **Completed** (Remediated independent review findings REV-01 through REV-07; 31/31 UPI tests pass, 464/464 unit/integration tests pass, `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M4.3.2 Financial Integrity Remediation | `feature/m4-3-2-financial-integrity` / #32 | **Completed** (Strict fail-closed merchant identity comparison across verified, stored, and configured identities; secure manual refund reconciliation with verified admin roles and verifiable external references; 33/33 UPI tests pass, 466/466 unit/integration tests pass, `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M4.3.3 Final Provider Verification Integrity | `feature/m4-3-3-provider-verification` / #33 | **Completed** (Eliminated synthetic currency defaults and configured merchant status check fallbacks; fail-closed currency and merchant identity gating; documented CBS operational limitation and operator attestation labeling; 37/37 UPI tests pass, 470/470 unit/integration tests pass, `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M4.3.4 Provider Contract Decision & M4 Closure | `feature/m4-3-4-contract-decision` | **Formally Closed (Live Payments Disabled)** (Adopted Outcome B: PhonePe v1 classified sandbox-only due to lack of machine-verifiable currency in payload; full 22-vector regression suite added; 38/38 UPI tests pass, 471/471 unit/integration tests pass, 157/157 Playwright E2E pass, 140/140 lint clean; `ENABLE_LIVE_PAYMENTS=false` preserved; all M4 exit criteria verified and passed) |
+| M5 Zero-Trust Live Payment Provider Integration | `feature/m5-...` | **Recommended Next Milestone** (Integrate zero-trust payment provider such as Razorpay or Cashfree supplying explicit ISO currency evidence and signed webhook entities, or release free-only MVP) |
 
 ## 11. Where the detail lives
 
