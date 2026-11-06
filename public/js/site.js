@@ -475,6 +475,21 @@
         } else if (b.status === 'pending_payment') {
           html += '<p>We are waiting for SuperProfile to confirm your payment. If you already paid, send <strong>/claim</strong> to our Telegram bot with your SuperProfile order ID.</p>';
         } else if (b.status === 'confirmed' || b.status === 'checked_in') {
+          if (b.tickets && b.tickets.length > 0) {
+            html += '<div class="digital-pass-tickets">' +
+              b.tickets.map(function (tk, idx) {
+                return '<div class="ticket-qr-card' + (tk.status === 'checked_in' ? ' ticket-used' : '') + '">' +
+                  '<div class="ticket-qr-header">' +
+                  '<strong>Pass #' + (idx + 1) + (tk.ticketTypeName ? ' · ' + esc(tk.ticketTypeName) : '') + '</strong>' +
+                  '<span class="pill pill-' + esc(tk.status) + '">' + esc(tk.status === 'checked_in' ? 'Checked In' : tk.status) + '</span>' +
+                  '</div>' +
+                  (tk.qrSvg ? '<div class="ticket-qr-graphic" aria-label="Ticket QR code">' + tk.qrSvg + '</div>' : '') +
+                  '<div class="ticket-code-display"><code>' + esc(tk.ticketCode) + '</code></div>' +
+                  (tk.status === 'checked_in' ? '<p class="muted small text-center">✓ Admitted' + (tk.checkedInAt ? ' · ' + esc(fmt(tk.checkedInAt)) : '') + '</p>' : '<p class="muted small text-center">Present this QR code at the door for entry</p>') +
+                  '</div>';
+              }).join('') +
+              '</div>';
+          }
           if (b.venue) {
             html += '<div class="unlocked-venue-card"><div class="unlocked-venue-badge"><span class="unlocked-icon" aria-hidden="true">🔓</span> <strong>Venue Unlocked</strong></div><p class="unlocked-venue-addr">' + esc(b.venue) + '</p>' + (b.mapsUrl ? '<p><a class="btn btn-outline-cyan btn-sm" href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a></p>' : '') + '</div>';
           }
