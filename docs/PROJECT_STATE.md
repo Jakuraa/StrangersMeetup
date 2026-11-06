@@ -175,12 +175,14 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 | M4.3.3 Final Provider Verification Integrity | `feature/m4-3-3-provider-verification` / #33 | **Completed** (Eliminated synthetic currency defaults and configured merchant status check fallbacks; fail-closed currency and merchant identity gating; documented CBS operational limitation and operator attestation labeling; 37/37 UPI tests pass, 470/470 unit/integration tests pass, `ENABLE_LIVE_PAYMENTS=false` preserved) |
 | M4.3.4 Provider Contract Decision & M4 Closure | `feature/m4-3-4-contract-decision` | **Formally Closed (Live Payments Disabled)** (Adopted Outcome B: PhonePe v1 classified sandbox-only due to lack of machine-verifiable currency in payload; full 22-vector regression suite added; 38/38 UPI tests pass, 471/471 unit/integration tests pass, 157/157 Playwright E2E pass, 140/140 lint clean; `ENABLE_LIVE_PAYMENTS=false` preserved; all M4 exit criteria verified and passed) |
 | M5 Telegram & Operational Workflows | `feature/m5-telegram-operational-workflows` / #35 | **Completed** (Telegram identity & account linking, event private supergroup isolation without shared global group, operational recovery on /start, transactional outbox notifications with quiet hours, /report moderation workflow with emergency escalation; 16/16 tests in test/telegram-workflows.test.js, 487/487 unit/integration tests pass, ENABLE_LIVE_PAYMENTS=false preserved) |
-| M6 Organiser Workspace & QR Check-in | `feature/m6-organiser-workspace` | **Recommended Next Milestone** (Organiser event management, door staff roles, dynamic QR check-in & verification) |
+| M6 Organiser Workspace, Event Staff & Secure QR Check-in | `feature/m6-organiser-workspace` / #36 | **Completed** (Full organiser workspace with event dashboard, readiness checklist, ticket inventory, guest management, and operational announcements; event-scoped staff roles with organiser, event_manager, door_staff, guest_list_manager, assistant; server-authoritative HMAC-SHA256 signed QR tickets bound to events without leaking attendee PII; mobile-first door check-in scanner with camera QR detection and manual code lookup; atomic duplicate scan and replay prevention; ticket reissue and revocation lifecycle; 15/15 tests in test/m6-organiser-workspace.test.js, 642/642 tests passing across entire regression suite, 145/145 lint clean; `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M7 Attendee Discovery & Experience Hub | `feature/m7-attendee-experience` | **Recommended Next Milestone** (Personalised attendee discovery, enhanced event cards, location-aware feed, instant booking pass display, trust badges) |
 
 ## 11. Where the detail lives
 
 | Topic | Doc |
 |---|---|
+| Organiser workspace & QR check-in architecture | [arch/ORGANISER_WORKSPACE_AND_QR_CHECKIN.md](arch/ORGANISER_WORKSPACE_AND_QR_CHECKIN.md) |
 | UPI security audit | [UPI_SECURITY_AUDIT.md](UPI_SECURITY_AUDIT.md) |
 | UPI provider readiness assessment | [UPI_PROVIDER_READINESS.md](UPI_PROVIDER_READINESS.md) |
 | UPI-first checkout architecture | [arch/UPI_PAYMENT_INTEGRATION.md](arch/UPI_PAYMENT_INTEGRATION.md) |

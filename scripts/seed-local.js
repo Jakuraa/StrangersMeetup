@@ -109,6 +109,12 @@ async function clearPersonaData(c) {
   await c.query(`DELETE FROM entitlements WHERE user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM external_orders WHERE event_id IN (SELECT id FROM _pe) OR matched_booking_id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM checkout_intents WHERE event_id IN (SELECT id FROM _pe) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM ticket_scans WHERE event_id IN (SELECT id FROM _pe) OR booking_id IN (SELECT id FROM _pb) OR scanned_by IN (SELECT id FROM _pu)`);
+  await c.query(`UPDATE tickets SET reissued_to_ticket_id = NULL WHERE event_id IN (SELECT id FROM _pe) OR booking_id IN (SELECT id FROM _pb) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM tickets WHERE event_id IN (SELECT id FROM _pe) OR booking_id IN (SELECT id FROM _pb) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM event_announcements WHERE event_id IN (SELECT id FROM _pe) OR sender_user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM event_staff_invites WHERE event_id IN (SELECT id FROM _pe) OR invited_by IN (SELECT id FROM _pu) OR accepted_by IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM event_team WHERE event_id IN (SELECT id FROM _pe) OR user_id IN (SELECT id FROM _pu)`);
   await c.query(`UPDATE bookings SET payment_id = NULL WHERE id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM payments WHERE user_id IN (SELECT id FROM _pu) OR booking_id IN (SELECT id FROM _pb)`);
   await c.query(`UPDATE bookings SET decided_by = NULL WHERE decided_by IN (SELECT id FROM _pu) AND id NOT IN (SELECT id FROM _pb)`);
