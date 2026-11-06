@@ -395,34 +395,198 @@
   var STATUS = { pending_approval: 'Request sent — awaiting the host', declined: 'Not accepted', pending_payment: 'Awaiting payment confirmation', confirmed: 'Confirmed', checked_in: 'Checked in', cancelled: 'Cancelled', refunded: 'Refunded' };
   var PAYMENT = { not_required: 'No payment needed', created: 'Waiting for the payment provider to confirm', paid: 'Paid', failed: 'Payment failed', refunded: 'Refunded' };
 
+  var currentBookingFilter = 'all';
+  var allBookingsCache = [];
+
+  function filterAndDisplayBookings(el, filter) {
+    currentBookingFilter = filter || 'all';
+    var list = allBookingsCache;
+    var filtered = list.filter(function (b) {
+      if (currentBookingFilter === 'upcoming') return !b.isPast;
+      if (currentBookingFilter === 'past') return b.isPast;
+      return true;
+    });
+
+    if (!list.length) {
+      el.innerHTML = '<div class="empty-state bookings-empty-state">' +
+        '<div class="empty-state-icon" aria-hidden="true">🎟️</div>' +
+        '<p class="empty-state-title">No bookings yet</p>' +
+        '<p class="muted">When you reserve a spot for a meetup, dinner, party or trip, your digital passes and secret venue locations will be saved here.</p>' +
+        '<p><a class="btn btn-primary btn-sm" href="/events">Explore upcoming events</a></p>' +
+        '</div>';
+      return;
+    }
+
+    if (!filtered.length) {
+      el.innerHTML = '<div class="empty-state"><p class="empty-state-title">No ' + esc(currentBookingFilter) + ' bookings</p><p class="muted">You do not have any ' + esc(currentBookingFilter) + ' bookings.</p></div>';
+      return;
+    }
+
+    el.innerHTML = '<ul class="booking-list">' + filtered.map(function (b) {
+      var shortRef = b.id ? b.id.slice(0, 8).toUpperCase() : '';
+      var checkinNotice = b.isCheckedIn ? '<span class="pill pill-checked_in" style="margin-left:6px;">✓ Checked In</span>' : '';
+      return '<li class="booking-card-item">' +
+        '<div class="booking-card-top">' +
+        '<div><span class="pill pill-' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span>' + checkinNotice + '</div>' +
+        '<span class="muted small">#SM-' + esc(shortRef) + '</span>' +
+        '</div>' +
+        '<h3><a href="/bookings/' + esc(b.id) + '">' + esc(b.title) + '</a></h3>' +
+        '<p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>' +
+        '<div class="booking-card-actions">' +
+        '<a class="btn btn-outline-cyan btn-sm" href="/bookings/' + esc(b.id) + '">View Pass &amp; Venue →</a>' +
+        (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Event Details</a>' : '') +
+        '</div>' +
+        '</li>';
+    }).join('') + '</ul>';
+  }
+
   function renderBookings(el) {
     api('GET', '/api/me/bookings').then(function (r) {
       if (r.status === 401) return goSignin();
-      var list = r.bookings || [];
+      allBookingsCache = r.bookings || [];
+      filterAndDisplayBookings(el, currentBookingFilter);
+    });
+  }
+
+  function renderSavedEvents(el) {
+    api('GET', '/api/me/saved-events').then(function (r) {
+      if (r.status === 401) return;
+      var list = r.events || [];
       if (!list.length) {
-        el.innerHTML = '<div class="empty-state bookings-empty-state">' +
-          '<div class="empty-state-icon" aria-hidden="true">🎟️</div>' +
-          '<p class="empty-state-title">No bookings yet</p>' +
-          '<p class="muted">When you reserve a spot for a meetup, dinner, party or trip, your digital passes and secret venue locations will be saved here.</p>' +
+        el.innerHTML = '<div class="empty-state saved-empty-state">' +
+          '<div class="empty-state-icon" aria-hidden="true">🔖</div>' +
+          '<p class="empty-state-title">No saved events yet</p>' +
+          '<p class="muted">Tap the bookmark icon on any event to save it here for quick access later.</p>' +
           '<p><a class="btn btn-primary btn-sm" href="/events">Explore upcoming events</a></p>' +
           '</div>';
         return;
       }
-      el.innerHTML = '<ul class="booking-list">' + list.map(function (b) {
-        var shortRef = b.id ? b.id.slice(0, 8).toUpperCase() : '';
-        return '<li class="booking-card-item">' +
-          '<div class="booking-card-top">' +
-          '<span class="pill pill-' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span>' +
-          '<span class="muted small">#SM-' + esc(shortRef) + '</span>' +
+      el.innerHTML = '<ul class="saved-events-grid card-grid">' + list.map(function (e) {
+        var href = (e.isTrip ? '/trips/' : '/events/') + e.slug;
+        return '<article class="card event-card" data-event-id="' + esc(e.id) + '">' +
+          '<div class="card-body">' +
+          '<p class="card-meta"><span>' + esc(e.categoryLabel || e.category) + '</span><span>' + esc(e.city) + '</span></p>' +
+          '<h3 class="card-title"><a class="card-link" href="' + esc(href) + '">' + esc(e.title) + '</a></h3>' +
+          '<p class="card-when">' + esc(fmt(e.startAt)) + (e.area ? ' · ' + esc(e.area) : '') + '</p>' +
+          '<div class="card-foot">' +
+          '<span class="price">' + esc(e.priceLabel || 'Free') + '</span>' +
+          '<div style="display:flex; gap:6px;">' +
+          '<a class="btn btn-sm btn-primary" href="' + esc(href) + '">View Details</a>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-unsave-event="' + esc(e.id) + '" title="Remove from saved">Remove</button>' +
           '</div>' +
-          '<h3><a href="/bookings/' + esc(b.id) + '">' + esc(b.title) + '</a></h3>' +
-          '<p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>' +
-          '<div class="booking-card-actions">' +
-          '<a class="btn btn-outline-cyan btn-sm" href="/bookings/' + esc(b.id) + '">View Pass &amp; Venue →</a>' +
-          (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Event Details</a>' : '') +
           '</div>' +
-          '</li>';
+          '</div>' +
+          '</article>';
       }).join('') + '</ul>';
+    });
+  }
+
+  function renderMyAnnouncements(el) {
+    api('GET', '/api/me/announcements').then(function (r) {
+      if (r.status === 401) return;
+      var list = r.announcements || [];
+      if (!list.length) {
+        el.innerHTML = '<div class="empty-state announcements-empty-state">' +
+          '<div class="empty-state-icon" aria-hidden="true">📢</div>' +
+          '<p class="empty-state-title">No host announcements yet</p>' +
+          '<p class="muted">Operational updates, venue reminders, and door announcements from hosts of your events will appear here.</p>' +
+          '</div>';
+        return;
+      }
+      el.innerHTML = '<div class="announcements-feed">' + list.map(function (a) {
+        return '<div class="announcement-item' + (a.isPinned ? ' is-pinned' : '') + '">' +
+          '<div class="announcement-head">' +
+          '<strong>' + esc(a.eventTitle) + '</strong>' +
+          '<span class="muted small">' + esc(fmt(a.createdAt)) + '</span>' +
+          '</div>' +
+          '<h4 class="announcement-title">' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</h4>' +
+          '<p class="announcement-body">' + esc(a.message) + '</p>' +
+          '<p class="muted small"><a href="/events/' + esc(a.eventSlug) + '">View event page →</a></p>' +
+          '</div>';
+      }).join('') + '</div>';
+    });
+  }
+
+  function initAttendeeHub() {
+    var hub = $('[data-attendee-hub]');
+    if (!hub) return;
+    var tabBtns = $$('[data-hub-tab]', hub);
+    tabBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tab = btn.getAttribute('data-hub-tab');
+        tabBtns.forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+        });
+        $$('[data-hub-section]', hub).forEach(function (sec) {
+          var isTarget = sec.getAttribute('data-hub-section') === tab;
+          sec.hidden = !isTarget;
+        });
+      });
+    });
+
+    var filterBtns = $$('[data-booking-filter]', hub);
+    filterBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var filter = btn.getAttribute('data-booking-filter');
+        filterBtns.forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        var mb = $('[data-my-bookings]', hub);
+        if (mb) filterAndDisplayBookings(mb, filter);
+      });
+    });
+  }
+
+  function initSaveEventHandlers() {
+    document.addEventListener('click', function (ev) {
+      var saveBtn = ev.target && ev.target.closest ? ev.target.closest('[data-save-event]') : null;
+      if (saveBtn) {
+        ev.preventDefault();
+        var eventId = saveBtn.getAttribute('data-save-event');
+        var isSaved = saveBtn.classList.contains('is-saved');
+        if (!state.me) {
+          return goSignin();
+        }
+        var nextState = !isSaved;
+        var updateBtn = function (btn, saved) {
+          btn.classList.toggle('is-saved', saved);
+          btn.setAttribute('aria-pressed', saved ? 'true' : 'false');
+          btn.setAttribute('aria-label', saved ? 'Remove from saved events' : 'Save event');
+          var svg = btn.querySelector('svg');
+          if (svg) svg.setAttribute('fill', saved ? 'currentColor' : 'none');
+          var span = btn.querySelector('span');
+          if (span) span.textContent = saved ? 'Saved' : 'Save';
+        };
+
+        updateBtn(saveBtn, nextState);
+        var method = nextState ? 'POST' : 'DELETE';
+        api(method, '/api/events/' + encodeURIComponent(eventId) + '/save').then(function (r) {
+          if (!r.ok) {
+            updateBtn(saveBtn, isSaved);
+          }
+        }).catch(function () {
+          updateBtn(saveBtn, isSaved);
+        });
+        return;
+      }
+
+      var unsaveBtn = ev.target && ev.target.closest ? ev.target.closest('[data-unsave-event]') : null;
+      if (unsaveBtn) {
+        ev.preventDefault();
+        var eid = unsaveBtn.getAttribute('data-unsave-event');
+        api('DELETE', '/api/events/' + encodeURIComponent(eid) + '/save').then(function (r) {
+          if (r.ok) {
+            var card = unsaveBtn.closest('.card');
+            if (card) card.remove();
+            var se = $('[data-saved-events]');
+            if (se && !se.querySelectorAll('.card').length) {
+              renderSavedEvents(se);
+            }
+          }
+        });
+        return;
+      }
     });
   }
 
@@ -475,6 +639,12 @@
         } else if (b.status === 'pending_payment') {
           html += '<p>We are waiting for SuperProfile to confirm your payment. If you already paid, send <strong>/claim</strong> to our Telegram bot with your SuperProfile order ID.</p>';
         } else if (b.status === 'confirmed' || b.status === 'checked_in') {
+          if (b.isCheckedIn || b.status === 'checked_in') {
+            html += '<div class="checkin-notice-banner" role="status">' +
+              '<span class="checkin-notice-icon" aria-hidden="true">✓</span>' +
+              '<div><strong>Admitted at the door</strong><p class="muted small">' + (b.checkedInAt ? 'Checked in at ' + esc(fmt(b.checkedInAt)) : 'Your ticket has been validated and checked in.') + '</p></div>' +
+              '</div>';
+          }
           if (b.tickets && b.tickets.length > 0) {
             html += '<div class="digital-pass-tickets">' +
               b.tickets.map(function (tk, idx) {
@@ -492,6 +662,17 @@
           }
           if (b.venue) {
             html += '<div class="unlocked-venue-card"><div class="unlocked-venue-badge"><span class="unlocked-icon" aria-hidden="true">🔓</span> <strong>Venue Unlocked</strong></div><p class="unlocked-venue-addr">' + esc(b.venue) + '</p>' + (b.mapsUrl ? '<p><a class="btn btn-outline-cyan btn-sm" href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a></p>' : '') + '</div>';
+          }
+          if (b.announcements && b.announcements.length > 0) {
+            html += '<div class="booking-announcements-card">' +
+              '<h3>📢 Updates from your host</h3>' +
+              b.announcements.map(function (a) {
+                return '<div class="announcement-mini-item">' +
+                  '<strong>' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</strong> <span class="muted small">· ' + esc(fmt(a.createdAt)) + '</span>' +
+                  '<p>' + esc(a.message) + '</p>' +
+                  '</div>';
+              }).join('') +
+              '</div>';
           }
           html += '<p><strong>You are in.</strong> ' + (b.ticket ? 'Your booking pass is confirmed.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
           if (b.invite) html += '<p><a class="btn btn-tg" href="' + safeUrl(b.invite.link) + '" rel="noopener">Join the private group</a></p><p class="muted">Single-use invite, valid until ' + esc(fmt(b.invite.expiresAt)) + '.</p>';
@@ -1063,7 +1244,7 @@
       if (!form.getAttribute('data-async-bound')) {
         form.setAttribute('data-async-bound', '1');
         form.addEventListener('change', function (ev) {
-          if (ev.target && (ev.target.name === 'city' || ev.target.name === 'category' || ev.target.name === 'when')) {
+          if (ev.target && (ev.target.name === 'city' || ev.target.name === 'category' || ev.target.name === 'when' || ev.target.name === 'price' || ev.target.name === 'sort')) {
             onFilterChange();
           }
         });
@@ -1127,8 +1308,12 @@
   initInstantDiscovery();
 
   miniApp().then(refreshMe).then(function () {
+    initAttendeeHub();
+    initSaveEventHandlers();
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
     var mb = $('[data-my-bookings]'); if (mb) renderBookings(mb);
+    var se = $('[data-saved-events]'); if (se && state.me) renderSavedEvents(se);
+    var ma = $('[data-my-announcements]'); if (ma && state.me) renderMyAnnouncements(ma);
     var bs = $('[data-booking-status]'); if (bs) renderStatus(bs);
     var sr = $('[data-safety-report]'); if (sr) renderSafetyReport(sr);
     var ss = $('[data-safety-settings]'); if (ss && state.me) renderSafetySettings(ss);
