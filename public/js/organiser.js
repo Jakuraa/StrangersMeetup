@@ -198,6 +198,18 @@
         '<div class="org-stat-item"><span class="org-stat-val">' + m.pendingRequests + '</span><span class="org-stat-lbl">Pending Requests</span></div>' +
         '</div>';
 
+      if (!m.confirmedSeats && !m.pendingRequests) {
+        var url = e.path ? absolute(e.path) : '';
+        h += '<div class="empty-state org-empty-state" style="margin-bottom:20px;">' +
+          '<div class="empty-state-icon" aria-hidden="true">👥</div>' +
+          '<p class="empty-state-title">No bookings yet</p>' +
+          '<p class="muted">Share your event link to start receiving attendee bookings.</p>' +
+          '<div class="empty-state-actions">' +
+          '<button class="btn btn-sm btn-outline-cyan" type="button" data-copy="' + esc(url) + '">Copy Event Link</button>' +
+          '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '" target="_blank">View Live Event</a>' +
+          '</div></div>';
+      }
+
       h += '<div class="readiness-card">' +
         '<div class="readiness-header">' +
         '<div><h3 style="margin:0 0 4px">Event Readiness Tracking</h3><p class="muted small" style="margin:0">Operational checklist before doors open.</p></div>' +
@@ -316,7 +328,9 @@
           (declined > 0 ? '<button class="org-filter-btn' + (activeFilter === 'declined' ? ' active' : '') + '" type="button" data-filter="declined">Declined (' + declined + ')</button>' : '') +
           '</div></div>';
 
-        if (!filtered.length) {
+        if (!guests.length) {
+          h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No bookings yet</p><p class="muted">Share your event link to start receiving attendee bookings.</p></div>';
+        } else if (!filtered.length) {
           h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No matching attendees</p><p class="muted">Try adjusting your search or filter.</p></div>';
         } else {
           h += '<ul class="guest-list">' + filtered.map(function (g) {
