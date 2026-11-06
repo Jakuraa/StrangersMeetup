@@ -109,6 +109,7 @@ async function clearPersonaData(c) {
   await c.query(`DELETE FROM entitlements WHERE user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM external_orders WHERE event_id IN (SELECT id FROM _pe) OR matched_booking_id IN (SELECT id FROM _pb)`);
   await c.query(`DELETE FROM checkout_intents WHERE event_id IN (SELECT id FROM _pe) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM saved_events WHERE user_id IN (SELECT id FROM _pu) OR event_id IN (SELECT id FROM _pe)`);
   await c.query(`DELETE FROM ticket_scans WHERE event_id IN (SELECT id FROM _pe) OR booking_id IN (SELECT id FROM _pb) OR scanned_by IN (SELECT id FROM _pu)`);
   await c.query(`UPDATE tickets SET reissued_to_ticket_id = NULL WHERE event_id IN (SELECT id FROM _pe) OR booking_id IN (SELECT id FROM _pb) OR user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM tickets WHERE event_id IN (SELECT id FROM _pe) OR booking_id IN (SELECT id FROM _pb) OR user_id IN (SELECT id FROM _pu)`);
