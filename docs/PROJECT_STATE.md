@@ -96,10 +96,10 @@ Rule: only the canonical workspace switches to `launch-mvp`. Milestone branches 
 | 1 | Approve merging PR #17 (`launch-mvp` → `main`) and the Production release | open |
 | 2 | Production env vars. Missing as of P0 (2026-11-02, names only): `SESSION_SECRET`, `CRON_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TG_CHAT_ID_EVENTS`, `ADMIN_BOOTSTRAP_TELEGRAM_ID`, `PUBLIC_SITE_URL`, `SUPPORT_EMAIL`, `LEGAL_ENTITY_NAME`, `GRIEVANCE_OFFICER_NAME`, `GRIEVANCE_EMAIL` (`ENABLE_LIVE_PAYMENTS` unset = off) | open, not re-checked in M1 |
 | 3 | Reconcile which DB Production points at (§4) | open (owner will supply confirmed project ID & endpoint ID from Vercel → Storage; dynamic block list active) |
-| 4 | Domain/DNS for `nightlifez.com` (Cloudflare, Vercel) | open (M8 prepares the steps) |
+| 4 | Domain/DNS for `nightlifez.com` (Cloudflare, Vercel) | open (M8 prepares the steps in docs/launch/DNS_AND_EMAIL_ROUTING.md) |
 | 5 | BotFather `/setdomain` and profile; Telegram groups and channel | open (M5 prepares the steps) |
 | 6 | Vercel Protection Bypass for Automation | open (M9) |
-| 7 | Email routing `contact@nightlifez.com` | open (M8) |
+| 7 | Email routing `contact@nightlifez.com` | open (M8 prepares the steps in docs/launch/DNS_AND_EMAIL_ROUTING.md) |
 | 8 | Legal fields (entity, grievance officer) | open |
 | 9 | Approve the branch/worktree deletions proposed in §9 | **completed / approved** (19 fully merged remote branches archived to `archive/<branch>` tags and deleted from origin; `.claude/worktrees/launch-mvp` preserved as is) |
 | 10 | Decide on the unpushed Phase 5.6/5.7 reports (local commit `bcb4989`): push and archive, or drop | **completed / approved** (`bcb4989` pushed to `origin/fix/preview-recovery-audit`; reports imported into `docs/history/`) |
@@ -177,12 +177,15 @@ Per owner approval on 2026-11-03, each of the 19 fully merged remote branches wa
 | M5 Telegram & Operational Workflows | `feature/m5-telegram-operational-workflows` / #35 | **Completed** (Telegram identity & account linking, event private supergroup isolation without shared global group, operational recovery on /start, transactional outbox notifications with quiet hours, /report moderation workflow with emergency escalation; 16/16 tests in test/telegram-workflows.test.js, 487/487 unit/integration tests pass, ENABLE_LIVE_PAYMENTS=false preserved) |
 | M6 Organiser Workspace, Event Staff & Secure QR Check-in | `feature/m6-organiser-workspace` / #36 | **Completed** (Full organiser workspace with event dashboard, readiness checklist, ticket inventory, guest management, and operational announcements; event-scoped staff roles with organiser, event_manager, door_staff, guest_list_manager, assistant; server-authoritative HMAC-SHA256 signed QR tickets bound to events without leaking attendee PII; mobile-first door check-in scanner with camera QR detection and manual code lookup; atomic duplicate scan and replay prevention; ticket reissue and revocation lifecycle; 15/15 tests in test/m6-organiser-workspace.test.js, 642/642 tests passing across entire regression suite, 145/145 lint clean; `ENABLE_LIVE_PAYMENTS=false` preserved) |
 | M7 Attendee Discovery & Experience Hub | `feature/m7-attendee-experience` / #37 | **Completed** (Personalised attendee discovery feed with transparent, explainable recommendation scoring; location and privacy safeguards with manual city default, explicit device GPS distance bands without venue trilateration, and privacy-preserving mystery venue displays; mobile-first event cards with verified host trust badge, 21+ badge, cancellation and refund policies; multi-facet filtering for category, date range [today, tomorrow, weekend, week, month], price [all, free, paid], and sorting [recommended, trending, date_asc, price_low]; attendee experience hub on /me with booking tabs [all, upcoming, past], saved events / bookmarks lifecycle, and host announcements feed; digital QR pass integration with M6 ticket verification and door check-in status display; 12/12 tests in test/m7-attendee-experience.test.js, 8/8 in test/migrations.test.js, 654/654 tests passing across full regression suite, 16/16 Playwright E2E passing, 149/149 lint clean; `ENABLE_LIVE_PAYMENTS=false` preserved) |
-| M8 Real-time Notifications & Operational Comms | `feature/m8-realtime-notifications` | **Recommended Next Milestone** |
+| M8 Real-time Notifications & Operational Comms | `feature/m8-realtime-notifications` / #38 | **Completed** (Attendee self-cancellation with transactional seat hold release, ticket invalidation, invite revocation & confirmation notice; organiser operational announcements broadcast with quiet hours deferral; event staff scoping invariant fix for door_staff discovery; host approval workflow with automated notification; admin notifications outbox API & retry mechanism; interactive leads view; operational runbooks in `docs/launch/DNS_AND_EMAIL_ROUTING.md` resolving blockers #4 and #7; `ENABLE_LIVE_PAYMENTS=false` preserved) |
+| M9 Testing & Security Review | `feature/m9-testing-security-review` | **Recommended Next Milestone** |
 
 ## 11. Where the detail lives
 
 | Topic | Doc |
 |---|---|
+| Real-time notifications & operational comms architecture | [arch/REALTIME_NOTIFICATIONS_AND_COMMS.md](arch/REALTIME_NOTIFICATIONS_AND_COMMS.md) |
+| DNS & email routing runbook (Blockers #4 & #7) | [launch/DNS_AND_EMAIL_ROUTING.md](launch/DNS_AND_EMAIL_ROUTING.md) |
 | Attendee discovery & experience hub architecture | [arch/ATTENDEE_DISCOVERY_AND_EXPERIENCE.md](arch/ATTENDEE_DISCOVERY_AND_EXPERIENCE.md) |
 | Organiser workspace & QR check-in architecture | [arch/ORGANISER_WORKSPACE_AND_QR_CHECKIN.md](arch/ORGANISER_WORKSPACE_AND_QR_CHECKIN.md) |
 | UPI security audit | [UPI_SECURITY_AUDIT.md](UPI_SECURITY_AUDIT.md) |
