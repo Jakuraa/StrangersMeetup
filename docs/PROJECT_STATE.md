@@ -41,9 +41,10 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 | #36 M6 Organiser Workspace, Event Staff & Secure QR Check-In | `feature/m5-telegram-operational-workflows` ← `feature/m6-organiser-workspace` | `66ad026` | `lint, unit, e2e` ✅ | Server-Authoritative QR Tickets, Event-Scoped Staff Roles, Check-In Validation, Duplicate Scan Prevention, Capacity & Inventory |
 | #37 M7 Attendee Discovery & Experience Hub | `feature/m6-organiser-workspace` ← `feature/m7-attendee-experience` | `5453ab1` | `lint, unit, e2e` ✅ | Personalised Feed, Category Collections, Distance Bands, Mystery Venue Teasers, Bookmarking, Responsive Discovery |
 | #38 M8 Real-time Notifications & Operational Comms | `feature/m7-attendee-experience` ← `feature/m8-realtime-notifications` | `0b30221` | `lint, unit, e2e` ✅ | Notification Outbox, Quiet Hours (IST), Attendee Self-Cancellation, Host Approval Webhooks, Admin Outbox Management |
-| #39 M9 Multi-Role E2E, Security, Performance & Accessibility Review | `feature/m8-realtime-notifications` ← `feature/m9-testing-security-review` | `cd5b682` | `lint, unit, e2e` ✅ | 7-Role E2E Browser Harness, IDOR/BOLA & Security Audit, 44px Mobile Tap Targets, Sub-Millisecond Queries, Blocker #6 Resolution |
+| #39 M9 Multi-Role E2E, Security, Performance & Accessibility Review | `feature/m8-realtime-notifications` ← `feature/m9-testing-security-review` | `b8c82c5` | `lint, unit, e2e` ✅ | 7-Role E2E Browser Harness, IDOR/BOLA & Security Audit, 44px Mobile Tap Targets, Sub-Millisecond Queries, Blocker #6 Resolution |
+| #40 M10 Beta Readiness, Operational Hardening & Final Engineering Gate | `feature/m9-testing-security-review` ← `feature/m10-beta-readiness-hardening` | `HEAD` | `lint, unit, e2e` ✅ | Operational Hardening Runbook, 7-Role Acceptance Checklist, Venue/Partner Lifecycles, Blocker #6 Reconciliation, M1–M10 Gate Signoff |
 
-**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #39, PR #38, PR #37, PR #36, PR #35, PR #34, PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
+**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #40, PR #39, PR #38, PR #37, PR #36, PR #35, PR #34, PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
@@ -61,6 +62,7 @@ PR #36 is **open / preserved** (`feature/m6-organiser-workspace`).
 PR #37 is **open / preserved** (`feature/m7-attendee-experience`).
 PR #38 is **open / preserved** (`feature/m8-realtime-notifications`).
 PR #39 is **open / preserved** (`feature/m9-testing-security-review`).
+PR #40 is **open / preserved** (`feature/m10-beta-readiness-hardening`).
 
 ## 4. Migrations per environment
 
@@ -106,7 +108,7 @@ Rule: only the canonical workspace switches to `launch-mvp`. Milestone branches 
 | 3 | Reconcile which DB Production points at (§4) | open (owner will supply confirmed project ID & endpoint ID from Vercel → Storage; dynamic block list active) |
 | 4 | Domain/DNS for `nightlifez.com` (Cloudflare, Vercel) | open (M8 prepares the steps in docs/launch/DNS_AND_EMAIL_ROUTING.md) |
 | 5 | BotFather `/setdomain` and profile; Telegram groups and channel | open (M5 prepares the steps) |
-| 6 | Vercel Protection Bypass for Automation | open (M9) |
+| 6 | Vercel Protection Bypass for Automation | reconciled in M10; pending owner token generation in Vercel and injection into GitHub Secrets (see docs/launch/REMAINING_OWNER_ACTIONS.md) |
 | 7 | Email routing `contact@nightlifez.com` | open (M8 prepares the steps in docs/launch/DNS_AND_EMAIL_ROUTING.md) |
 | 8 | Legal fields (entity, grievance officer) | open |
 | 9 | Approve the branch/worktree deletions proposed in §9 | **completed / approved** (19 fully merged remote branches archived to `archive/<branch>` tags and deleted from origin; `.claude/worktrees/launch-mvp` preserved as is) |

@@ -428,7 +428,10 @@ test('MCP Phase 2C: server startup diagnostics never expose MCP_API_KEY or Beare
   child.stderr.on('data', (d) => { output += d.toString(); });
 
   // Wait for server to print startup diagnostics
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  const start = Date.now();
+  while (!output.includes('listening on') && Date.now() - start < 3000) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   child.kill('SIGTERM');
 
   assert.ok(output.includes('StrangersMeetup Control MCP listening on http://127.0.0.1:3339'));
