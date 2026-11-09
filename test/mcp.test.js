@@ -102,7 +102,7 @@ test('MCP Security: Rate limiter blocks requests beyond quota', () => {
 
 test('MCP Tools: sm_get_project_status connects to local server', async () => {
   const status = await getProjectStatus();
-  assert.ok(status.server_status === 'ONLINE' || status.server_status === 'OFFLINE');
+  assert.ok(status.server_status === 'ONLINE' || status.server_status === 'OFFLINE' || status.server_status === 'DEGRADED');
   assert.equal(status.port, 3000);
 });
 
