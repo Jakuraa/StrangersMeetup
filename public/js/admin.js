@@ -346,7 +346,35 @@
     return api('GET', '/api/admin/leads').then(function (r) {
       clear(main).append(el('h1', { text: 'Leads' }), el('div', { class: 'panel' }, [table([
         ['When', function (l) { return fmtDT(l.created_at); }], ['Type', function (l) { return l.type; }],
-        ['Details', function (l) { return el('div', {}, Object.keys(l.payload).map(function (k) { return el('div', {}, [el('strong', { text: k + ': ' }), String(l.payload[k])]); })); }],
+        ['Details', function (l) {
+          var p = l.payload || {};
+          var items = [];
+          if (l.type === 'host' && p.telegram) {
+            var handle = p.telegram.replace(/^@/, '');
+            items.push(el('div', {}, [
+              el('strong', { text: 'Telegram: ' }),
+              el('a', { href: 'https://t.me/' + encodeURIComponent(handle), target: '_blank', rel: 'noopener', text: '@' + handle })
+            ]));
+          }
+          if (p.email) {
+            items.push(el('div', {}, [
+              el('strong', { text: 'Email: ' }),
+              el('a', { href: 'mailto:' + encodeURIComponent(p.email), text: p.email })
+            ]));
+          }
+          if (p.phone) {
+            items.push(el('div', {}, [
+              el('strong', { text: 'Phone: ' }),
+              el('a', { href: 'tel:' + encodeURIComponent(p.phone), text: p.phone })
+            ]));
+          }
+          Object.keys(p).forEach(function (k) {
+            if (['telegram', 'email', 'phone'].indexOf(k) === -1) {
+              items.push(el('div', {}, [el('strong', { text: k + ': ' }), String(p[k])]));
+            }
+          });
+          return el('div', {}, items);
+        }],
         ['Status', function (l) { return statusSelect(l.status, ['new', 'contacted', 'closed', 'spam'], function (v) { api('PATCH', '/api/admin/leads/' + l.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }, 'Status of ' + l.type + ' lead from ' + fmtDT(l.created_at)); }]
       ], r.leads, 'No leads yet.', { name: 'Leads', primary: 1 })]));
       if (can(['super_admin', 'moderator'])) {
@@ -362,6 +390,75 @@
           ['Status', function (x) { return statusSelect(x.status, ['new', 'reviewing', 'actioned', 'dismissed'], function (v) { api('PATCH', '/api/admin/reports/' + x.id, { status: v }).then(function () { toast('Updated'); }).catch(fail); }, 'Status of safety report from ' + fmtDT(x.created_at)); }]
         ], r.reports, 'No reports.', { name: 'Safety reports', primary: 2 })]));
       }
+    });
+  };
+
+  /* ---------- notifications outbox & alerts ---------- */
+  TABS.notifications = function (statusFilter) {
+    var curStatus = statusFilter || 'all';
+    var url = '/api/admin/notifications' + (curStatus !== 'all' ? '?status=' + encodeURIComponent(curStatus) : '');
+    return api('GET', url).then(function (r) {
+      var stats = r.stats || {};
+      var filterBar = el('div', { class: 'subnav' }, [
+        el('span', { class: 'muted', text: 'Status filter: ' }),
+        el('a', { class: 'subnav-link' + (curStatus === 'all' ? ' active' : ''), href: '#', text: 'All (' + (stats.total_count || 0) + ')', onclick: function (e) { e.preventDefault(); TABS.notifications('all'); } }),
+        el('a', { class: 'subnav-link' + (curStatus === 'pending' ? ' active' : ''), href: '#', text: 'Pending (' + (stats.pending_count || 0) + ')', onclick: function (e) { e.preventDefault(); TABS.notifications('pending'); } }),
+        el('a', { class: 'subnav-link' + (curStatus === 'failed' ? ' active' : ''), href: '#', text: 'Failed (' + (stats.failed_count || 0) + ')', onclick: function (e) { e.preventDefault(); TABS.notifications('failed'); } }),
+        el('a', { class: 'subnav-link' + (curStatus === 'sent' ? ' active' : ''), href: '#', text: 'Sent (24h: ' + (stats.sent_last_24h || 0) + ')', onclick: function (e) { e.preventDefault(); TABS.notifications('sent'); } })
+      ]);
+
+      var kpiGrid = el('div', { class: 'kpi-grid' }, [
+        el('div', { class: 'kpi' }, [el('div', { class: 'kpi-val', text: String(stats.total_count || 0) }), el('div', { class: 'kpi-lbl', text: 'Total Notifications' })]),
+        el('div', { class: 'kpi' }, [el('div', { class: 'kpi-val', text: String(stats.pending_count || 0) }), el('div', { class: 'kpi-lbl', text: 'Pending Queue' })]),
+        el('div', { class: 'kpi' }, [el('div', { class: 'kpi-val', text: String(stats.failed_count || 0) }), el('div', { class: 'kpi-lbl', text: 'Failed / Retrying' })]),
+        el('div', { class: 'kpi' }, [el('div', { class: 'kpi-val', text: String(stats.sent_last_24h || 0) }), el('div', { class: 'kpi-lbl', text: 'Sent (last 24h)' })])
+      ]);
+
+      var tableRows = table([
+        ['Created', function (n) { return fmtDT(n.created_at); }],
+        ['Kind', function (n) { return el('span', { class: 'pill pill-sm', text: n.kind }); }],
+        ['Recipient', function (n) {
+          if (n.user_alias || n.telegram_user_id) {
+            return (n.user_alias || '') + (n.telegram_user_id ? ' (' + n.telegram_user_id + ')' : '');
+          }
+          return el('span', { class: 'muted', text: '—' });
+        }],
+        ['Event / Subject', function (n) {
+          if (n.event_title) return n.event_title;
+          if (n.booking_id) return 'Booking ' + n.booking_id.slice(0, 8);
+          return el('span', { class: 'muted', text: 'Platform' });
+        }],
+        ['Status', function (n) {
+          var cls = n.status === 'sent' ? 'pill-confirmed' : n.status === 'failed' ? 'pill-cancelled' : 'pill-pending';
+          return el('span', { class: 'pill pill-sm ' + cls, text: n.status });
+        }],
+        ['Attempts', function (n) { return String(n.attempts || 0); }],
+        ['Next / Sent', function (n) {
+          if (n.status === 'sent' && n.sent_at) return fmtDT(n.sent_at);
+          if (n.next_attempt_at) return fmtDT(n.next_attempt_at);
+          return '—';
+        }],
+        ['Error', function (n) {
+          if (!n.last_error) return '—';
+          return el('small', { class: 'muted', title: n.last_error, text: n.last_error.slice(0, 50) + (n.last_error.length > 50 ? '…' : '') });
+        }],
+        ['', function (n) {
+          if (n.status === 'sent') return '';
+          return btn('Retry', function () {
+            api('POST', '/api/admin/notifications/' + n.id + '/retry', {}).then(function (res) {
+              toast('Delivery outcome: ' + (res.outcome || 'retried'));
+              TABS.notifications(curStatus);
+            }).catch(fail);
+          }, null, 'Retry notification ' + n.id);
+        }]
+      ], r.notifications, 'No notifications found.', { name: 'Outbox' });
+
+      clear(main).append(
+        el('h1', { text: 'Notification Outbox & Operational Comms' }),
+        kpiGrid,
+        filterBar,
+        el('div', { class: 'panel mt-3' }, [tableRows])
+      );
     });
   };
 

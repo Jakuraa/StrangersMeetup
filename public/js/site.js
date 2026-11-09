@@ -677,11 +677,25 @@
           html += '<p><strong>You are in.</strong> ' + (b.ticket ? 'Your booking pass is confirmed.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
           if (b.invite) html += '<p><a class="btn btn-tg" href="' + safeUrl(b.invite.link) + '" rel="noopener">Join the private group</a></p><p class="muted">Single-use invite, valid until ' + esc(fmt(b.invite.expiresAt)) + '.</p>';
           if (BOT) html += '<p><a class="link-arrow" href="https://t.me/' + esc(BOT) + '?start=booking_' + esc(b.id) + '">Open the bot to get a fresh invite</a></p>';
+        } else if (b.status === 'cancelled') {
+          html += '<div class="booking-notice booking-notice-warning" role="status">' +
+            '<span class="notice-icon" aria-hidden="true">✕</span>' +
+            '<div class="booking-notice-content">' +
+            '<strong>Reservation Cancelled</strong>' +
+            '<p class="muted">This booking has been cancelled and admission passes have been revoked.</p>' +
+            '</div></div>';
         } else if (b.status === 'refunded') {
           html += '<p>This booking was refunded to your original payment method.</p>';
         }
         html += '<div class="pass-footer-note"><p class="muted small">Show this digital pass at the entrance for verification.</p></div>' +
           '</div>';
+
+        var canCancel = ['confirmed', 'pending_approval'].indexOf(b.status) !== -1 && !b.isCheckedIn;
+        if (canCancel) {
+          html += '<div class="booking-cancel-section mt-4 text-center">' +
+            '<button type="button" class="btn btn-outline-danger btn-sm" data-cancel-booking="' + esc(b.id) + '">Cancel Reservation</button>' +
+            '</div>';
+        }
 
         html += '<div class="booking-nav-actions">' +
           '<a class="btn btn-primary btn-sm" href="/me">View All My Bookings</a>' +
@@ -691,6 +705,29 @@
           '</div>';
 
         el.innerHTML = html;
+
+        var cancelBtn = el.querySelector('[data-cancel-booking]');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', function () {
+            if (!confirm('Are you sure you want to cancel your reservation? Any tickets will be revoked and your seat released.')) return;
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = 'Cancelling...';
+            api('POST', '/api/me/bookings/' + encodeURIComponent(b.id) + '/cancel', { reason: 'Attendee requested cancellation' }).then(function (res) {
+              if (res.ok) {
+                toast('Reservation cancelled');
+                tick();
+              } else {
+                alert(res.error?.message || 'Failed to cancel reservation');
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = 'Cancel Reservation';
+              }
+            }).catch(function (err) {
+              alert(err.message || 'Network error');
+              cancelBtn.disabled = false;
+              cancelBtn.textContent = 'Cancel Reservation';
+            });
+          });
+        }
         if (b.status === 'pending_payment' && tries++ < 40) setTimeout(tick, 3000);
       });
     };
