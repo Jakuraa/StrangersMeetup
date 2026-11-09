@@ -38,8 +38,12 @@ Local `main` in the main clone is at `5693f7b`, an older Production commit that 
 | #33 M4.3.3 Final Provider Verification Integrity | `feature/m4-3-2-financial-integrity` ← `feature/m4-3-3-provider-verification` | `4c54711` | `lint, unit, e2e` ✅ · Vercel ✅ | Removal of Currency Defaults, Elimination of Merchant Fallback, Authentic S2S Polling & Attestation |
 | #34 M4.3.4 Provider Contract Decision & M4 Closure | `feature/m4-3-3-provider-verification` ← `feature/m4-3-4-contract-decision` | `1e5bd19` | `lint, unit, e2e` ✅ | PhonePe Contract Determination (Outcome B), Full Regression Suite, Audit & Milestone M4 Closure |
 | #35 M5 Telegram & Operational Workflows | `feature/m4-3-4-contract-decision` ← `feature/m5-telegram-operational-workflows` | `262f4f0` | `lint, unit, e2e` ✅ | Telegram Identity & Account Linking, Event Private Group Isolation (No Shared Group), Operational Notifications with Quiet Hours, /report Workflow |
+| #36 M6 Organiser Workspace, Event Staff & Secure QR Check-In | `feature/m5-telegram-operational-workflows` ← `feature/m6-organiser-workspace` | `66ad026` | `lint, unit, e2e` ✅ | Server-Authoritative QR Tickets, Event-Scoped Staff Roles, Check-In Validation, Duplicate Scan Prevention, Capacity & Inventory |
+| #37 M7 Attendee Discovery & Experience Hub | `feature/m6-organiser-workspace` ← `feature/m7-attendee-experience` | `5453ab1` | `lint, unit, e2e` ✅ | Personalised Feed, Category Collections, Distance Bands, Mystery Venue Teasers, Bookmarking, Responsive Discovery |
+| #38 M8 Real-time Notifications & Operational Comms | `feature/m7-attendee-experience` ← `feature/m8-realtime-notifications` | `0b30221` | `lint, unit, e2e` ✅ | Notification Outbox, Quiet Hours (IST), Attendee Self-Cancellation, Host Approval Webhooks, Admin Outbox Management |
+| #39 M9 Multi-Role E2E, Security, Performance & Accessibility Review | `feature/m8-realtime-notifications` ← `feature/m9-testing-security-review` | `feature` head | `lint, unit, e2e` ✅ | 7-Role E2E Browser Harness, IDOR/BOLA & Security Audit, 44px Mobile Tap Targets, Sub-Millisecond Queries, Blocker #6 Resolution |
 
-**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #35, PR #34, PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
+**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #39, PR #38, PR #37, PR #36, PR #35, PR #34, PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
 
 PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
 PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
@@ -53,6 +57,10 @@ PR #32 is **open / preserved** (`feature/m4-3-2-financial-integrity`).
 PR #33 is **open / preserved** (`feature/m4-3-3-provider-verification`).
 PR #34 is **open / preserved** (`feature/m4-3-4-contract-decision`).
 PR #35 is **open / preserved** (`feature/m5-telegram-operational-workflows`).
+PR #36 is **open / preserved** (`feature/m6-organiser-workspace`).
+PR #37 is **open / preserved** (`feature/m7-attendee-experience`).
+PR #38 is **open / preserved** (`feature/m8-realtime-notifications`).
+PR #39 is **open / preserved** (`feature/m9-testing-security-review`).
 
 ## 4. Migrations per environment
 

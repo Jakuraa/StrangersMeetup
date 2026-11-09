@@ -1177,6 +1177,32 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.org-filter-btn {
+  padding: 8px 16px;
+  min-height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface, #111625);
+  color: var(--muted, #94a3b8);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s ease;
+}
+.org-filter-btn:hover, .org-filter-btn:focus-visible {
+  border-color: var(--neon-cyan);
+  color: #fff;
+}
+.org-filter-btn.active {
+  background: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+  color: #050814;
+  font-weight: 700;
 }
 .checkin-notice-banner {
   display: flex;

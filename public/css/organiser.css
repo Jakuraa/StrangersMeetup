@@ -199,7 +199,7 @@
 .org-stat-val { font-size: clamp(1.3rem, 3vw, 1.6rem); font-weight: 700; color: #fff; margin: 0; }
 .org-stat-lbl { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin: 0; }
 .org-guest-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 20px; }
-.org-filter-btn { padding: 6px 14px; min-height: 40px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+.org-filter-btn { padding: 6px 14px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all .15s; }
 .org-filter-btn:hover { border-color: var(--neon-cyan); color: #fff; }
 .org-filter-btn.active { background: var(--neon-cyan); border-color: var(--neon-cyan); color: #000; font-weight: 700; }
 
