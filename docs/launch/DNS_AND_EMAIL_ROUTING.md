@@ -1,144 +1,130 @@
 # NIGHTLIFEZ Launch Operations: DNS & Email Routing Runbook
-**Target Milestone:** M8 Real-time Notifications & Operational Comms  
-**Scope:** Resolves Blocker #4 (Domain `nightlifez.com` DNS, CNAME flattening, SSL Full Strict) and Blocker #7 (Email routing `contact@nightlifez.com`).  
-**Status:** Operationally Prepared (Owner Execution Steps Gated for Production Window)
+
+**Scope:** domain `nightlifez.com` on Cloudflare DNS, served by Vercel; inbound mail for `contact@`, `safety@` and `grievance@`.
+**Status:** owner-executed. The agent does not change DNS, Cloudflare or Vercel settings.
+**Last checked against vendor docs:** 2026-11-10 (sources in §6).
 
 ---
 
-## 1. Executive Summary
+## 1. Decisions (and why they changed)
 
-This runbook provides the exact, production-ready specifications and manual execution checklist required to configure the apex domain `nightlifez.com`, subdomains, Cloudflare SSL/TLS encryption, and inbound email routing for `contact@nightlifez.com`.
-
-All steps respect project boundaries:
-- `ENABLE_LIVE_PAYMENTS=false` remains strictly enforced.
-- Cloudflare credentials, DNS nameservers, and Production records are not modified automatically.
-- This runbook serves as the authoritative, copy-paste ready blueprint for the domain administrator.
-
----
-
-## 2. Blocker #4: Domain `nightlifez.com` & Cloudflare DNS Configuration
-
-### 2.1 Nameserver Delegation
-Configure registrar (Namecheap / GoDaddy / Google Domains) nameservers to point to Cloudflare:
-- Primary NS: `aria.ns.cloudflare.com` (or allocated Cloudflare account NS)
-- Secondary NS: `dane.ns.cloudflare.com` (or allocated Cloudflare account NS)
-
-### 2.2 DNS Zone Records
-
-| Type | Name | Content / Target | Proxy Status | TTL | Purpose |
-|:---|:---|:---|:---|:---|:---|
-| **CNAME** | `@` (apex) | `cname.vercel-dns.com.` | Proxied (Orange Cloud) | Auto | Apex CNAME Flattening to Vercel production edge |
-| **CNAME** | `www` | `nightlifez.com` | Proxied (Orange Cloud) | Auto | Subdomain redirect / canonical host |
-| **CNAME** | `preview` | `cname.vercel-dns.com.` | DNS Only (Grey Cloud) | Auto | Dedicated Vercel preview staging endpoint |
-| **A** | `_vercel` | `76.76.21.21` | DNS Only (Grey Cloud) | Auto | Vercel domain verification record (if requested) |
-
-### 2.3 Cloudflare SSL/TLS Settings
-1. **Encryption Mode:** `Full (Strict)`
-   - Requires valid TLS certificate on origin (Vercel automatic Let's Encrypt).
-   - Mitigates man-in-the-middle attacks between Cloudflare Edge and Vercel Origin.
-2. **Edge Certificates:**
-   - **Always Use HTTPS:** Enabled (`ON`). Automatically redirects `http://*` to `https://*` with 301.
-   - **HTTP Strict Transport Security (HSTS):** Enabled (`ON`).
-     - Max-Age: `31536000` (1 year).
-     - Include Subdomains: `ON`.
-     - Preload: `OFF` (enable only after 30 days of stable production traffic).
-   - **Minimum TLS Version:** `TLS 1.2` or `TLS 1.3`.
-   - **Opportunistic Encryption:** Enabled (`ON`).
-   - **TLS 1.3:** Enabled (`ON`).
-3. **Page Rules / Redirect Rules (Apex Canonicalization):**
-   - URL Redirect Rule: `http*://www.nightlifez.com/*` -> `https://nightlifez.com/$1` (301 Permanent Redirect).
+| Topic | Old instruction | Now | Reason |
+|:---|:---|:---|:---|
+| Vercel records | Proxied (orange cloud) + Cloudflare SSL `Full (Strict)` | **DNS only (grey cloud)**. No Cloudflare SSL/TLS, HSTS or redirect-rule setup for these hosts. | Vercel's guidance is "Use DNS-only mode for direct traffic": a proxy in front of Vercel reduces the connection signals its firewall and DDoS mitigation use, disables the Bot Protection managed ruleset, adds a second cache that Vercel deploys do not invalidate, and must keep certificate-validation paths open. The `Full (Strict)` steps only applied when proxying, so they are removed. [V1][V3] |
+| Apex record | `CNAME @ → cname.vercel-dns.com` | **A `@` → the IP shown in Vercel → Project → Settings → Domains** | Vercel's documented apex record is an A record; values are project-specific, so copy them from the dashboard rather than this file. [V1] |
+| `www` | CNAME `www → nightlifez.com` (proxied) + Cloudflare redirect rule | **CNAME `www` → the target shown in Settings → Domains**, and a redirect `www → apex` configured **in Vercel** | Vercel: if both apex and www are added, configure a redirect in project settings. [V1] |
+| DMARC | `p=reject; sp=reject; pct=100` on day one | **`p=none` with `rua` reporting**, then `quarantine`, then `reject` | Start in monitor mode; tighten only once every real sender passes aligned SPF/DKIM. A day-one `reject` silently blocks the first legitimate sender added later (transactional mail, Google Workspace, a newsletter tool) before anyone notices. [C3][C4] |
+| "Send as contact@" | Not addressed | **Not possible with Cloudflare Email Routing** (see §3.4) | Email Routing is receive/forward only. [C1] |
 
 ---
 
-## 3. Blocker #7: Inbound Email Routing (`contact@nightlifez.com`)
+## 2. Web: Vercel records on Cloudflare DNS
 
-To receive platform inquiries, host applications, partnership requests, and safety grievance communications without running a dedicated mail server, Cloudflare Email Routing is utilized to forward inbound mail to the designated administrator inbox.
+### 2.1 Nameservers
+At the registrar, set the two nameservers Cloudflare assigned to the zone (shown on the zone's Overview page).
 
-### 3.1 Cloudflare Email Routing MX Records
+### 2.2 Add the domains in Vercel first
+Vercel → project `strangersmeetup` → Settings → Domains → add `nightlifez.com` and `www.nightlifez.com`. Choose **`nightlifez.com` as primary** and set `www.nightlifez.com` to **redirect (308) to `nightlifez.com`**. Vercel then shows the exact record values for each host. (Choosing www as primary instead is equally valid; just invert the redirect. Pick one and keep it.)
 
-| Type | Name | Priority | Content / Mail Server | TTL |
+### 2.3 Cloudflare DNS records
+
+| Type | Name | Content | Proxy status | Purpose |
 |:---|:---|:---|:---|:---|
-| **MX** | `@` | `13` | `route1.mx.cloudflare.net` | Auto |
-| **MX** | `@` | `57` | `route2.mx.cloudflare.net` | Auto |
-| **MX** | `@` | `89` | `route3.mx.cloudflare.net` | Auto |
+| **A** | `@` | value from Vercel → Settings → Domains (historically `76.76.21.21`; newer projects get a project-specific IP) | **DNS only (grey)** | apex → Vercel |
+| **CNAME** | `www` | value from Vercel → Settings → Domains (e.g. `cname.vercel-dns.com` or a project-specific `*.vercel-dns-0xx.com`) | **DNS only (grey)** | www → Vercel, which then redirects to apex |
+| **TXT** | `_vercel` | only if Vercel shows a verification TXT (domain already used by another Vercel account) | DNS only | ownership verification |
 
-### 3.2 Sender Policy Framework (SPF)
-Prevents email spoofing on the `nightlifez.com` domain.
+Remove any pre-existing `AAAA` record on `@` or `www`. Do **not** add a CNAME at the apex. There is **no `preview.` subdomain**: Preview uses the stable branch alias `strangersmeetup-git-launch-mvp-jakuraa.vercel.app` (see `docs/launch/PREVIEW_LOGIN.md`).
 
-| Type | Name | Content | TTL |
-|:---|:---|:---|:---|
-| **TXT** | `@` | `v=spf1 include:_spf.mx.cloudflare.net ~all` | Auto |
+### 2.4 Cloudflare settings that must NOT be applied to these hosts
+- No orange-cloud proxy, so no SSL/TLS mode, edge certificate, HSTS, "Always Use HTTPS" or Redirect Rules are needed for `@`/`www`. Vercel serves HTTPS and redirects HTTP→HTTPS itself. [V1]
+- If the zone's SSL/TLS mode is ever changed for other proxied hosts, it does not affect grey-cloud records.
 
-*Note:* If transactional sending (e.g., Postmark or Resend) is added in a subsequent phase, append `include:spf.postmarkapp.com` before `~all`.
-
-### 3.3 DomainKeys Identified Mail (DKIM)
-Provided automatically by Cloudflare Email Routing when verification is active.
-
-| Type | Name | Content | TTL |
-|:---|:---|:---|:---|
-| **TXT** | `*._domainkey` | (As generated by Cloudflare Email Routing setup wizard) | Auto |
-
-### 3.4 Domain-based Message Authentication (DMARC)
-Enforces rejection of fraudulent mail impersonating `nightlifez.com` and routes aggregate failure reports.
-
-| Type | Name | Content | TTL |
-|:---|:---|:---|:---|
-| **TXT** | `_dmarc` | `v=DMARC1; p=reject; sp=reject; pct=100; rua=mailto:contact@nightlifez.com` | Auto |
-
-### 3.5 Routing Rules
-In Cloudflare Dashboard -> `nightlifez.com` -> `Email Routing` -> `Routing Rules`:
-
-| Custom Address | Action | Destination Address | Status |
-|:---|:---|:---|:---|
-| `contact@nightlifez.com` | Send to | `<designated-operations-inbox>@gmail.com` | Active |
-| `safety@nightlifez.com` | Send to | `<designated-operations-inbox>@gmail.com` | Active |
-| `grievance@nightlifez.com` | Send to | `<designated-operations-inbox>@gmail.com` | Active |
-| `catch-all` | Drop | — | Disabled (Drop unexpected addresses) |
+### 2.5 Verify
+```bash
+dig +short A nightlifez.com          # the Vercel IP from Settings → Domains, NOT 104.21.x / 172.67.x (those mean it is proxied)
+dig +short CNAME www.nightlifez.com  # the Vercel CNAME target
+curl -sI http://nightlifez.com | head -3         # 308 → https://nightlifez.com/
+curl -sI https://www.nightlifez.com | head -3    # 308 → https://nightlifez.com/
+curl -s https://nightlifez.com/api/health        # ok
+vercel domains verify nightlifez.com --project strangersmeetup
+```
+Vercel → Settings → Domains must show both hosts as **Valid Configuration**.
 
 ---
 
-## 4. Verification & Health Check Procedure
+## 3. Email: inbound only, via Cloudflare Email Routing
 
-Run the following terminal commands to verify that DNS and Email records have propagated correctly:
+### 3.1 Enable
+Cloudflare → Email Service → Email Routing → Onboard domain `nightlifez.com`. Cloudflare adds its own MX, SPF and DKIM records; **accept the values it generates** rather than typing them from this file. [C2]
 
-### Check Apex Resolution
-```bash
-dig +short A nightlifez.com
-# Should return Cloudflare Anycast IPs (e.g. 104.21.x.x, 172.67.x.x)
-```
+Expected shape (verify against what Cloudflare created):
 
-### Check CNAME Flattening & TLS
-```bash
-curl -svo /dev/null https://nightlifez.com
-# Should complete TLS 1.3 handshake with HTTP 200 / 308 (Vercel)
-```
+| Type | Name | Content |
+|:---|:---|:---|
+| MX | `@` | `route1/2/3.mx.cloudflare.net` (priorities as created) |
+| TXT | `@` | `v=spf1 include:_spf.mx.cloudflare.net ~all` |
+| TXT | `cf2024-1._domainkey` (or as created) | Cloudflare-generated DKIM key |
 
-### Check Mail Exchanger (MX) Records
+Only one SPF TXT record may exist on `@`. When a real sender is added later, edit that one record (e.g. add the provider's `include:`), never add a second.
+
+### 3.2 Destination and rules
+1. Email Routing → Destination addresses → add the operations inbox → click the verification link.
+2. Routing rules: `contact@`, `safety@`, `grievance@` → Send to → the verified inbox. Catch-all: Drop (or disabled).
+
+### 3.3 DMARC (start in monitor mode)
+
+| Type | Name | Content |
+|:---|:---|:---|
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:contact@nightlifez.com` |
+
+Path to enforcement:
+1. **Now:** `p=none`. Read the aggregate (`rua`) reports for 2–4 weeks.
+2. **After every real sender (see §3.4) passes *aligned* SPF or DKIM in the reports:** `p=quarantine` (optionally `pct=25` → `100`).
+3. **After a clean month at quarantine:** `p=reject`.
+
+Note: forwarded mail can fail a *sender's* strict DMARC at the destination; Cloudflare mitigates with SRS and ARC but documents this limitation. [C1]
+
+### 3.4 Can we send *as* `contact@nightlifez.com` for free?
+- **Cloudflare Email Routing: no.** Cloudflare states that Email Routing "does not support sending or replying from your Cloudflare domain"; replies go out from the destination address (e.g. the Gmail inbox). [C1]
+- **Cloudflare Email Sending** can send from the domain, but it is a **public beta on the Workers Paid plan**, not free for arbitrary recipients. [C2]
+- **Gmail "Send mail as"** with Gmail's own servers: Gmail can label the From as `contact@nightlifez.com`, but the mail is signed by `gmail.com`, so DMARC for `nightlifez.com` will **not align**. Under `p=none` it is delivered, but deliverability is unreliable, and it becomes rejected once DMARC reaches `quarantine`/`reject`. Not recommended for anything important.
+- **Recommended when sending is actually needed:** a provider that signs DKIM for `nightlifez.com` (e.g. Google Workspace mailbox, or a transactional service such as Resend/Postmark/Cloudflare Email Sending). Add its SPF include and DKIM records, confirm alignment in DMARC reports, then continue the §3.3 path.
+
+The product does not send email today; it notifies via Telegram.
+
+### 3.5 Verify
 ```bash
 dig +short MX nightlifez.com
-# Expected:
-# 13 route1.mx.cloudflare.net.
-# 57 route2.mx.cloudflare.net.
-# 89 route3.mx.cloudflare.net.
+dig +short TXT nightlifez.com | grep v=spf1      # exactly one line
+dig +short TXT _dmarc.nightlifez.com             # "v=DMARC1; p=none; rua=mailto:contact@nightlifez.com"
 ```
-
-### Check SPF Record
-```bash
-dig +short TXT nightlifez.com | grep "v=spf1"
-# Expected: "v=spf1 include:_spf.mx.cloudflare.net ~all"
-```
-
-### Check DMARC Policy
-```bash
-dig +short TXT _dmarc.nightlifez.com
-# Expected: "v=DMARC1; p=reject; sp=reject; pct=100; rua=mailto:contact@nightlifez.com"
-```
+Then send a test mail from a different account to `contact@nightlifez.com` and confirm it arrives.
 
 ---
 
-## 5. Rollback & Emergency Plan
+## 4. Rollback
+- Web: DNS changes are reversible by editing the records. Because records are grey-cloud, there is no proxy layer to roll back.
+- Email: disabling Email Routing removes the MX records Cloudflare added; mail to the domain then bounces.
+- DMARC: if legitimate mail is quarantined/rejected, step back to `p=none` immediately and fix alignment.
 
-If Cloudflare DNS proxying causes origin routing loops or header drops:
-1. Switch apex `@` and `www` records from **Proxied** (Orange Cloud) to **DNS Only** (Grey Cloud) temporarily.
-2. Verify direct resolution to Vercel edge.
-3. Check Cloudflare SSL/TLS mode is set to **Full (Strict)**, not **Flexible** (which causes 301 redirection loops with HTTPS-enforcing origins like Vercel).
+---
+
+## 5. Owner checklist
+1. Vercel → Settings → Domains: add apex + www, apex primary, www → 308 apex.
+2. Cloudflare DNS: A `@` and CNAME `www` with Vercel's values, **grey cloud**; remove conflicting AAAA/CNAME records.
+3. Run §2.5 checks.
+4. Cloudflare Email Routing: onboard, verify destination, add the three rules.
+5. Add DMARC `p=none` with `rua`.
+6. Run §3.5 checks.
+
+---
+
+## 6. Sources
+- [V1] Vercel — Set up a custom domain (A record for apex, CNAME for subdomains, redirect between apex and www): https://vercel.com/docs/domains/set-up-custom-domain
+- [V2] Vercel — Troubleshooting domains (`dig` checks, HTTPS redirect): https://vercel.com/docs/domains/troubleshooting
+- [V3] Vercel KB — Using Cloudflare and other reverse proxies with Vercel (updated 2026-10-19; "Why is another CDN or proxy in front of Vercel not recommended?", "Use DNS-only mode for direct traffic"): https://vercel.com/kb/guide/can-i-use-a-proxy-on-top-of-my-vercel-deployment
+- [C1] Cloudflare — Email Service Postmaster, Known limitations ("Sending or replying to an email from your Cloudflare domain"; restrictive DMARC and forwarding; SRS): https://developers.cloudflare.com/email-service/reference/postmaster/
+- [C2] Cloudflare — Email Service overview (Email Sending beta on Workers Paid; Email Routing on Free/Paid; onboarding adds MX/SPF/DKIM): https://developers.cloudflare.com/email-service/ and https://developers.cloudflare.com/email-service/get-started/route-emails/
+- [C3] Cloudflare — Email authentication, DMARC deployment strategy (`p=none` → `quarantine` → `reject`): https://developers.cloudflare.com/email-service/concepts/email-authentication/
+- [C4] Cloudflare — DNS: Set up Google Workspace, DMARC ("Start with `p=none`"): https://developers.cloudflare.com/dns/manage-dns-records/how-to/set-up-google-workspace/
