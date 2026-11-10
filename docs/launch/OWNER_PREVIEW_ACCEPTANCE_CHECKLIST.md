@@ -1,10 +1,13 @@
 # NIGHTLIFEZ Owner Preview Acceptance Checklist
 
 **Milestone:** NIGHTLIFEZ M10 — Beta Readiness, Operational Hardening & Final Engineering Gate  
-**Target Environment:** Vercel Protected Preview (`*.vercel.app`)  
+**Target Environment:** Vercel Protected Preview  
+**Verified Preview URL:** `https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app`  
 **Access Requirement:** Vercel Deployment Protection SSO Authentication required. No public bypass.  
 **Live Payments Status:** Strictly `ENABLE_LIVE_PAYMENTS=false`. Free RSVP bookings only.  
+**Companion Guide:** [`docs/launch/OWNER_ACCEPTANCE_SESSION_GUIDE.md`](OWNER_ACCEPTANCE_SESSION_GUIDE.md)  
 **Version:** 1.0 (Beta Candidate)  
+**Acceptance Status:** **PENDING OWNER EXECUTION**  
 
 ---
 
