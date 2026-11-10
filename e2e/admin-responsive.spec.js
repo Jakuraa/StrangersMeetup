@@ -144,11 +144,12 @@ for (const vp of VIEWPORTS) {
       expect((await inspectTable(leads)).problems).toEqual([]);
       await expect(page.getByRole('heading', { name: 'Safety reports' })).toHaveCount(0); // support cannot see reports
       expect((await (await page.request.get('/api/admin/leads')).json()).reports).toEqual([]);
-      const select = leads.getByRole('combobox', { name: /^Status of venue lead from/ });
+      // Other specs submit real venue leads into the shared DB, so target the seeded one.
+      const select = leads.locator('tbody tr', { hasText: 'Test Venue Owner' }).getByRole('combobox', { name: /^Status of venue lead from/ });
       await select.selectOption('contacted');
       await expect(page.getByRole('status').filter({ hasText: 'Updated' })).toBeVisible();
       await openAdminTab(page, 'Leads & reports');
-      await expect(leads.getByRole('combobox', { name: /^Status of venue lead from/ })).toHaveValue('contacted');
+      await expect(leads.locator('tbody tr', { hasText: 'Test Venue Owner' }).getByRole('combobox', { name: /^Status of venue lead from/ })).toHaveValue('contacted');
       await shot(page, testInfo, 'leads');
 
       await signInAs(page, 'admin');
