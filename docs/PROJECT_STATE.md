@@ -21,7 +21,7 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 | Ref | SHA | What it is |
 |---|---|---|
 | `origin/main` | `5c6652a` | Production. Merge of PR #2 (2026-10-29). Contains nothing that `launch-mvp` lacks. |
-| `origin/launch-mvp` | `771f6e1` | Merge of **PR #41**, "Consolidate M4–M10 (supersedes #30–#40)", 2026-11-10. Head of the consolidated stack: `02bfdba`. |
+| `origin/launch-mvp` | `8edb778` | Merge of PR #43 (launch docs). Before it: PR #42 `dc671d3` (S3a payment flags) and **PR #41** `771f6e1` ("Consolidate M4–M10 (supersedes #30–#40)", head `02bfdba`), all 2026-11-10. |
 | `archive/feature/m4-3-upi-security-remediation` … `archive/feature/m10-beta-readiness-hardening` | 11 tags | Heads of the superseded PRs #30–#40 (table in §3). Branches deleted after tagging. |
 
 ## 3. Pull requests and CI
@@ -31,7 +31,6 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 | PR | Base ← Head | Purpose |
 |---|---|---|
 | #17 Production release | `main` ← `launch-mvp` | Owner gate 1. Must not be merged without the owner's separate approval. |
-| #42 | `launch-mvp` ← `fix/s3a-upi-checkout-flag` | S3a: `UPI_CHECKOUT_ENABLED` separate from `ENABLE_LIVE_PAYMENTS` |
 
 **Consolidation (2026-11-10).** PR #41 merged `feature/m10-beta-readiness-hardening` @ `02bfdba` into `launch-mvp` as `771f6e1`. CI run [42791819075](https://github.com/Jakuraa/StrangersMeetup/actions/runs/42791819075) on the exact head:
 - lint 153/153;
@@ -53,6 +52,8 @@ CI had been red on #37–#40 because one e2e test leaked state between projects;
 | #38 | feature/m8-realtime-notifications | `0b30221` | closed, superseded by #41 |
 | #39 | feature/m9-testing-security-review | `b8c82c5` | closed, superseded by #41 |
 | #40 | feature/m10-beta-readiness-hardening | `142cc62` (branch reached `02bfdba`) | closed, superseded by #41 |
+
+Merged 2026-11-10 after #41: **#42** `dc671d3` (S3a `UPI_CHECKOUT_ENABLED`; CI [42794944411](https://github.com/Jakuraa/StrangersMeetup/actions/runs/42794944411): lint 154/154, `npm test` 699 (697 pass, 0 fail, 2 skipped), e2e 182 (171 passed, 11 skipped, 0 failed)) and **#43** `8edb778` (S3b–d + S5 docs; CI [42795184441](https://github.com/Jakuraa/StrangersMeetup/actions/runs/42795184441)).
 
 Earlier merges into `launch-mvp`: #23 `7c5079e`, #25 `83a30a7`, #26 `46b85c1`, #27 `69cafae`, #28 `c3b4e83`, #29 `c71ec8d`.
 
