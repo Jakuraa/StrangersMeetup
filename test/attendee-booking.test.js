@@ -92,6 +92,13 @@ test('preview reviewer auth: rejected in production, works in preview with restr
 
     assert.equal(previewReviewerEnabled(), true, 'enabled in preview test mode');
 
+    // Verify real Vercel Preview runtime policy (VERCEL_ENV=preview with NODE_ENV=production)
+    process.env.VERCEL_ENV = 'preview';
+    process.env.NODE_ENV = 'production';
+    delete process.env.IS_PREVIEW;
+    assert.equal(previewReviewerEnabled(), true, 'enabled in Vercel preview even with NODE_ENV=production');
+    process.env.IS_PREVIEW = 'true';
+
     // Reviewer signin via JSON
     const authRes = await c.post('/api/auth/preview-reviewer', { next: '/events' }, {
       'accept': 'application/json'

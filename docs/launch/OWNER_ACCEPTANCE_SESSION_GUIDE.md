@@ -7,16 +7,19 @@
 **Vercel Inspector:** `https://vercel.com/jakuraa/strangersmeetup/6MFkpgjUArzipkNYH6pTb7z5swq2`  
 **Security Status:** Vercel Deployment Protection (SSO) active. Public access blocked.  
 **Financial Boundary:** `ENABLE_LIVE_PAYMENTS=false` strictly enforced. Free RSVP bookings only.  
-**Acceptance Status:** **PENDING OWNER EXECUTION** (Automated tests pass; human-led acceptance walkthrough has not yet occurred).  
+**Remediation Status:** **CODE FIXES COMPLETE — OWNER CONFIGURATION PENDING** (DEF-01 code fix applied and verified with regression suite; awaiting owner setup of `SESSION_SECRET`, `TELEGRAM_BOT_USERNAME`, `ADMIN_BOOTSTRAP_TELEGRAM_ID` in Vercel Preview).  
 
 ---
 
 ## 1. Executive Briefing & Walkthrough Objective
 
-Engineering Milestone 10 is complete on feature branch `feature/m10-beta-readiness-hardening` (PR #40). Automated CI test suites (692 unit/integration tests, 14/14 multi-role Playwright browser tests, 8/8 migration tests, and 153 lint files) have passed cleanly.
+Engineering Milestone 10 is complete on feature branch `feature/m10-beta-readiness-hardening` (PR #40). Following the initial live acceptance test, critical defect remediation was conducted:
+- **DEF-01 (Preview Reviewer Environment Detection):** Fixed in [`lib/dev-personas.js`](file:///Users/pradeepjakuraa/strangersmeetup/lib/dev-personas.js). Vercel Preview is now correctly detected regardless of `NODE_ENV=production`.
+- **DEF-05 (Rate Limiting):** Verified as correct security behavior (5 leads/hour/IP). Test harness updated to recognize HTTP 429 as protection.
+- **Regression Suite:** `test/preview-remediation.test.js` verified 10 security policy conditions (3/3 test suites pass, 693 total unit/integration tests pass, 155 lint files clean).
 
 However, **code verification in CI is not user acceptance.**  
-The purpose of this session is for the repository owner to independently verify the complete, end-to-end product across all **seven user roles** on the real, protected Vercel Preview deployment prior to any production deployment or PR merging.
+The purpose of this session is for the repository owner to configure the three required Vercel Preview environment variables (`SESSION_SECRET`, `TELEGRAM_BOT_USERNAME`, `ADMIN_BOOTSTRAP_TELEGRAM_ID`), trigger a Preview redeploy, and independently verify the complete, end-to-end product across all **seven user roles** on the real, protected Vercel Preview deployment prior to any production deployment or PR merging.
 
 ---
 
@@ -32,16 +35,41 @@ The Preview deployment is shielded by Vercel Deployment Protection.
    - Vercel's edge proxy issues a secure `_vercel_jwt` cookie and redirects you to the NIGHTLIFEZ homepage.
    - *Security Note:* External visitors without Vercel team access cannot reach the application. No public bypass exists.
 
-### 2.2 Application Authentication on Preview
-The application uses Telegram authentication (Telegram WebApp / Login Widget) for sessions:
-- **Standard Flow:** Click "Sign in" in the top header $\rightarrow$ authenticate via Telegram.
-- **Preview Reviewer Guest Session:** On Preview environments, a restricted synthetic reviewer endpoint is available for testing the Attendee journey without tying to a personal Telegram account:
-  - *Method & Scoping:* Must be called via `POST /api/auth/preview-reviewer` (clicking as a GET link returns `405 Method Not Allowed`). To sign in as the reviewer, open your browser developer console on the Preview site and run:
-    ```javascript
-    fetch('/api/auth/preview-reviewer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ next: '/me' }) }).then(() => window.location.href = '/me');
-    ```
-  - *Privilege Scoping:* This synthetic session is hard-locked to standard attendee/guest permissions only (`REVIEWER_TG_ID = 9100000100`). It cannot access administrator or organizer consoles.
-- **Native Admin Bootstrapping:** To test Admin (Role 7) without running direct SQL, set `ADMIN_BOOTSTRAP_TELEGRAM_ID = <YOUR_TELEGRAM_ID>` in Vercel Preview Environment Variables. Signing into `/admin` with that account automatically and auditably grants `super_admin`.
+### 2.2 Prerequisite: Configure Preview Environment Variables
+Before authenticated testing, open [Vercel Project Settings $\rightarrow$ Environment Variables](https://vercel.com/jakuraa/strangersmeetup/settings/environment-variables) and configure the following variables scoped to **Preview**:
+1. `SESSION_SECRET`: Generate a 64-char random hex string via `openssl rand -hex 32`. (Remediates DEF-02).
+2. `TELEGRAM_BOT_USERNAME`: Set your Telegram Bot handle (e.g. `NightlifezTestBot`). (Remediates DEF-03).
+3. `ADMIN_BOOTSTRAP_TELEGRAM_ID`: Set your numeric Telegram ID. (Remediates DEF-04).
+4. **Redeploy Preview:** Go to Deployments $\rightarrow$ select latest deployment $\rightarrow$ Redeploy without cache.
+
+### 2.3 Application Authentication on Preview
+The application supports two authentication pathways on Preview:
+
+#### Pathway A: Preview Reviewer Guest Session (Zero-Telegram Dependency)
+On Preview deployments, a restricted synthetic reviewer endpoint is available for testing the Attendee journey without tying to a personal Telegram account:
+- *Method & Scoping:* Must be called via **`POST /api/auth/preview-reviewer`** (clicking as a standard GET link returns `405 Method Not Allowed`).
+- *How to Invoke (Browser Console):* On the Preview site, open your browser developer console (`F12` or `Cmd+Option+I` $\rightarrow$ Console) and run:
+  ```javascript
+  fetch('/api/auth/preview-reviewer', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ next: '/me' })
+  }).then(r => {
+    if (r.ok) window.location.href = '/me';
+    else r.json().then(d => alert('Error: ' + JSON.stringify(d)));
+  });
+  ```
+- *How to Invoke (cURL):*
+  ```bash
+  curl -i -X POST -c cookies.txt \
+    -H "Content-Type: application/json" \
+    -d '{"next":"/me"}' \
+    "https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app/api/auth/preview-reviewer"
+  ```
+- *Privilege Scoping:* This synthetic session is hard-locked to standard attendee/guest permissions only (`REVIEWER_TG_ID = 9100000100`). It cannot access administrator (`/admin`) or organizer (`/organiser`) consoles.
+
+#### Pathway B: Native Admin & Telegram Sign-in
+- **Admin Bootstrapping:** Once `ADMIN_BOOTSTRAP_TELEGRAM_ID` is set, signing into `/admin` with that Telegram ID automatically and auditably grants `super_admin`.
 - **Dev-Login Persona Switcher:** Strictly disabled on all Vercel deployments (`devLoginEnabled()` returns `false`).
 
 ---
@@ -52,7 +80,7 @@ To test role separation and tenant isolation cleanly, the owner requires the fol
 
 | Role | Required Account Type | Existing in Preview DB? | How to Provision / Access |
 |---|---|---|---|
-| **1. Attendee** | Standard Telegram user or Preview Reviewer | **Yes** (Preview Reviewer synthetic account exists) | Navigate to `/api/auth/preview-reviewer?next=/me` or sign in with any standard Telegram account. |
+| **1. Attendee** | Standard Telegram user or Preview Reviewer | **Yes** (Preview Reviewer synthetic account) | Execute `POST /api/auth/preview-reviewer` with `{ "next": "/me" }` or sign in with Telegram. |
 | **2. Host** | Authenticated Telegram user without organizer role | **Yes** (Any fresh Telegram sign-in) | Sign in with Telegram and navigate to `/become-a-host`. |
 | **3. Organiser** | User with `organiser_enabled = true` and team org | **Requires Provisioning** | Sign in as Super Admin $\rightarrow$ Admin Console $\rightarrow$ Organisers tab $\rightarrow$ Grant Organiser Privileges to target user. (Alternatively via DB query below). |
 | **4. Venue Owner** | Any public or signed-in user | **Yes** (Publicly accessible) | Navigate directly to `/list-your-venue`. |
