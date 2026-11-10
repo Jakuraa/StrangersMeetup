@@ -1,64 +1,125 @@
-# Telegram setup (owner)
+# NIGHTLIFEZ — Telegram Setup & Operational Runbook (Owner)
 
-Status today: **NOT CONFIGURED.** All bot, invite, Mini App and Stars code is built and tested against a stubbed Bot API; nothing is live until the steps below are done. Never paste tokens or secrets into chat — set them only as Vercel environment variables.
+Status today: **NOT CONFIGURED IN PRODUCTION.** All bot updates, single-use invite links, Mini App authentication, Stars digital memberships, and operational outbox workflows are fully built and verified against the automated test suite. Nothing is live until the owner performs the BotFather and environment setup below.
 
-## 1. Bot (BotFather)
-1. In Telegram open **@BotFather** → `/newbot` (or pick your existing bot). Name: *StrangersMeetup*; username e.g. `StrangersMeetupBot` (must be one you own — the old site linked `@StrangersMeetupBot` without it being verified).
-2. Set the profile photo to the site logo (`public/favicon.svg`) — Telegram shows it on the login prompt.
-3. Copy the token. In Vercel → Project → Settings → Environment Variables add **`TELEGRAM_BOT_TOKEN`** (Preview + Production).
-   - The project currently has a variable named `Telegram_HTTP_API`. The code accepts it as a fallback *only if it is shaped exactly like a bot token*, but please rename it to `TELEGRAM_BOT_TOKEN` and add it to Preview too.
-4. Add **`TELEGRAM_BOT_USERNAME`** (without `@`).
-5. Generate a webhook secret (16–256 chars of `A-Z a-z 0-9 _ -`), e.g. `openssl rand -hex 32`, and add **`TELEGRAM_WEBHOOK_SECRET`**.
-6. BotFather → your bot → **Bot Settings → Configure Mini App / Menu Button** → URL = your site (`PUBLIC_SITE_URL`). (`scripts/telegram-setup.js` also sets the menu button.)
-7. BotFather → **Payments**: nothing to connect for Stars. For sandbox Stars testing use Telegram's *test environment* (separate test account + test bot) and set `TELEGRAM_TEST_ENV=true` on the preview that uses the test bot.
+> [!IMPORTANT]
+> **Owner Non-Negotiable Safeguards:**
+> 1. Never paste bot tokens or webhook secrets into chat or public pull requests. Set them exclusively as Vercel environment variables.
+> 2. Keep `ENABLE_LIVE_PAYMENTS=false` across all environments.
+> 3. Do not create a single global attendee group for all events. Every event has its own dedicated private community group to prevent venue leaks and attendee cross-contamination.
 
-## 2. Website sign-in (Telegram Login, OpenID Connect)
-Telegram's current web login is OpenID Connect (the old iframe widget is archived).
-1. BotFather mini app → select bot → **Login Widget** → add Allowed URLs:
-   - `https://<your-domain>` and `https://<your-domain>/auth/telegram/callback`
-   - the same for the preview URL you test on.
-2. Copy **Client ID** → `TELEGRAM_LOGIN_CLIENT_ID`, **Client Secret** → `TELEGRAM_LOGIN_CLIENT_SECRET`.
-3. Without these two, `/signin` falls back to the legacy widget (needs `/setdomain` in BotFather for the site domain).
+---
 
-## 3. Private groups (one per membership tier + one for event coordination)
-Create **private supergroups** (or channels for broadcast-only):
+## 1. Owner Setup Checklist (BotFather)
 
-| Purpose | Env var |
-|---|---|
-| Event coordination group (venue reveal for paid attendees) | `TG_CHAT_ID_EVENTS` |
-| Tier 1 — Insider | `TG_CHAT_ID_TIER_1` |
-| Tier 2 — Social Plus | `TG_CHAT_ID_TIER_2` |
-| Tier 3 — VIP Circle | `TG_CHAT_ID_TIER_3` |
+Complete these steps in Telegram by messaging **@BotFather**:
 
-For each chat:
-1. Add the bot as **administrator** with: *Invite users via link* and *Ban users* (and *Delete messages* for moderation). Nothing else is needed.
-2. Turn off "Approve new members" (invites are single-use, `member_limit: 1`, 24h expiry).
-3. Get the chat id: after the webhook is set (step 4), add the bot and post any message; or temporarily add **@RawDataBot**/**@getidsbot**, read `chat.id` (starts with `-100…`), then remove it.
-4. Put the id in the matching env var. A per-event group can instead be set on the event in **/admin → Events → Telegram chat id**.
+- [ ] **1. Create the Bot**:
+  - Open **@BotFather** → `/newbot`.
+  - Name: **NIGHTLIFEZ**.
+  - Username: e.g. `NightlifezBot` or `nightlifez_bot` (must end with `bot`).
+- [ ] **2. Set Bot Profile & Branding**:
+  - `/setuserpic` → Upload the NIGHTLIFEZ official logo (`public/favicon.svg` or high-resolution icon).
+  - `/setdescription` → *"Curated weekend parties, nightlife, social mixers, dinner clubs and trips for adults 21+ across South India."*
+  - `/setabouttext` → *"NIGHTLIFEZ — Curated social experiences for adults 21+ in Bangalore, Chennai, Kochi, Goa and beyond."*
+- [ ] **3. Configure Mini App Menu Button**:
+  - `/setmenubutton` → Select your bot → URL: `https://<your-site-domain>` (configured as `PUBLIC_SITE_URL`).
+  - Text: **Open NIGHTLIFEZ**.
+- [ ] **4. Configure Web Login (Telegram Login / OpenID Connect)**:
+  - Bot Settings → **Configure Mini App / Login Widget** → Add Allowed Domains:
+    - `https://<your-site-domain>`
+    - `https://<your-site-domain>/auth/telegram/callback`
+    - Add preview domain for testing if required.
+  - Record the **Client ID** (`TELEGRAM_LOGIN_CLIENT_ID`) and **Client Secret** (`TELEGRAM_LOGIN_CLIENT_SECRET`).
+  - Run `/setdomain` for the legacy widget fallback as well.
+- [ ] **5. Copy Bot Token to Vercel Environment Variables**:
+  - Copy the token from BotFather (`123456789:ABC...`).
+  - In Vercel Project Settings → Environment Variables, add:
+    - **`TELEGRAM_BOT_TOKEN`** (Preview + Production)
+    - **`TELEGRAM_BOT_USERNAME`** (bot username without `@`)
+- [ ] **6. Generate & Configure Webhook Secret**:
+  - Generate a 32-character random hex string: `openssl rand -hex 32`
+  - In Vercel Project Settings → Environment Variables, add:
+    - **`TELEGRAM_WEBHOOK_SECRET`**
 
-## 4. Point Telegram at the site
-After the env vars are on the deployment (and `PUBLIC_SITE_URL` is set to it):
-```
+---
+
+## 2. Event Communities & Membership Tier Groups
+
+### A. Dedicated Private Groups for Events (Strict Isolation)
+**Rule:** There is **NO global attendee group**. Each event has its own separate private community supergroup.
+
+To set up an event's group:
+1. Create a **private supergroup** in Telegram for the event (e.g., *"Indiranagar Mixer — 14 Nov"*).
+2. Add the bot as an **Administrator** with these permissions:
+   - ✅ *Invite users via link* (required to generate single-use 24-hour links)
+   - ✅ *Ban users* (required to remove joiners who use leaked or unverified invite links, or refunded bookings)
+   - ✅ *Delete messages* (recommended for moderation)
+3. Turn **OFF** *"Approve new members"* (each invite generated by the platform is cryptographically single-use with `member_limit: 1`).
+4. Obtain the group's numeric Telegram Chat ID (starts with `-100...`):
+   - Add **@RawDataBot** or **@getidsbot** to read `chat.id`, then remove it.
+5. In NIGHTLIFEZ Admin Dashboard (**Admin → Events → Edit Event**), enter the ID in the **Telegram chat ID** field (`events.telegram_chat_id`).
+
+### B. Membership Tier Private Groups
+Create dedicated private supergroups for membership tiers:
+
+| Tier | Code | Environment Variable |
+|---|---|---|
+| Tier 1 — Insider | `tier_1` | `TG_CHAT_ID_TIER_1` |
+| Tier 2 — Social Plus | `tier_2` | `TG_CHAT_ID_TIER_2` |
+| Tier 3 — VIP Circle | `tier_3` | `TG_CHAT_ID_TIER_3` |
+
+Follow the same administrator setup (Invite users + Ban users, no manual approval).
+
+### C. Optional Public Broadcast Channel
+| Purpose | Identifier / Env Var | Description |
+|---|---|---|
+| Public Broadcast Channel | `TELEGRAM_CHANNEL_PUBLIC` | Public channel for announcements. No secret attendee details or venue reveals are ever published here. |
+
+---
+
+## 3. Registering the Webhook & Commands
+
+Once environment variables are deployed on Vercel:
+
+```bash
+# 1. Pull environment variables locally
 vercel env pull .env.setup --environment=production   # or preview
+
+# 2. Register webhook and bot commands
 set -a; . ./.env.setup; set +a
 node scripts/telegram-setup.js
 rm .env.setup
 ```
-It calls `setWebhook` (with `secret_token` and `allowed_updates` including `chat_member`, which Telegram only sends when listed explicitly), `setMyCommands`, and the Mini App menu button. Re-runnable.
 
-## 5. Verify
-- `GET /api/health` → `telegramBot`, `telegramWebhookSecret`, `telegramEventsChat` all `configured`.
-- DM the bot `/start` → welcome + "Open StrangersMeetup" button.
-- `/events`, `/mybookings`, `/membership`, `/report test`, `/help`, `/terms`, `/paysupport` all answer.
-- Admin: add yourself via `ADMIN_BOOTSTRAP_TELEGRAM_ID` (your numeric Telegram id) and open `/admin`.
+The script idempotently configures:
+- Webhook URL: `https://<PUBLIC_SITE_URL>/api/telegram/webhook` with `secret_token`
+- Allowed update types: `message`, `callback_query`, `pre_checkout_query`, `chat_member`, `my_chat_member`
+- Standard bot commands:
+  - `/start` — Open NIGHTLIFEZ
+  - `/events` — Upcoming meetups, mixers and trips
+  - `/mybookings` — Your bookings and private group invites
+  - `/claim` — Claim tickets bought on web / UPI
+  - `/membership` — Membership plans
+  - `/quiet_hours` — Notification quiet hours settings
+  - `/report` — Report a safety concern
+  - `/help` — Help and emergency numbers
+  - `/terms` — Terms and refunds
+  - `/paysupport` — Payment support
 
-## What the bot does
-| Trigger | Behaviour |
+---
+
+## 4. Bot Workflows & Operational Behavior
+
+| Trigger / Command | Platform Behavior |
 |---|---|
-| `/start` | Welcome + Mini App button. `start=event_<slug>` shows that event; `start=booking_<id>` re-issues your invite; `start=alerts` opts in to new-event alerts (`/stopalerts` to opt out). |
-| Paid booking (verified webhook) | DM with event details + single-use 24h invite to the event chat. |
-| Stars membership paid | DM + invite to tier chat. Renewals extend expiry (DM, no new invite). |
-| 3 days before expiry | Reminder DM. |
-| Expiry (+1h grace) | Removed from tier chat (ban then unban — not a permanent ban) + DM. |
-| Someone joins with another person's invite | Removed automatically; invite revoked; audit log entry. |
-| `/report <text>` | Stored in `reports`, visible in admin. |
+| **`/start`** | Welcomes attendee with branded NIGHTLIFEZ intro and Mini App button. Performs **operational recovery**: automatically checks if user has confirmed bookings with undelivered invites and delivers them immediately. |
+| **`/start link_<token>`** | **Secure Account Linking**: Links authenticated web session or guest booking to this Telegram user without IDOR. |
+| **`/start claim_upi_<orderId>_<guestToken>`** | Automatically claims a guest checkout booking for this Telegram user and delivers confirmation and group invite. |
+| **`/start event_<slug>`** | Displays card for the specific event with direct link into the Mini App. |
+| **`/start booking_<id>`** | Re-issues active 24h single-use group invite for an eligible confirmed booking. |
+| **`/quiet_hours`** | Displays current quiet hours window (e.g. 23:00 to 08:00 IST). Toggle with `/quiet_hours on` or `/quiet_hours off`, or customize with `/quiet_hours HH:MM HH:MM`. Non-urgent alerts are deferred during quiet hours. |
+| **`/report <text>`** | Submits confidential safety report directly to moderation outbox with rate-limiting protection (max 5/hr). Always displays national emergency helpline **112** and Women's Helpline **1091 / 181**. |
+| **Confirmed Booking** | Sends transactional DM with start time, location, booking reference, and single-use 24h private group invite (if event group configured). |
+| **Cancellation / Refund** | Automatically revokes active invite links (`revoked_at = now()`) and sends confirmation DM. If user previously joined the chat, removes them from the group. |
+| **Unauthorized Joiner** | If an invite link is forwarded and joined by an unconfirmed user, bot immediately kicks the joiner, revokes the link, and writes an audit log (`invite.misuse_removed`). |

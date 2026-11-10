@@ -115,120 +115,765 @@
   }
 
   /* =====================================================================================
-     Manage one event: guests, requests, answers
+     Manage one event: overview, readiness, inventory, attendees, staff & announcements
      ===================================================================================== */
   function initManage(el) {
     var id = el.getAttribute('data-org-manage');
+    var activeTab = 'overview';
     var activeFilter = 'all';
+    var attendeeSearch = '';
+    var overviewData = null;
+
+    function renderTabs() {
+      var tabs = [
+        ['overview', '📊 Overview & Readiness'],
+        ['inventory', '🎟️ Ticket Inventory'],
+        ['attendees', '👥 Attendees & Guest List'],
+        ['staff', '🛡️ Event Staff'],
+        ['announcements', '📢 Announcements']
+      ];
+      return '<div class="org-tabs" role="tablist">' +
+        tabs.map(function (t) {
+          return '<button class="org-tab-btn' + (activeTab === t[0] ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + (activeTab === t[0] ? 'true' : 'false') + '">' +
+            esc(t[1]) + '</button>';
+        }).join('') +
+        '</div>';
+    }
+
     function load() {
-      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/guests').then(function (r) {
-        if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load this event.') + '</p>'; return; }
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/overview').then(function (r) {
+        if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load event overview.') + '</p>'; return; }
+        overviewData = r;
         var e = r.event;
+        var m = r.metrics;
         var url = absolute(e.path);
-        var seats = 0, reqs = 0, declined = 0;
-        r.guests.forEach(function (g) {
-          if (g.status === 'confirmed' || g.status === 'checked_in') seats += g.quantity;
-          if (g.status === 'pending_approval') reqs++;
-          if (g.status === 'declined') declined++;
-        });
-        var h = '<p class="eyebrow">Manage event</p><h1 class="org-title">' + esc(e.title) + '</h1>' +
-          '<p class="muted">' + esc(fmtInstant(e.startAt)) + ' · ' + esc(e.status) + '</p>' +
-          '<div class="share-row"><input class="share-url" readonly value="' + esc(url) + '" aria-label="Public link">' +
-          '<button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(url) + '">Copy link</button>' +
+
+        var h = '<div class="org-manage-head">' +
+          '<p class="eyebrow"><a class="linkish" href="/organiser">← Organiser Workspace</a></p>' +
+          '<h1 class="org-title">' + esc(e.title) + '</h1>' +
+          '<p class="muted">' + esc(fmtInstant(e.startAt)) + (e.endAt ? ' – ' + esc(fmtInstant(e.endAt)) : '') + ' · ' + esc(e.city) + ' · <span class="pill pill-' + esc(e.status) + '">' + esc(e.status) + '</span></p>' +
+          '<div class="share-row"><input class="share-url" readonly value="' + esc(url) + '" aria-label="Public event link">' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(url) + '">Copy Link</button>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-share="' + esc(url) + '" data-title="' + esc(e.title) + '">Share</button>' +
-          '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '">View page</a></div>' +
-          '<div class="org-stats-bar">' +
-          '<div class="org-stat-item"><span class="org-stat-val">' + seats + '</span><span class="org-stat-lbl">Confirmed Seats</span></div>' +
-          '<div class="org-stat-item"><span class="org-stat-val">' + esc(e.capacity) + '</span><span class="org-stat-lbl">Total Capacity</span></div>' +
-          (e.requiresApproval ? '<div class="org-stat-item"><span class="org-stat-val">' + reqs + '</span><span class="org-stat-lbl">Pending Requests</span></div>' : '') +
+          '<a class="btn btn-sm btn-primary" href="' + esc(e.scanUrl) + '">📱 Open Door Scanner</a>' +
+          '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '" target="_blank">View Live Page</a></div>' +
           '</div>';
 
-        if (!r.guests.length) {
-          h += '<div class="empty-state org-empty-state">' +
-            '<div class="empty-state-icon" aria-hidden="true">👥</div>' +
-            '<p class="empty-state-title">No bookings yet</p>' +
-            '<p class="muted">Share your event link to start receiving attendee bookings.</p>' +
-            '<div class="empty-state-actions">' +
-            '<button class="btn btn-sm btn-outline-cyan" type="button" data-copy="' + esc(url) + '">Copy Event Link</button>' +
-            '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '" target="_blank">View Live Event</a>' +
-            '</div></div>';
-        } else {
-          var filtered = r.guests.filter(function (g) {
-            if (activeFilter === 'confirmed') return g.status === 'confirmed' || g.status === 'checked_in';
-            if (activeFilter === 'pending') return g.status === 'pending_approval';
-            if (activeFilter === 'declined') return g.status === 'declined';
-            return true;
-          });
-          h += '<div class="org-guest-filters">' +
-            '<button class="org-filter-btn' + (activeFilter === 'all' ? ' active' : '') + '" type="button" data-filter="all">All Guests (' + r.guests.length + ')</button>' +
-            '<button class="org-filter-btn' + (activeFilter === 'confirmed' ? ' active' : '') + '" type="button" data-filter="confirmed">Confirmed (' + seats + ')</button>' +
-            (e.requiresApproval ? '<button class="org-filter-btn' + (activeFilter === 'pending' ? ' active' : '') + '" type="button" data-filter="pending">Pending Approval (' + reqs + ')</button>' : '') +
-            (declined > 0 ? '<button class="org-filter-btn' + (activeFilter === 'declined' ? ' active' : '') + '" type="button" data-filter="declined">Declined (' + declined + ')</button>' : '') +
-            '</div>';
-
-          if (!filtered.length) {
-            h += '<p class="muted">No guests match this filter.</p>';
-          } else {
-            h += '<ul class="guest-list">' + filtered.map(function (g) {
-              var answers = r.questions.filter(function (q) { return g.answers[q.id] != null; }).map(function (q) {
-                var v = g.answers[q.id];
-                return '<div><dt>' + esc(q.label) + '</dt><dd>' + esc(Array.isArray(v) ? v.join(', ') : v) + '</dd></div>';
-              }).join('');
-              var actions = '';
-              if (g.status === 'pending_approval') {
-                actions += '<button class="btn btn-sm btn-primary" type="button" data-decide="approve" data-id="' + esc(g.id) + '">Approve</button>' +
-                  '<button class="btn btn-sm btn-ghost" type="button" data-decide="decline" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Decline</button>';
-              }
-              if (g.userId) {
-                actions += '<button class="btn btn-sm btn-ghost" type="button" data-guest-block="' + esc(g.userId) + '" data-blocked="' + (g.isBlocked ? '1' : '0') + '">' + (g.isBlocked ? 'Unblock' : 'Block') + '</button>';
-              }
-              return '<li class="guest"><div class="guest-head"><p class="org-item-title">' + esc(g.alias) + ' <span class="muted">#' + esc(g.ref) + '</span></p>' +
-                '<span class="pill pill-' + esc(g.status) + '">' + esc(STATUS[g.status] || g.status) + '</span></div>' +
-                '<p class="muted">' + esc(g.ticket || 'Ticket') + ' × ' + esc(g.quantity) + ' · ' + esc(PAY[g.paymentStatus] || g.paymentStatus) + (g.pickup ? ' · Pickup: ' + esc(g.pickup) : '') + ' · Requested ' + esc(ago(g.createdAt)) + '</p>' +
-                (answers ? '<dl class="answers">' + answers + '</dl>' : '') +
-                (actions ? '<div class="org-item-actions">' + actions + '</div>' : '') +
-                '</li>';
-            }).join('') + '</ul>';
-          }
-        }
-        h += '<p class="form-msg" data-manage-msg role="status" aria-live="polite"></p><p><a class="link-arrow" href="/organiser">All your events</a></p>';
+        h += renderTabs();
+        h += '<div class="org-tab-panel" id="org-tab-panel"><p class="muted">Loading section…</p></div>';
+        h += '<p class="form-msg" data-manage-msg role="status" aria-live="polite"></p>';
         el.innerHTML = h;
+
+        renderCurrentTab();
       });
     }
+
+    function renderCurrentTab() {
+      var panel = $('#org-tab-panel', el);
+      if (!panel || !overviewData) return;
+
+      if (activeTab === 'overview') {
+        renderOverviewTab(panel);
+      } else if (activeTab === 'inventory') {
+        renderInventoryTab(panel);
+      } else if (activeTab === 'attendees') {
+        renderAttendeesTab(panel);
+      } else if (activeTab === 'staff') {
+        renderStaffTab(panel);
+      } else if (activeTab === 'announcements') {
+        renderAnnouncementsTab(panel);
+      }
+    }
+
+    function renderOverviewTab(panel) {
+      var e = overviewData.event;
+      var m = overviewData.metrics;
+      var rd = overviewData.readiness;
+      var perms = overviewData.permissions;
+
+      var h = '<div class="org-stats-bar">' +
+        '<div class="org-stat-item"><span class="org-stat-val">' + m.confirmedSeats + ' / ' + m.capacity + '</span><span class="org-stat-lbl">Confirmed / Capacity</span></div>' +
+        '<div class="org-stat-item"><span class="org-stat-val">' + m.checkedInTickets + ' (' + m.attendanceRate + '%)</span><span class="org-stat-lbl">Checked In</span></div>' +
+        '<div class="org-stat-item"><span class="org-stat-val">' + m.remainingSeats + '</span><span class="org-stat-lbl">Tickets Remaining</span></div>' +
+        '<div class="org-stat-item"><span class="org-stat-val">' + m.pendingRequests + '</span><span class="org-stat-lbl">Pending Requests</span></div>' +
+        '</div>';
+
+      if (!m.confirmedSeats && !m.pendingRequests) {
+        var url = e.path ? absolute(e.path) : '';
+        h += '<div class="empty-state org-empty-state" style="margin-bottom:20px;">' +
+          '<div class="empty-state-icon" aria-hidden="true">👥</div>' +
+          '<p class="empty-state-title">No bookings yet</p>' +
+          '<p class="muted">Share your event link to start receiving attendee bookings.</p>' +
+          '<div class="empty-state-actions">' +
+          '<button class="btn btn-sm btn-outline-cyan" type="button" data-copy="' + esc(url) + '">Copy Event Link</button>' +
+          '<a class="btn btn-sm btn-ghost" href="' + esc(e.path) + '" target="_blank">View Live Event</a>' +
+          '</div></div>';
+      }
+
+      h += '<div class="readiness-card">' +
+        '<div class="readiness-header">' +
+        '<div><h3 style="margin:0 0 4px">Event Readiness Tracking</h3><p class="muted small" style="margin:0">Operational checklist before doors open.</p></div>' +
+        '<span class="readiness-score-badge' + (rd.complete ? ' complete' : '') + '">' + esc(rd.score) + ' Complete</span>' +
+        '</div>' +
+        '<div class="checklist-grid">' +
+        rd.checklist.map(function (c) {
+          return '<div class="checklist-item ' + (c.passed ? 'passed' : 'failed') + '">' +
+            '<span class="check-icon" aria-hidden="true">' + (c.passed ? '✓' : '○') + '</span> ' +
+            '<span>' + esc(c.label) + '</span>' +
+            '</div>';
+        }).join('') +
+        '</div></div>';
+
+      h += '<div class="wz-card">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">' +
+        '<h3 class="wz-card-title" style="margin:0">Event &amp; Venue Details</h3>' +
+        (perms.canEdit ? '<button class="btn btn-sm btn-outline-cyan" type="button" data-action="edit-event">Edit Details</button>' : '') +
+        '</div>' +
+        '<dl class="pass-facts">' +
+        '<div><dt>Venue Privacy</dt><dd>' + (e.venuePrivacy === 'disclosed_after_booking' ? '🔒 Mystery Venue (Disclosed after confirmed booking)' : 'Publicly Disclosed') + '</dd></div>' +
+        (e.venue ? '<div><dt>Private Address</dt><dd>' + esc(e.venue) + '</dd></div>' : '') +
+        (e.area ? '<div><dt>Public Area</dt><dd>' + esc(e.area) + ', ' + esc(e.city) + '</dd></div>' : '') +
+        (e.mapsUrl ? '<div><dt>Google Maps</dt><dd><a href="' + esc(e.mapsUrl) + '" target="_blank" rel="noopener">Open in Maps</a></dd></div>' : '') +
+        (e.refundPolicy ? '<div><dt>Refund Policy</dt><dd>' + esc(e.refundPolicy) + '</dd></div>' : '') +
+        '</dl>' +
+        (perms.canCancel && e.status !== 'cancelled' ? '<div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--line);">' +
+        '<button class="btn btn-sm btn-ghost" style="color:var(--party-pink);" type="button" data-action="cancel-event">Cancel Event…</button>' +
+        '</div>' : '') +
+        '</div>';
+
+      panel.innerHTML = h;
+    }
+
+    function renderInventoryTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading ticket inventory…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/inventory').then(function (r) {
+        if (!r.ok) { panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load inventory.') + '</p>'; return; }
+        var cap = r.capacity || 0;
+        var sold = r.totalSold || 0;
+        var holds = r.totalHolds || 0;
+        var rem = r.totalRemaining || 0;
+
+        var soldPct = cap > 0 ? (sold / cap) * 100 : 0;
+        var holdsPct = cap > 0 ? (holds / cap) * 100 : 0;
+
+        var h = '<div class="inventory-summary-card">' +
+          '<h3>Total Capacity Allocation</h3>' +
+          '<div class="inventory-progress-wrap">' +
+          '<div class="inventory-progress-bar">' +
+          '<div class="inv-fill-sold" style="width:' + soldPct.toFixed(1) + '%" title="Confirmed: ' + sold + '"></div>' +
+          '<div class="inv-fill-holds" style="width:' + holdsPct.toFixed(1) + '%" title="Holds: ' + holds + '"></div>' +
+          '</div>' +
+          '<div class="inventory-legend">' +
+          '<span><span class="legend-dot legend-sold"></span> Confirmed: <strong>' + sold + '</strong></span>' +
+          '<span><span class="legend-dot legend-holds"></span> Payment Holds: <strong>' + holds + '</strong></span>' +
+          '<span><span class="legend-dot legend-rem"></span> Remaining: <strong>' + rem + ' / ' + cap + '</strong></span>' +
+          '</div></div></div>';
+
+        h += '<div class="org-table-wrap"><table class="org-data-table">' +
+          '<thead><tr><th>Tier Name</th><th>Type</th><th>Price</th><th>Limit</th><th>Confirmed</th><th>Active Holds</th><th>Available</th></tr></thead>' +
+          '<tbody>' +
+          r.tiers.map(function (t) {
+            return '<tr>' +
+              '<td><strong>' + esc(t.name) + '</strong>' + (t.eligibility ? '<br><small class="muted">' + esc(t.eligibility) + '</small>' : '') + '</td>' +
+              '<td><span class="pill pill-' + esc(t.kind) + '">' + esc(t.kind.toUpperCase()) + '</span></td>' +
+              '<td>' + (t.kind === 'free' ? 'Free' : money(t.pricePaise)) + '</td>' +
+              '<td>' + esc(t.quantity) + '</td>' +
+              '<td><strong>' + esc(t.sold) + '</strong></td>' +
+              '<td>' + esc(t.holds) + '</td>' +
+              '<td><span class="' + (t.remaining > 0 ? 'text-ok' : 'muted') + '">' + esc(t.remaining) + '</span></td>' +
+              '</tr>';
+          }).join('') +
+          '</tbody></table></div>';
+
+        panel.innerHTML = h;
+      });
+    }
+
+    function renderAttendeesTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading guests…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/guests').then(function (r) {
+        if (!r.ok) { panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load guests.') + '</p>'; return; }
+        var e = r.event;
+        var guests = r.guests || [];
+
+        var seats = 0, reqs = 0, declined = 0;
+        guests.forEach(function (g) {
+          if (g.status === 'confirmed' || g.status === 'checked_in') seats += g.quantity;
+          if (g.status === 'pending_approval') reqs++;
+          if (g.status === 'declined' || g.status === 'cancelled') declined++;
+        });
+
+        var q = attendeeSearch.toLowerCase().trim();
+        var filtered = guests.filter(function (g) {
+          var matchFilter = true;
+          if (activeFilter === 'confirmed') matchFilter = (g.status === 'confirmed' || g.status === 'checked_in');
+          else if (activeFilter === 'pending') matchFilter = (g.status === 'pending_approval');
+          else if (activeFilter === 'declined') matchFilter = (g.status === 'declined' || g.status === 'cancelled');
+
+          var matchSearch = true;
+          if (q) {
+            matchSearch = (g.alias && g.alias.toLowerCase().indexOf(q) !== -1) ||
+                          (g.ref && g.ref.toLowerCase().indexOf(q) !== -1) ||
+                          (g.id && g.id.toLowerCase().indexOf(q) !== -1);
+          }
+          return matchFilter && matchSearch;
+        });
+
+        var h = '<div class="table-filter-bar">' +
+          '<input class="table-search-input" type="search" placeholder="Search by attendee name or ref…" value="' + esc(attendeeSearch) + '" data-action="search-attendees">' +
+          '<div class="org-guest-filters" style="margin:0">' +
+          '<button class="org-filter-btn' + (activeFilter === 'all' ? ' active' : '') + '" type="button" data-filter="all">All (' + guests.length + ')</button>' +
+          '<button class="org-filter-btn' + (activeFilter === 'confirmed' ? ' active' : '') + '" type="button" data-filter="confirmed">Confirmed (' + seats + ')</button>' +
+          (e.requiresApproval ? '<button class="org-filter-btn' + (activeFilter === 'pending' ? ' active' : '') + '" type="button" data-filter="pending">Pending Approval (' + reqs + ')</button>' : '') +
+          (declined > 0 ? '<button class="org-filter-btn' + (activeFilter === 'declined' ? ' active' : '') + '" type="button" data-filter="declined">Declined (' + declined + ')</button>' : '') +
+          '</div></div>';
+
+        if (!guests.length) {
+          h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No bookings yet</p><p class="muted">Share your event link to start receiving attendee bookings.</p></div>';
+        } else if (!filtered.length) {
+          h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No matching attendees</p><p class="muted">Try adjusting your search or filter.</p></div>';
+        } else {
+          h += '<ul class="guest-list">' + filtered.map(function (g) {
+            var answers = r.questions.filter(function (q) { return g.answers[q.id] != null; }).map(function (q) {
+              var v = g.answers[q.id];
+              return '<div><dt>' + esc(q.label) + '</dt><dd>' + esc(Array.isArray(v) ? v.join(', ') : v) + '</dd></div>';
+            }).join('');
+
+            var actions = '';
+            if (g.status === 'pending_approval') {
+              actions += '<button class="btn btn-sm btn-primary" type="button" data-decide="approve" data-id="' + esc(g.id) + '">Approve</button>' +
+                '<button class="btn btn-sm btn-ghost" type="button" data-decide="decline" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Decline</button>';
+            }
+            if (g.status === 'confirmed') {
+              actions += '<button class="btn btn-sm btn-ghost" style="color:var(--party-pink);" type="button" data-action="cancel-booking" data-id="' + esc(g.id) + '" data-name="' + esc(g.alias) + '">Cancel Booking</button>';
+            }
+            if (g.userId) {
+              actions += '<button class="btn btn-sm btn-ghost" type="button" data-guest-block="' + esc(g.userId) + '" data-blocked="' + (g.isBlocked ? '1' : '0') + '">' + (g.isBlocked ? 'Unblock' : 'Block') + '</button>';
+            }
+
+            var refundNotice = '';
+            if (g.paymentStatus === 'refunded') {
+              refundNotice = ' · <span class="pill pill-declined">Refunded</span>';
+            } else if (g.paymentStatus === 'refund_pending') {
+              refundNotice = ' · <span class="pill pill-pending_payment">Refund Pending</span>';
+            }
+
+            return '<li class="guest"><div class="guest-head"><p class="org-item-title">' + esc(g.alias) + ' <span class="muted">#SM-' + esc(g.ref) + '</span></p>' +
+              '<span class="pill pill-' + esc(g.status) + '">' + esc(STATUS[g.status] || g.status) + '</span></div>' +
+              '<p class="muted">' + esc(g.ticket || 'Ticket') + ' × ' + esc(g.quantity) + ' · ' + esc(PAY[g.paymentStatus] || g.paymentStatus) + refundNotice + (g.pickup ? ' · Pickup: ' + esc(g.pickup) : '') + ' · Requested ' + esc(ago(g.createdAt)) + (g.checkedInAt ? ' · <strong>Checked in ' + esc(ago(g.checkedInAt)) + '</strong>' : '') + '</p>' +
+              (answers ? '<dl class="answers">' + answers + '</dl>' : '') +
+              (actions ? '<div class="org-item-actions">' + actions + '</div>' : '') +
+              '</li>';
+          }).join('') + '</ul>';
+        }
+        panel.innerHTML = h;
+
+        var searchInput = $('[data-action="search-attendees"]', panel);
+        if (searchInput) {
+          searchInput.addEventListener('input', function () {
+            attendeeSearch = searchInput.value;
+            renderAttendeesTab(panel);
+          });
+        }
+      });
+    }
+
+    function renderStaffTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading event staff…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/staff').then(function (r) {
+        if (!r.ok) { panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load staff.') + '</p>'; return; }
+        var staff = r.staff || [];
+        var invites = r.invites || [];
+
+        var h = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">' +
+          '<div><h3 style="margin:0 0 4px">Event Staff &amp; Roles</h3><p class="muted small" style="margin:0">Staff members have event-scoped operational permissions only.</p></div>' +
+          (r.canManage ? '<button class="btn btn-sm btn-primary" type="button" data-action="invite-staff">+ Invite Staff Member</button>' : '') +
+          '</div>';
+
+        if (!staff.length && !invites.length) {
+          h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No staff assigned</p><p class="muted">Invite door staff, event managers, or assistants for this event.</p></div>';
+        } else {
+          h += '<div class="org-table-wrap"><table class="org-data-table">' +
+            '<thead><tr><th>Name / Alias</th><th>Assigned Role</th><th>Status</th><th>Added</th>' + (r.canManage ? '<th>Action</th>' : '') + '</tr></thead>' +
+            '<tbody>' +
+            staff.map(function (s) {
+              return '<tr>' +
+                '<td><strong>' + esc(s.alias) + '</strong></td>' +
+                '<td><span class="role-badge role-' + esc(s.role) + '">' + esc(s.roleLabel) + '</span></td>' +
+                '<td><span class="pill pill-' + (s.status === 'active' ? 'confirmed' : 'declined') + '">' + esc(s.status) + '</span></td>' +
+                '<td class="muted small">' + esc(ago(s.createdAt)) + '</td>' +
+                (r.canManage ? '<td>' + (s.status === 'active' ? '<button class="btn btn-sm btn-ghost" style="color:var(--party-pink);" type="button" data-action="revoke-staff" data-id="' + esc(s.id) + '" data-name="' + esc(s.alias) + '">Revoke</button>' : '<span class="muted small">Revoked ' + esc(ago(s.revokedAt)) + '</span>') + '</td>' : '') +
+                '</tr>';
+            }).join('') +
+            invites.map(function (i) {
+              return '<tr>' +
+                '<td><span class="muted">Pending Invite' + (i.invitedAlias ? ': ' + esc(i.invitedAlias) : '') + '</span></td>' +
+                '<td><span class="role-badge role-' + esc(i.role) + '">' + esc(i.roleLabel) + '</span></td>' +
+                '<td><span class="pill pill-pending_payment">Invite Sent</span></td>' +
+                '<td class="muted small">Expires ' + esc(ago(i.expiresAt)) + '</td>' +
+                (r.canManage ? '<td><button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(absolute(i.inviteUrl)) + '">Copy Link</button></td>' : '') +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>';
+        }
+        panel.innerHTML = h;
+      });
+    }
+
+    function renderAnnouncementsTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading announcements…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/announcements').then(function (r) {
+        if (!r.ok) { panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load announcements.') + '</p>'; return; }
+        var list = r.announcements || [];
+
+        var h = '<div class="wz-card" style="margin-bottom:24px;">' +
+          '<h3 class="wz-card-title">Broadcast Operational Announcement</h3>' +
+          '<p class="help">Send an update to confirmed event attendees (gate instructions, venue hints, weather reminders).</p>' +
+          '<form class="lead-form" data-announcement-form>' +
+          '<label class="fld"><span class="lbl">Announcement Title</span><input type="text" name="title" required maxlength="120" placeholder="e.g. Doors open at 7:30 PM"></label>' +
+          '<label class="fld"><span class="lbl">Message</span><textarea name="message" required rows="3" maxlength="3000" placeholder="Details for attendees…"></textarea></label>' +
+          '<div style="display:flex; gap:16px; margin:10px 0;"><label class="check"><input type="checkbox" name="isPinned" value="1"> <span>Pin to top</span></label>' +
+          '<label class="check"><input type="checkbox" name="notifyAttendees" value="1" checked> <span>Notify confirmed attendees</span></label></div>' +
+          '<button class="btn btn-primary btn-sm" type="submit">Post Announcement</button>' +
+          '<p class="form-msg" data-form-msg></p>' +
+          '</form></div>';
+
+        if (!list.length) {
+          h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No announcements posted</p><p class="muted">Broadcasts to attendees will appear here.</p></div>';
+        } else {
+          h += '<div class="announcements-list">' + list.map(function (a) {
+            return '<div class="announcement-card' + (a.isPinned ? ' pinned' : '') + '">' +
+              '<div class="announcement-head">' +
+              '<h3>' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</h3>' +
+              '<span class="muted small">' + esc(ago(a.createdAt)) + ' by ' + esc(a.senderAlias) + '</span>' +
+              '</div>' +
+              '<p class="announcement-body">' + esc(a.message) + '</p>' +
+              '</div>';
+          }).join('') + '</div>';
+        }
+        panel.innerHTML = h;
+
+        var annForm = $('form[data-announcement-form]', panel);
+        if (annForm) {
+          annForm.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var fMsg = $('[data-form-msg]', annForm);
+            var btn = $('button[type=submit]', annForm);
+            btn.disabled = true;
+            var body = {
+              title: annForm.title.value,
+              message: annForm.message.value,
+              isPinned: annForm.isPinned.checked,
+              notifyAttendees: annForm.notifyAttendees.checked
+            };
+            api('POST', '/api/organiser/events/' + encodeURIComponent(id) + '/announcements', body).then(function (res) {
+              btn.disabled = false;
+              if (res.ok) {
+                renderAnnouncementsTab(panel);
+              } else {
+                fMsg.className = 'form-msg error';
+                fMsg.textContent = res.message || 'Could not post announcement.';
+              }
+            });
+          });
+        }
+      });
+    }
+
     el.addEventListener('click', function (ev) {
+      var tabBtn = ev.target.closest('[data-tab]');
+      if (tabBtn) {
+        activeTab = tabBtn.getAttribute('data-tab');
+        $$('.org-tab-btn', el).forEach(function (b) {
+          var isCur = b.getAttribute('data-tab') === activeTab;
+          b.classList.toggle('active', isCur);
+          b.setAttribute('aria-selected', isCur ? 'true' : 'false');
+        });
+        renderCurrentTab();
+        return;
+      }
+
       var b = ev.target.closest('button');
       if (!b) return;
+
       if (b.hasAttribute('data-filter')) {
         activeFilter = b.getAttribute('data-filter');
-        load();
+        renderCurrentTab();
         return;
       }
       if (b.hasAttribute('data-copy')) return copyText(b.getAttribute('data-copy'), b);
       if (b.hasAttribute('data-share')) return share(b.getAttribute('data-title'), b.getAttribute('data-share'), b);
+
+      if (b.getAttribute('data-action') === 'invite-staff') {
+        var modal = document.createElement('div');
+        modal.className = 'org-modal-backdrop';
+        modal.innerHTML = '<div class="org-modal-card">' +
+          '<div class="org-modal-head"><h2>Invite Event Staff</h2><button class="btn btn-ghost btn-sm" type="button" data-close-modal>✕</button></div>' +
+          '<form data-invite-staff-form>' +
+          '<label class="fld"><span class="lbl">Role</span><select name="role">' +
+          '<option value="door_staff">Door / Check-in Staff (QR Scanner)</option>' +
+          '<option value="guest_list_manager">Guest-list Manager (Approve/Decline)</option>' +
+          '<option value="event_manager">Event Manager (Full operational)</option>' +
+          '<option value="assistant">Event Assistant (Read-only)</option>' +
+          '</select></label>' +
+          '<label class="fld"><span class="lbl">Staff Alias (optional)</span><input type="text" name="alias" placeholder="e.g. Rahul Door Guard"></label>' +
+          '<div style="margin-top:16px"><button class="btn btn-primary" type="submit">Generate Single-Use Invite Link</button></div>' +
+          '<div data-invite-result style="margin-top:14px"></div>' +
+          '</form></div>';
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', function (mev) {
+          if (mev.target === modal || mev.target.hasAttribute('data-close-modal')) modal.remove();
+        });
+
+        var iform = $('form[data-invite-staff-form]', modal);
+        iform.addEventListener('submit', function (mev) {
+          mev.preventDefault();
+          var resBox = $('[data-invite-result]', iform);
+          api('POST', '/api/organiser/events/' + encodeURIComponent(id) + '/staff/invite', { role: iform.role.value, invitedAlias: iform.alias.value }).then(function (ir) {
+            if (ir.ok) {
+              resBox.innerHTML = '<div class="wz-alert" style="background:rgba(0,217,255,0.1); border-color:var(--neon-cyan); color:#fff;">' +
+                '<p><strong>Invite link created (valid 48h):</strong></p>' +
+                '<input class="share-url" readonly value="' + esc(absolute(ir.inviteUrl)) + '" style="margin:8px 0;">' +
+                '<button class="btn btn-sm btn-outline-cyan" type="button" data-copy="' + esc(absolute(ir.inviteUrl)) + '">Copy Link</button>' +
+                '</div>';
+              renderCurrentTab();
+            } else {
+              resBox.innerHTML = '<p class="form-msg error">' + esc(ir.message || 'Could not create invite.') + '</p>';
+            }
+          });
+        });
+        return;
+      }
+
+      if (b.getAttribute('data-action') === 'revoke-staff') {
+        var sId = b.getAttribute('data-id');
+        var sName = b.getAttribute('data-name');
+        if (!window.confirm('Revoke access for ' + sName + '? They will immediately lose staff access.')) return;
+        b.disabled = true;
+        api('DELETE', '/api/organiser/events/' + encodeURIComponent(id) + '/staff/' + encodeURIComponent(sId)).then(function (rr) {
+          if (!rr.ok) alert(rr.message || 'Could not revoke staff access.');
+          renderCurrentTab();
+        });
+        return;
+      }
+
+      if (b.getAttribute('data-action') === 'cancel-booking') {
+        var bkId = b.getAttribute('data-id');
+        var bkName = b.getAttribute('data-name');
+        var reason = window.prompt('Reason for cancelling ' + bkName + '’s booking:', 'Cancelled by host');
+        if (reason == null) return;
+        b.disabled = true;
+        api('POST', '/api/organiser/bookings/' + encodeURIComponent(bkId) + '/cancel', { reason: reason }).then(function (cr) {
+          if (!cr.ok) alert(cr.message || 'Could not cancel booking.');
+          renderCurrentTab();
+        });
+        return;
+      }
+
+      if (b.getAttribute('data-action') === 'cancel-event') {
+        var evReason = window.prompt('Are you sure you want to cancel this event? All active tickets will be cancelled.\n\nEnter reason:', 'Event cancelled by organiser');
+        if (evReason == null) return;
+        b.disabled = true;
+        api('POST', '/api/organiser/events/' + encodeURIComponent(id) + '/cancel', { reason: evReason }).then(function (er) {
+          if (er.ok) {
+            load();
+          } else {
+            alert(er.message || 'Could not cancel event.');
+            b.disabled = false;
+          }
+        });
+        return;
+      }
+
       if (b.hasAttribute('data-guest-block')) {
         var uid = b.getAttribute('data-guest-block');
         var isBlk = b.getAttribute('data-blocked') === '1';
         b.disabled = true;
         var act = isBlk ? api('DELETE', '/api/me/blocks/' + encodeURIComponent(uid)) : api('POST', '/api/me/blocks', { blockedUserId: uid });
         act.then(function () {
-          load();
+          renderCurrentTab();
         }).catch(function (err) {
           b.disabled = false;
-          var m = $('[data-manage-msg]', el);
-          if (m) { m.className = 'form-msg error'; m.textContent = err.message || 'Action failed.'; }
         });
         return;
       }
+
       var d = b.getAttribute('data-decide');
-      if (!d) return;
-      if (d === 'decline' && !window.confirm('Decline ' + b.getAttribute('data-name') + '’s request? They will be told it wasn’t accepted.')) return;
-      b.disabled = true;
-      api('POST', '/api/organiser/bookings/' + encodeURIComponent(b.getAttribute('data-id')) + '/' + d, {}).then(function (r) {
-        if (!r.ok) { var m = $('[data-manage-msg]', el); m.className = 'form-msg error'; m.textContent = r.message || 'That didn’t work.'; b.disabled = false; return; }
-        load();
+      if (d) {
+        if (d === 'decline' && !window.confirm('Decline ' + b.getAttribute('data-name') + '’s request? They will be told it wasn’t accepted.')) return;
+        b.disabled = true;
+        api('POST', '/api/organiser/bookings/' + encodeURIComponent(b.getAttribute('data-id')) + '/' + d, {}).then(function (r) {
+          if (!r.ok) { alert(r.message || 'Action failed.'); b.disabled = false; return; }
+          renderCurrentTab();
+        });
+        return;
+      }
+    });
+
+    load();
+  }
+
+  /* =====================================================================================
+     Mobile-First Door Check-In Scanner Experience
+     ===================================================================================== */
+  function initScan(el) {
+    var eventId = el.getAttribute('data-org-scan');
+    var video = null;
+    var canvas = null;
+    var detector = null;
+    var mediaStream = null;
+    var scanInterval = null;
+    var isProcessing = false;
+
+    function renderScanner() {
+      el.innerHTML = '<div class="org-scan-container">' +
+        '<p class="eyebrow"><a class="linkish" href="/organiser/events/' + esc(eventId) + '">← Event Management</a></p>' +
+        '<h1 class="org-title" style="margin-bottom:8px">Door Check-In Scanner</h1>' +
+        '<p class="muted" style="margin-bottom:16px">Mobile camera verification &amp; server-authoritative admission pass validation.</p>' +
+        '<div class="scan-header-kpis" data-scan-kpis><p class="muted small">Loading attendance count…</p></div>' +
+        '<div class="scanner-card">' +
+        '<div class="scanner-viewport" id="scanner-viewport">' +
+        '<video class="scanner-video" id="scan-video" playsinline muted autoplay></video>' +
+        '<canvas class="scanner-canvas-hidden" id="scan-canvas"></canvas>' +
+        '<div class="scanner-reticle" aria-hidden="true"><div class="scanner-laser"></div></div>' +
+        '<div class="scanner-camera-status" data-cam-status>Camera starting…</div>' +
+        '</div>' +
+        '<div style="display:flex; justify-content:center; gap:8px;">' +
+        '<button class="btn btn-outline-cyan btn-sm" type="button" data-cam-toggle>Pause Camera</button>' +
+        '</div></div>' +
+        '<div data-scan-result-area aria-live="polite"></div>' +
+        '<div class="manual-box">' +
+        '<h3>Manual Ticket Lookup</h3>' +
+        '<p class="help">Enter the ticket code printed on the attendee pass (#SM-… or TK-…).</p>' +
+        '<form class="manual-form" data-manual-scan-form>' +
+        '<div class="manual-input-group">' +
+        '<input class="manual-input" type="text" name="ticketCode" placeholder="e.g. TK-A1B2-C3D4 or #SM-1234" required autocomplete="off">' +
+        '<button class="btn btn-primary" type="submit">Verify &amp; Check In</button>' +
+        '</div>' +
+        '<details class="manual-override-wrap">' +
+        '<summary class="linkish" style="font-size:0.85rem">Manual Override (Damaged pass / Emergency Entry)</summary>' +
+        '<p class="help" style="margin-top:6px">Requires manager permission. An immutable audit record is logged.</p>' +
+        '<label class="fld"><span class="lbl">Mandatory Override Reason</span><input type="text" name="overrideReason" placeholder="e.g. Screen shattered, verified ID on door"></label>' +
+        '</details>' +
+        '<p class="form-msg" data-manual-msg></p>' +
+        '</form></div>' +
+        '<div class="wz-card">' +
+        '<h3 class="wz-card-title">Recent Door Scans</h3>' +
+        '<div data-recent-scans><p class="muted small">Loading scan history…</p></div>' +
+        '</div></div>';
+
+      video = $('#scan-video', el);
+      canvas = $('#scan-canvas', el);
+
+      startCamera();
+      loadAttendance();
+      loadRecentScans();
+      bindScannerControls();
+    }
+
+    function loadAttendance() {
+      api('GET', '/api/organiser/events/' + encodeURIComponent(eventId) + '/attendance').then(function (r) {
+        if (!r.ok) return;
+        var kpis = $('[data-scan-kpis]', el);
+        if (kpis) {
+          kpis.innerHTML = '<div class="scan-kpi-item"><span class="scan-kpi-num">' + r.checkedInTickets + ' / ' + r.eligibleTickets + '</span><span class="scan-kpi-lbl">Checked In (' + r.attendanceRate + '%)</span></div>' +
+            '<div class="scan-kpi-item"><span class="scan-kpi-num">' + r.remainingTickets + '</span><span class="scan-kpi-lbl">Remaining</span></div>' +
+            '<div class="scan-kpi-item"><span class="scan-kpi-num">' + r.capacity + '</span><span class="scan-kpi-lbl">Total Capacity</span></div>';
+        }
+      });
+    }
+
+    function loadRecentScans() {
+      api('GET', '/api/organiser/events/' + encodeURIComponent(eventId) + '/scans?limit=10').then(function (r) {
+        if (!r.ok) return;
+        var rs = $('[data-recent-scans]', el);
+        if (!rs) return;
+        var scans = r.scans || [];
+        if (!scans.length) {
+          rs.innerHTML = '<p class="muted small">No scans logged yet.</p>';
+          return;
+        }
+        rs.innerHTML = '<ul class="org-list">' + scans.map(function (s) {
+          var pillClass = s.result === 'valid' ? 'pill-confirmed' : s.result === 'already_checked_in' ? 'pill-pending_approval' : 'pill-declined';
+          return '<li class="org-item" style="padding:10px 14px;">' +
+            '<div><strong>' + esc(s.attendeeAlias || 'Guest') + '</strong> <span class="muted small">(#SM-' + esc(s.attendeeRef || 'PASS') + ')</span>' +
+            '<p class="muted small">' + esc(s.method) + ' · Scanned by ' + esc(s.staffAlias) + ' · ' + esc(ago(s.createdAt)) + '</p></div>' +
+            '<span class="pill ' + pillClass + '">' + esc(s.result.replace(/_/g, ' ').toUpperCase()) + '</span>' +
+            '</li>';
+        }).join('') + '</ul>';
+      });
+    }
+
+    function startCamera() {
+      var statusEl = $('[data-cam-status]', el);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (statusEl) statusEl.textContent = 'Camera not supported. Use manual lookup below.';
+        return;
+      }
+
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } }).then(function (stream) {
+        mediaStream = stream;
+        video.srcObject = stream;
+        video.play();
+        if (statusEl) statusEl.textContent = 'Align QR code in frame';
+
+        if (window.BarcodeDetector) {
+          detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+        }
+        scanInterval = setInterval(detectFrame, 300);
+      }).catch(function (err) {
+        if (statusEl) statusEl.textContent = 'Camera permission denied. Use manual lookup below.';
+      });
+    }
+
+    function stopCamera() {
+      if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(function (t) { t.stop(); });
+        mediaStream = null;
+      }
+      var statusEl = $('[data-cam-status]', el);
+      if (statusEl) statusEl.textContent = 'Camera paused';
+    }
+
+    function detectFrame() {
+      if (isProcessing || !video || video.readyState < 2) return;
+      if (detector) {
+        detector.detect(video).then(function (barcodes) {
+          if (barcodes && barcodes.length > 0) {
+            var raw = barcodes[0].rawValue;
+            if (raw) handleScannedPayload(raw, 'camera_qr');
+          }
+        }).catch(function () {});
+      }
+    }
+
+    function handleScannedPayload(payload, method, overrideReason) {
+      if (isProcessing) return;
+      isProcessing = true;
+      var statusEl = $('[data-cam-status]', el);
+      if (statusEl) statusEl.textContent = 'Verifying ticket with server…';
+
+      var body = {
+        method: method || 'camera_qr',
+        overrideReason: overrideReason || null
+      };
+      if (payload.indexOf('NLZ1:') === 0) {
+        body.qrPayload = payload;
+      } else {
+        body.ticketCode = payload;
+      }
+
+      api('POST', '/api/organiser/events/' + encodeURIComponent(eventId) + '/check-in', body).then(function (res) {
+        isProcessing = false;
+        renderScanResult(res);
+        loadAttendance();
+        loadRecentScans();
+        if (statusEl) statusEl.textContent = 'Align next QR code';
+      }).catch(function (err) {
+        isProcessing = false;
+        renderScanResult({ ok: false, error: 'network_error', message: err.message || 'Verification failed.' });
+        if (statusEl) statusEl.textContent = 'Align next QR code';
+      });
+    }
+
+    function renderScanResult(res) {
+      var area = $('[data-scan-result-area]', el);
+      if (!area) return;
+
+      if (res.ok && res.result === 'valid') {
+        var a = res.attendee || {};
+        area.innerHTML = '<div class="scan-alert scan-alert-valid">' +
+          '<div class="scan-alert-title"><span aria-hidden="true">✅</span> ADMISSION GRANTED — VALID TICKET</div>' +
+          '<p class="scan-alert-desc">Ticket verified and checked in successfully.</p>' +
+          '<div class="scan-attendee-details">' +
+          '<strong>Attendee:</strong> ' + esc(a.alias || 'Guest') + ' (Pass #SM-' + esc(a.ref || '') + ')<br>' +
+          '<strong>Ticket Tier:</strong> ' + esc(a.tier || 'Standard') + '<br>' +
+          '<strong>Check-In Time:</strong> ' + esc(fmtInstant(new Date())) +
+          '</div></div>';
+      } else if (res.error === 'already_checked_in') {
+        var extra = res;
+        area.innerHTML = '<div class="scan-alert scan-alert-duplicate">' +
+          '<div class="scan-alert-title"><span aria-hidden="true">⚠️</span> ALREADY CHECKED IN (DUPLICATE PASS)</div>' +
+          '<p class="scan-alert-desc">This ticket has already been used for entry.</p>' +
+          (extra.checkedInAt ? '<div class="scan-attendee-details"><strong>First Checked In:</strong> ' + esc(fmtInstant(extra.checkedInAt)) + ' by ' + esc(extra.checkedInByAlias || 'Door Staff') + '</div>' : '') +
+          '</div>';
+      } else if (res.error === 'ticket_refunded') {
+        area.innerHTML = '<div class="scan-alert scan-alert-invalid">' +
+          '<div class="scan-alert-title"><span aria-hidden="true">❌</span> ADMISSION DENIED — REFUNDED TICKET</div>' +
+          '<p class="scan-alert-desc">This booking was refunded. The pass is invalid for entry.</p>' +
+          '</div>';
+      } else if (res.error === 'ticket_cancelled') {
+        area.innerHTML = '<div class="scan-alert scan-alert-invalid">' +
+          '<div class="scan-alert-title"><span aria-hidden="true">❌</span> ADMISSION DENIED — CANCELLED PASS</div>' +
+          '<p class="scan-alert-desc">This ticket or booking was cancelled.</p>' +
+          '</div>';
+      } else if (res.error === 'ticket_revoked' || res.error === 'ticket_reissued') {
+        area.innerHTML = '<div class="scan-alert scan-alert-invalid">' +
+          '<div class="scan-alert-title"><span aria-hidden="true">❌</span> ADMISSION DENIED — REVOKED / REISSUED</div>' +
+          '<p class="scan-alert-desc">This ticket was revoked or replaced by a newly reissued pass.</p>' +
+          '</div>';
+      } else {
+        area.innerHTML = '<div class="scan-alert scan-alert-invalid">' +
+          '<div class="scan-alert-title"><span aria-hidden="true">❌</span> TICKET INVALID — ' + esc(res.error || 'VERIFICATION FAILED') + '</div>' +
+          '<p class="scan-alert-desc">' + esc(res.message || 'Pass could not be verified for this event.') + '</p>' +
+          '</div>';
+      }
+    }
+
+    function bindScannerControls() {
+      var camToggle = $('[data-cam-toggle]', el);
+      if (camToggle) {
+        camToggle.addEventListener('click', function () {
+          if (mediaStream) {
+            stopCamera();
+            camToggle.textContent = 'Resume Camera';
+          } else {
+            startCamera();
+            camToggle.textContent = 'Pause Camera';
+          }
+        });
+      }
+
+      var manualForm = $('form[data-manual-scan-form]', el);
+      if (manualForm) {
+        manualForm.addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          var code = manualForm.ticketCode.value.trim();
+          var overrideReason = manualForm.overrideReason ? manualForm.overrideReason.value.trim() : null;
+          var method = overrideReason ? 'manual_override' : 'manual_lookup';
+          handleScannedPayload(code, method, overrideReason);
+          manualForm.ticketCode.value = '';
+          if (manualForm.overrideReason) manualForm.overrideReason.value = '';
+        });
+      }
+    }
+
+    renderScanner();
+  }
+
+  function initStaffAccept(form) {
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var fMsg = $('[data-form-msg]', form);
+      var btn = $('button[type=submit]', form);
+      btn.disabled = true;
+      var token = form.token.value;
+      api('POST', '/api/staff/accept-invite', { token: token }).then(function (r) {
+        if (r.ok) {
+          fMsg.className = 'form-msg ok';
+          fMsg.textContent = 'Invitation accepted! Redirecting to event workspace…';
+          setTimeout(function () {
+            location.href = '/organiser/events/' + encodeURIComponent(r.eventId);
+          }, 800);
+        } else {
+          btn.disabled = false;
+          fMsg.className = 'form-msg error';
+          fMsg.textContent = r.message || 'Could not accept invitation.';
+        }
       });
     });
-    load();
   }
 
   /* =====================================================================================
@@ -898,7 +1543,34 @@
     }
   }
 
+  function initStaffAccept(form) {
+    var msg = $('[data-form-msg]', form);
+    var btn = $('button[type="submit"]', form);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (btn) btn.disabled = true;
+      if (msg) { msg.textContent = 'Accepting invitation…'; msg.className = 'form-msg info'; }
+      var token = (form.token && form.token.value) || '';
+      api('POST', '/api/staff/accept-invite', { token: token }).then(function (r) {
+        if (btn) btn.disabled = false;
+        if (r.ok) {
+          if (msg) { msg.textContent = 'Invitation accepted! Redirecting to event workspace…'; msg.className = 'form-msg success'; }
+          setTimeout(function () {
+            window.location.href = '/organiser/events/' + encodeURIComponent(r.eventId);
+          }, 600);
+          return;
+        }
+        if (msg) {
+          msg.textContent = r.message || 'Could not accept invitation.';
+          msg.className = 'form-msg error';
+        }
+      });
+    });
+  }
+
   var dash = $('[data-org-dashboard]'); if (dash) initDashboard(dash);
   var manage = $('[data-org-manage]'); if (manage) initManage(manage);
   var wz = $('[data-wizard]'); if (wz) initWizard(wz);
+  var scan = $('[data-org-scan]'); if (scan) initScan(scan);
+  var staff = $('[data-staff-accept-form]'); if (staff) initStaffAccept(staff);
 })();

@@ -17,4 +17,5 @@ public/img/review/
 .agents/
 .claude/
 skills-lock.json
+*.code-workspace
 
