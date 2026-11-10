@@ -1,7 +1,7 @@
 # NIGHTLIFEZ Production Release Packet
 
 **Status:** prepared, not executed. The agent does not deploy to Production, touch the Production DB, or change Vercel env/DNS/BotFather.
-**Prepared:** 2026-11-10 against `launch-mvp` @ `771f6e1` (+ PR #42, S3a payment flags, which must be merged before release).
+**Prepared:** 2026-11-10 against `launch-mvp` @ `8edb778` (includes PR #42, S3a payment flags, `dc671d3`).
 **Production today:** running `5c6652a` (29 Oct). Its migration level is **believed** to be 009; unverified until Gate 3.
 
 ---
