@@ -36,8 +36,12 @@ The Preview deployment is shielded by Vercel Deployment Protection.
 The application uses Telegram authentication (Telegram WebApp / Login Widget) for sessions:
 - **Standard Flow:** Click "Sign in" in the top header $\rightarrow$ authenticate via Telegram.
 - **Preview Reviewer Guest Session:** On Preview environments, a restricted synthetic reviewer endpoint is available for testing the Attendee journey without tying to a personal Telegram account:
-  - Direct URL: `https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app/api/auth/preview-reviewer?next=/me`
+  - *Method & Scoping:* Must be called via `POST /api/auth/preview-reviewer` (clicking as a GET link returns `405 Method Not Allowed`). To sign in as the reviewer, open your browser developer console on the Preview site and run:
+    ```javascript
+    fetch('/api/auth/preview-reviewer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ next: '/me' }) }).then(() => window.location.href = '/me');
+    ```
   - *Privilege Scoping:* This synthetic session is hard-locked to standard attendee/guest permissions only (`REVIEWER_TG_ID = 9100000100`). It cannot access administrator or organizer consoles.
+- **Native Admin Bootstrapping:** To test Admin (Role 7) without running direct SQL, set `ADMIN_BOOTSTRAP_TELEGRAM_ID = <YOUR_TELEGRAM_ID>` in Vercel Preview Environment Variables. Signing into `/admin` with that account automatically and auditably grants `super_admin`.
 - **Dev-Login Persona Switcher:** Strictly disabled on all Vercel deployments (`devLoginEnabled()` returns `false`).
 
 ---
@@ -206,11 +210,12 @@ To ensure complete transparency, blockers are classified into distinct categorie
 1. **Step 1:** Log in to your Vercel account in your web browser.
 2. **Step 2:** Open the verified Preview URL:  
    [`https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app`](https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app)
-3. **Step 3:** To run the **Attendee (Role 1)** test immediately, click:  
-   [`https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app/api/auth/preview-reviewer?next=/me`](https://strangersmeetup-git-feature-m10-beta-readiness-h-a721b2-jakuraa.vercel.app/api/auth/preview-reviewer?next=/me)  
-   This logs you in as the synthetic preview reviewer and opens the Attendee Hub.
+3. **Step 3:** To run the **Attendee (Role 1)** test immediately as Preview Reviewer:  
+   Open your browser developer console on the Preview site and run:  
+   `fetch('/api/auth/preview-reviewer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ next: '/me' }) }).then(() => window.location.href = '/me');`  
+   *(Or alternatively, sign in directly using your personal Telegram account via the header "Sign in" button).*
 4. **Step 4:** Navigate to `/events` and complete tests `ATT-01` through `ATT-06` (browsing, saving, booking sample rooftop mixer, viewing secret venue reveal, and cancelling).
-5. **Step 5:** Connect to the Preview database and run the SQL query from §3.1 to assign your Telegram ID as `super_admin`.
+5. **Step 5:** For Admin (Role 7) access, either configure `ADMIN_BOOTSTRAP_TELEGRAM_ID = <YOUR_TELEGRAM_ID>` in Vercel Preview settings (recommended, fully audited) or execute the verified provisioning SQL from §3.1 on the Preview DB.
 6. **Step 6:** Follow the test matrix sequentially for Roles 2 through 7.
 7. **Step 7:** Document any discrepancies or defects directly in the acceptance evidence template.
 
