@@ -205,14 +205,14 @@ test('7. Concurrency Invariant: Check-in vs Cancellation ordering and state prot
   assert.equal(cancelRes.json.ok, false);
 });
 
-test('8. Live Payments Hard Boundary: ENABLE_LIVE_PAYMENTS=false blocks paid checkout intents', async () => {
+test('8. Payments Hard Boundary: UPI_CHECKOUT_ENABLED=false blocks UPI checkout intents', async () => {
   const client = new Client();
   const checkoutRes = await client.post('/api/checkout/upi/intent', {
     eventId,
     ticketTypeId,
     quantity: 1
   });
-  // With ENABLE_LIVE_PAYMENTS=false and no test override, intent creation fails closed
-  assert.ok([400, 403, 404, 503].includes(checkoutRes.status));
+  // With UPI_CHECKOUT_ENABLED unset the UPI routes do not exist
+  assert.equal(checkoutRes.status, 404);
   assert.equal(checkoutRes.json.ok, false);
 });

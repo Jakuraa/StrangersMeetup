@@ -17,6 +17,7 @@ Object.assign(process.env, {
   TG_CHAT_ID_TIER_3: '-1002222222223',
   SUPERPROFILE_WEBHOOK_SECRET: 'test_sp_webhook_secret_0123456789',
   ENABLE_LIVE_PAYMENTS: 'false',
+  UPI_CHECKOUT_ENABLED: 'false',
   PUBLIC_SITE_URL: 'https://sm.test',
   ADMIN_BOOTSTRAP_TELEGRAM_ID: '900000001',
   LOG_SILENT: 'true'

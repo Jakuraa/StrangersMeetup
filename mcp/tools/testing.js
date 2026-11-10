@@ -49,6 +49,7 @@ export async function runSafeTests({ suite }) {
     IS_LOCAL_TEST: 'true',
     DEV_LOGIN: 'true',
     ENABLE_LIVE_PAYMENTS: 'false',
+    UPI_CHECKOUT_ENABLED: 'false',
     TEST_DATABASE_URL: 'postgres://localhost/sm_rec_test'
   };
 

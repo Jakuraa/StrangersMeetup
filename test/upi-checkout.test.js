@@ -43,7 +43,9 @@ let admin;
 let seq = 0;
 
 before(async () => {
-  process.env.ENABLE_LIVE_PAYMENTS = 'true';
+  // UPI runs on its own flag; SuperProfile's ENABLE_LIVE_PAYMENTS stays off to prove they are independent.
+  process.env.UPI_CHECKOUT_ENABLED = 'true';
+  process.env.ENABLE_LIVE_PAYMENTS = 'false';
   process.env.ALLOW_PREVIEW_PAID_CHECKOUT = 'true';
   stubUrl('https://api-preprod.phonepe.com', (url, init) => {
     if (url.includes('/pg/v1/refund')) {
@@ -74,6 +76,7 @@ before(async () => {
 
 after(async () => {
   stubUrl('https://api-preprod.phonepe.com', null);
+  process.env.UPI_CHECKOUT_ENABLED = 'false';
   process.env.ENABLE_LIVE_PAYMENTS = 'false';
   delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
   await stopServer();
@@ -430,13 +433,15 @@ test('concurrency: simultaneous checkout intents respect capacity limits', async
 
 // ---------------- 10. Safety Boundary Enforcement ----------------
 
-test('safety boundary: ENABLE_LIVE_PAYMENTS=false blocks paid intent creation in non-test mode', async () => {
+test('safety boundary: UPI_CHECKOUT_ENABLED=false blocks paid intent creation even with ENABLE_LIVE_PAYMENTS=true', async () => {
   const origAllow = process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
   const origLive = process.env.ENABLE_LIVE_PAYMENTS;
+  const origUpi = process.env.UPI_CHECKOUT_ENABLED;
 
   try {
     delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
-    process.env.ENABLE_LIVE_PAYMENTS = 'false';
+    process.env.ENABLE_LIVE_PAYMENTS = 'true';
+    process.env.UPI_CHECKOUT_ENABLED = 'false';
 
     const { event, tier } = await createPaidEvent({ price: 20000 });
 
@@ -447,11 +452,12 @@ test('safety boundary: ENABLE_LIVE_PAYMENTS=false blocks paid intent creation in
         ticketTypeId: tier.id,
         quantity: 1
       }),
-      (err) => err.status === 403 && err.code === 'live_payments_disabled'
+      (err) => err.status === 404 && err.code === 'not_found'
     );
   } finally {
     process.env.ALLOW_PREVIEW_PAID_CHECKOUT = origAllow;
     process.env.ENABLE_LIVE_PAYMENTS = origLive;
+    process.env.UPI_CHECKOUT_ENABLED = origUpi;
   }
 });
 

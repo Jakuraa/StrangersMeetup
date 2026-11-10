@@ -60,4 +60,4 @@ only when `MIGRATE_ON_PREVIEW=true`, which must be set only if Preview has its o
 ## Rules this codebase keeps
 - No fabricated data: every number is a query; demo rows are `is_demo` and labelled "Sample"; social proof hidden below `SOCIAL_PROOF_MIN`.
 - Server is the source of truth: bookings/entitlements change only in verified webhooks or server-side reconciliation.
-- Secrets only in env vars; `.env.example` lists names only. Live payments off until `ENABLE_LIVE_PAYMENTS=true`.
+- Secrets only in env vars; `.env.example` lists names only. SuperProfile link-out off until `ENABLE_LIVE_PAYMENTS=true`; UPI/PhonePe off until `UPI_CHECKOUT_ENABLED=true` (independent flags).
