@@ -227,3 +227,14 @@ To transition payment processing from `ENABLE_LIVE_PAYMENTS=false` to live produ
 2. **KYB & Commercial Contracting**: Complete merchant onboarding, bank nodal account binding, and production credential issuance.
 3. **Webhook Whitelisting**: Register production webhook endpoints with HTTPS TLS termination.
 4. **₹1 Financial Pilot**: Execute an end-to-end live ₹1 payment and subsequent refund under supervision on a dedicated staging branch before enabling production traffic.
+
+---
+
+## 8. Note for any future PhonePe onboarding: the currency rule (2026-11-10, no code change)
+
+**Status:** UPI checkout stays off (`UPI_CHECKOUT_ENABLED=false`). This section changes no behaviour. It records a design consequence so it is not rediscovered later.
+
+- The verification engine requires the **provider payload** to state `currency === 'INR'` (§7.1.2). PhonePe's domestic v1 status and callback payloads never carry a `currency` field. So, **by design, no genuine PhonePe v1 payment can ever auto-confirm**: every one ends up `disputed` with `missing_currency`. This is not a bug in the adapter. It is the rule working exactly as written against a provider that cannot meet it.
+- The rule was written to stop the adapter from *manufacturing* evidence (`currency || 'INR'`). That goal is right. But "the provider must echo the currency" is only one way to establish the INR invariant. For a domestic-only UPI merchant account, INR is fixed by the **signed merchant agreement and the merchant configuration**, not by each payload.
+- **If PhonePe ever onboards the merchant**, revisit the rule before enabling anything. Derive the invariant from (a) the server-configured merchant ID matching the signed status response's merchant scope, (b) the merchant contract and configuration declaring domestic INR only, and (c) the exact-paise amount match. Write that derivation down explicitly in config, e.g. as a per-provider `currencyEvidence: 'contract'` rather than `'payload'`. Do not reintroduce a silent default. The change needs its own review, tests showing a missing payload currency is accepted **only** for a contract-INR provider, and an owner sign-off.
+- Until then, Outcome B (§7.2) stands.

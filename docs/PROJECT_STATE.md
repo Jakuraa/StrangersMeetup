@@ -2,7 +2,7 @@
 
 **Single source of truth for where the code, environments and gates stand.** Each milestone PR updates this file. Other docs hold design and how-to detail; this file links to them instead of repeating them. Older point-in-time reports live in [`history/`](history/README.md).
 
-Captured **2026-11-03 07:30 IST**, after `git fetch --all --prune`, from `git`, `gh` and Vercel deployment metadata. Every SHA, PR, run and build-log line below was read in that session. Anything not verified says so.
+Captured **2026-11-10 15:30 IST**, after `git fetch --all --prune`, from `git`, `gh` and Vercel deployment metadata (§2–§4 and §7 refreshed; §5, §6 and §8 are from 2026-11-03 and not re-checked). Every SHA, PR, run and build-log line below was read in that session. Anything not verified says so.
 
 ---
 
@@ -20,63 +20,57 @@ Repository: `Jakuraa/StrangersMeetup`. Vercel project: `strangersmeetup` (the te
 
 | Ref | SHA | What it is |
 |---|---|---|
-| `origin/main` | `5c6652a` | Merge of PR #2 (2026-10-29). **Contains nothing that `launch-mvp` lacks**: both parents (`b13d927`, `7bc062b`) are ancestors of `launch-mvp`. 78 commits behind `launch-mvp`. |
-| `origin/launch-mvp` | `c71ec8d` | Merge of PR #29 (M4.2 UPI Security Audit). Baseline for M4.3. |
-| `origin/feature/p3-location-intelligence` | `d7836ff` | PR #23 feature branch head; merged into `launch-mvp` at `7c5079e`. |
-| `origin/fix/preview-recovery-audit` | `bcb4989` | Commit holding Phase 5.6/5.7 reports; pushed to origin per owner decision. |
+| `origin/main` | `5c6652a` | Production. Merge of PR #2 (2026-10-29). Contains nothing that `launch-mvp` lacks. |
+| `origin/launch-mvp` | `771f6e1` | Merge of **PR #41**, "Consolidate M4–M10 (supersedes #30–#40)", 2026-11-10. Head of the consolidated stack: `02bfdba`. |
+| `archive/feature/m4-3-upi-security-remediation` … `archive/feature/m10-beta-readiness-hardening` | 11 tags | Heads of the superseded PRs #30–#40 (table in §3). Branches deleted after tagging. |
 
-Local `main` in the main clone is at `5693f7b`, an older Production commit that is behind `origin/main`. It is not checked out anywhere. Local `launch-mvp` matches `origin/launch-mvp` @ `c71ec8d`.
+## 3. Pull requests and CI
 
-## 3. Open pull requests and CI
+**Open**
 
-| PR | Base ← Head | Head SHA | Checks on head | Latest CI run |
-|---|---|---|---|---|
-| #17 Production release: free-only MVP | `main` ← `launch-mvp` | `83a30a7` | `lint, unit, e2e` ✅ (push + PR) · Vercel ✅ · Vercel Preview Comments ✅ | [41564501659](https://github.com/Jakuraa/StrangersMeetup/actions/runs/41564501659) (push) success |
-| #30 M4.3 UPI Security Remediation | `launch-mvp` ← `feature/m4-3-upi-security-remediation` | `e4babe6` | `lint, unit, e2e` ✅ | PR Review Baseline for M4.3.1 |
-| #31 M4.3.1 Review Remediation | `feature/m4-3-upi-security-remediation` ← `feature/m4-3-1-review-remediation` | `03bf518` | `lint, unit, e2e` ✅ | Independent Review Corrections for PR #30 |
-| #32 M4.3.2 Financial Integrity Remediation | `feature/m4-3-1-review-remediation` ← `feature/m4-3-2-financial-integrity` | `62cb0a3` | `lint, unit, e2e` ✅ · Vercel ✅ | Fail-Closed Merchant Identity & Secure Manual Refund Reconciliation |
-| #33 M4.3.3 Final Provider Verification Integrity | `feature/m4-3-2-financial-integrity` ← `feature/m4-3-3-provider-verification` | `4c54711` | `lint, unit, e2e` ✅ · Vercel ✅ | Removal of Currency Defaults, Elimination of Merchant Fallback, Authentic S2S Polling & Attestation |
-| #34 M4.3.4 Provider Contract Decision & M4 Closure | `feature/m4-3-3-provider-verification` ← `feature/m4-3-4-contract-decision` | `1e5bd19` | `lint, unit, e2e` ✅ | PhonePe Contract Determination (Outcome B), Full Regression Suite, Audit & Milestone M4 Closure |
-| #35 M5 Telegram & Operational Workflows | `feature/m4-3-4-contract-decision` ← `feature/m5-telegram-operational-workflows` | `262f4f0` | `lint, unit, e2e` ✅ | Telegram Identity & Account Linking, Event Private Group Isolation (No Shared Group), Operational Notifications with Quiet Hours, /report Workflow |
-| #36 M6 Organiser Workspace, Event Staff & Secure QR Check-In | `feature/m5-telegram-operational-workflows` ← `feature/m6-organiser-workspace` | `66ad026` | `lint, unit, e2e` ✅ | Server-Authoritative QR Tickets, Event-Scoped Staff Roles, Check-In Validation, Duplicate Scan Prevention, Capacity & Inventory |
-| #37 M7 Attendee Discovery & Experience Hub | `feature/m6-organiser-workspace` ← `feature/m7-attendee-experience` | `5453ab1` | `lint, unit, e2e` ✅ | Personalised Feed, Category Collections, Distance Bands, Mystery Venue Teasers, Bookmarking, Responsive Discovery |
-| #38 M8 Real-time Notifications & Operational Comms | `feature/m7-attendee-experience` ← `feature/m8-realtime-notifications` | `0b30221` | `lint, unit, e2e` ✅ | Notification Outbox, Quiet Hours (IST), Attendee Self-Cancellation, Host Approval Webhooks, Admin Outbox Management |
-| #39 M9 Multi-Role E2E, Security, Performance & Accessibility Review | `feature/m8-realtime-notifications` ← `feature/m9-testing-security-review` | `b8c82c5` | `lint, unit, e2e` ✅ | 7-Role E2E Browser Harness, IDOR/BOLA & Security Audit, 44px Mobile Tap Targets, Sub-Millisecond Queries, Blocker #6 Resolution |
-| #40 M10 Beta Readiness, Operational Hardening & Final Engineering Gate | `feature/m9-testing-security-review` ← `feature/m10-beta-readiness-hardening` | `112361f` | `lint, unit, e2e` ✅ | Operational Hardening Runbook, 7-Role Acceptance Checklist, Venue/Partner Lifecycles, Blocker #6 Reconciliation, M1–M10 Gate Signoff |
+| PR | Base ← Head | Purpose |
+|---|---|---|
+| #17 Production release | `main` ← `launch-mvp` | Owner gate 1. Must not be merged without the owner's separate approval. |
+| #42 | `launch-mvp` ← `fix/s3a-upi-checkout-flag` | S3a: `UPI_CHECKOUT_ENABLED` separate from `ENABLE_LIVE_PAYMENTS` |
 
-**Owner gate:** PR #17 must not be merged without the owner's separate approval. `main` has no GitHub Actions runs on record. PR #40, PR #39, PR #38, PR #37, PR #36, PR #35, PR #34, PR #33, PR #32, PR #31, PR #30, and PR #17 must not be merged without separate owner approval. Keep `ENABLE_LIVE_PAYMENTS=false` everywhere.
+**Consolidation (2026-11-10).** PR #41 merged `feature/m10-beta-readiness-hardening` @ `02bfdba` into `launch-mvp` as `771f6e1`. CI run [42791819075](https://github.com/Jakuraa/StrangersMeetup/actions/runs/42791819075) on the exact head:
+- lint 153/153;
+- `npm test` 695 tests (693 pass, 0 fail, 2 skipped);
+- `npm run test:e2e` 182 tests (171 passed, 11 skipped, 0 failed; desktop 66 / mobile 66 / responsive 50).
 
-PR #23 is **merged** at `7c5079e` (P3 Location Intelligence + M2 Remediation).
-PR #25 is **merged** at `83a30a7` (Owner Addendum Ops: dynamic DB block list, branch archiving, Phase 5.6/5.7 reports).
-PR #26 is **merged** at `46b85c1` (M3 Deployment & Database Migration Architecture).
-PR #27 is **merged** at `69cafae` (M4 Payment, Booking and Revenue Readiness Audit).
-PR #28 is **merged** at `c3b4e83` (M4.1 UPI-First Checkout, Dynamic QR & Verified Payment Integration).
-PR #29 is **merged** at `c71ec8d` (M4.2 Independent UPI Payment Security & Production Readiness Audit).
-PR #30 is **open / preserved** (`feature/m4-3-upi-security-remediation`).
-PR #31 is **open / preserved** (`feature/m4-3-1-review-remediation`).
-PR #32 is **open / preserved** (`feature/m4-3-2-financial-integrity`).
-PR #33 is **open / preserved** (`feature/m4-3-3-provider-verification`).
-PR #34 is **open / preserved** (`feature/m4-3-4-contract-decision`).
-PR #35 is **open / preserved** (`feature/m5-telegram-operational-workflows`).
-PR #36 is **open / preserved** (`feature/m6-organiser-workspace`).
-PR #37 is **open / preserved** (`feature/m7-attendee-experience`).
-PR #38 is **open / preserved** (`feature/m8-realtime-notifications`).
-PR #39 is **open / preserved** (`feature/m9-testing-security-review`).
-PR #40 is **open / preserved** (`feature/m10-beta-readiness-hardening`).
+CI had been red on #37–#40 because one e2e test leaked state between projects; the fix is `02bfdba`.
+
+| Superseded PR | Branch (now tag `archive/<branch>`) | Head | State |
+|---|---|---|---|
+| #30 | feature/m4-3-upi-security-remediation | `e4babe6` | auto-marked merged by GitHub (head contained in #41) |
+| #31 | feature/m4-3-1-review-remediation | `03bf518` | closed, superseded by #41 |
+| #32 | feature/m4-3-2-financial-integrity | `62cb0a3` | closed, superseded by #41 |
+| #33 | feature/m4-3-3-provider-verification | `4c54711` | closed, superseded by #41 |
+| #34 | feature/m4-3-4-contract-decision | `2c930dd` | closed, superseded by #41 |
+| #35 | feature/m5-telegram-operational-workflows | `43cf05a` | closed, superseded by #41 |
+| #36 | feature/m6-organiser-workspace | `66ad026` | closed, superseded by #41 |
+| #37 | feature/m7-attendee-experience | `5453ab1` | closed, superseded by #41 |
+| #38 | feature/m8-realtime-notifications | `0b30221` | closed, superseded by #41 |
+| #39 | feature/m9-testing-security-review | `b8c82c5` | closed, superseded by #41 |
+| #40 | feature/m10-beta-readiness-hardening | `142cc62` (branch reached `02bfdba`) | closed, superseded by #41 |
+
+Earlier merges into `launch-mvp`: #23 `7c5079e`, #25 `83a30a7`, #26 `46b85c1`, #27 `69cafae`, #28 `c3b4e83`, #29 `c71ec8d`.
+
+Keep `ENABLE_LIVE_PAYMENTS=false` and `UPI_CHECKOUT_ENABLED=false` everywhere.
 
 ## 4. Migrations per environment
 
-`npm run vercel-build` runs `scripts/migrate.js` on every Vercel build. `migrationPolicy()` (`lib/db.js:87`) only allows Preview builds to migrate when `MIGRATE_ON_PREVIEW=true` **and** the build is isolated (`ISOLATED_PREVIEW_DB=true` or `PREVIEW_DATABASE_URL` set). `migrate()` records applied files **by filename only** in `schema_migrations`, with no checksum, so an edited migration file is never re-applied.
+`npm run vercel-build` runs `scripts/migrate.js` on every Vercel build. `migrationPolicy()` (`lib/db.js`) lets Preview builds migrate only when `MIGRATE_ON_PREVIEW=true` **and** isolation is proven. `migrate()` records applied files **by filename only** in `schema_migrations`. The tree on `launch-mvp` holds `003`–`020`; there is no `021`.
 
 | Environment | DB endpoint | Applied | Evidence |
 |---|---|---|---|
-| **Local / CI** | ephemeral Postgres | whatever the checked-out tree has (`003`…`017` on `feature/m4-3-1-review-remediation`) | CI service container; fresh each run. |
-| **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `014`** (applied) | Applied via PR #23 push @ `d7836ff` (`dpl_AbjNDha7i298qjrh84FZZA3hHUQv`): `migration applied {"file":"014_location_remediation.sql"}`. |
-| **Production** | `ep-dawn-glitter-b4mkwxkl` (from earlier docs; not re-verified) | **`003` … `009`** per its last build | Build log for `main` @ `5c6652a` (`dpl_3g7aUM3V…`, 2026-10-29): `[migrate] done (0 applied; vercel production)`; that tree holds `003`–`009`. |
+| **Local / CI** | ephemeral Postgres | `003` … `020` | CI service container; fresh each run. |
+| **Preview** (isolated) | `ep-green-hall-b47clnq0` (from earlier docs; the connection string was not read) | **`003` … `020`** | `launch-mvp` @ `771f6e1` build (`dpl_HRrw7oPWNomHhzUuszjpF96RC46s`, 2026-11-10): `[migrate] done (0 applied; vercel preview with MIGRATE_ON_PREVIEW=true and confirmed isolated database)`. That tree holds `003`–`020`, so all of them were already present (applied earlier by the stacked feature-branch Preview builds). |
+| **Production** | **unknown**: `ep-dawn-glitter-b4mkwxkl` is unconfirmed (Gate 3) | **believed `003` … `009`** | Build log for `main` @ `5c6652a` (2026-10-29): `[migrate] done (0 applied; vercel production)`; that tree holds `003`–`009`. Not re-verified. The release will apply `010`–`020`: see [PRODUCTION_RELEASE_PACKET.md](launch/PRODUCTION_RELEASE_PACKET.md). |
 
-> ℹ️ **Preview DB migrations.** Both `013_location_intelligence.sql` and `014_location_remediation.sql` are applied on the Preview database. `013` was preserved strictly unchanged; all fixes were applied via `014`.
+> ⚠️ **Owner Gate 3 is still open.** See [PRODUCTION_DATABASE_VERIFICATION.md](launch/PRODUCTION_DATABASE_VERIFICATION.md). The block list (`DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS` + `BLOCKED_PRODUCTION_ENDPOINTS` in `lib/config.js`) refuses listed endpoints for preview reviewer sign-in, seed/reset, preview writes and preview migrations.
 
-> ⚠️ **Unreconciled — Production DB contents (Owner Gate 3).** See [PRODUCTION_DATABASE_VERIFICATION.md](launch/PRODUCTION_DATABASE_VERIFICATION.md) for full forensics. On 2026-10-29, build `dpl_3g7a...` applied migrations 003–009 to the configured database. The owner will provide the confirmed Production project ID and endpoint ID from Vercel → Storage before release. Until then, `ep-dawn-glitter-b4mkwxkl` is treated as unconfirmed/suspected. The codebase implements a dynamic production endpoint block list (via `DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS` and `BLOCKED_PRODUCTION_ENDPOINTS` in `lib/config.js`), strictly refusing all listed endpoints across preview reviewer sign-in, seed/reset guards, preview writes, and preview migrations, verified by automated tests in `test/safety.test.js` and `test/migrations.test.js`.
+> ⚠️ **Preview has never authenticated a user.** `SESSION_SECRET` (and the Telegram login vars) are missing on Preview, so every earlier "verified Preview" claim covered unauthenticated pages only. The owner steps are in [PREVIEW_LOGIN.md](launch/PREVIEW_LOGIN.md).
 
 ## 5. What is live vs Preview-only
 
@@ -104,13 +98,14 @@ Rule: only the canonical workspace switches to `launch-mvp`. Milestone branches 
 | # | Gate | Status |
 |---|---|---|
 | 1 | Approve merging PR #17 (`launch-mvp` → `main`) and the Production release | open |
-| 2 | Production env vars. Missing as of P0 (2026-11-02, names only): `SESSION_SECRET`, `CRON_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TG_CHAT_ID_EVENTS`, `ADMIN_BOOTSTRAP_TELEGRAM_ID`, `PUBLIC_SITE_URL`, `SUPPORT_EMAIL`, `LEGAL_ENTITY_NAME`, `GRIEVANCE_OFFICER_NAME`, `GRIEVANCE_EMAIL` (`ENABLE_LIVE_PAYMENTS` unset = off) | open, not re-checked in M1 |
+| 2 | Production env vars. The full list (names only), including `ENABLE_LIVE_PAYMENTS=false` and `UPI_CHECKOUT_ENABLED=false`, is in [PRODUCTION_RELEASE_PACKET.md](launch/PRODUCTION_RELEASE_PACKET.md) §3 | open, not re-checked since P0 (2026-11-02) |
 | 3 | Reconcile which DB Production points at (§4) | open (owner will supply confirmed project ID & endpoint ID from Vercel → Storage; dynamic block list active) |
-| 4 | Domain/DNS for `nightlifez.com` (Cloudflare, Vercel) | open (M8 prepares the steps in docs/launch/DNS_AND_EMAIL_ROUTING.md) |
-| 5 | BotFather `/setdomain` and profile; Telegram groups and channel | open (M5 prepares the steps) |
+| 4 | Domain/DNS for `nightlifez.com`: Vercel records **DNS-only (grey cloud)**, `www` → apex redirect in Vercel | open. Runbook corrected 2026-11-10: [DNS_AND_EMAIL_ROUTING.md](launch/DNS_AND_EMAIL_ROUTING.md) §2 |
+| 5 | Telegram bots: a **test bot** for Preview (`/setdomain strangersmeetup-git-launch-mvp-jakuraa.vercel.app`) and the production bot (`/setdomain nightlifez.com`); groups and channel | open. Steps: [PREVIEW_LOGIN.md](launch/PREVIEW_LOGIN.md) |
 | 6 | Vercel Protection Bypass for Automation | reconciled in M10; pending owner token generation in Vercel and injection into GitHub Secrets (see docs/launch/REMAINING_OWNER_ACTIONS.md) |
-| 7 | Email routing `contact@nightlifez.com` | open (M8 prepares the steps in docs/launch/DNS_AND_EMAIL_ROUTING.md) |
+| 7 | Email routing `contact@nightlifez.com` (receive/forward only); DMARC starts at `p=none` | open. [DNS_AND_EMAIL_ROUTING.md](launch/DNS_AND_EMAIL_ROUTING.md) §3 |
 | 8 | Legal fields (entity, grievance officer) | open |
+| 11 | **Preview env vars** so Preview can authenticate: `SESSION_SECRET`, `PREVIEW_TELEGRAM_BOT_TOKEN`, Preview-scoped `TELEGRAM_BOT_USERNAME` / `TELEGRAM_LOGIN_CLIENT_ID` / `TELEGRAM_LOGIN_CLIENT_SECRET`, `PREVIEW_PUBLIC_SITE_URL`, `ADMIN_BOOTSTRAP_TELEGRAM_ID` | open. Blocks the S4 authenticated Preview smoke. [PREVIEW_LOGIN.md](launch/PREVIEW_LOGIN.md) |
 | 9 | Approve the branch/worktree deletions proposed in §9 | **completed / approved** (19 fully merged remote branches archived to `archive/<branch>` tags and deleted from origin; `.claude/worktrees/launch-mvp` preserved as is) |
 | 10 | Decide on the unpushed Phase 5.6/5.7 reports (local commit `bcb4989`): push and archive, or drop | **completed / approved** (`bcb4989` pushed to `origin/fix/preview-recovery-audit`; reports imported into `docs/history/`) |
 
