@@ -367,7 +367,13 @@ test('operational recovery: /start claim_upi_<orderId>_<guestToken> claims guest
 
   const c = new Client();
   const tgUser = { id: 7402, first_name: 'Pooja' };
-  const r = await c.post('/api/telegram/webhook', msg(tgUser, `/start claim_upi_${orderId}_${guestToken}`), SECRET);
+  process.env.UPI_CHECKOUT_ENABLED = 'true'; // the claim path is part of UPI checkout
+  let r;
+  try {
+    r = await c.post('/api/telegram/webhook', msg(tgUser, `/start claim_upi_${orderId}_${guestToken}`), SECRET);
+  } finally {
+    process.env.UPI_CHECKOUT_ENABLED = 'false';
+  }
   assert.equal(r.status, 200);
 
   const reply = callsTo('sendMessage').find((m) => m.params.chat_id === 7402);
