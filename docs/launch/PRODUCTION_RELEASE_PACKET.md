@@ -1,7 +1,7 @@
 # NIGHTLIFEZ Production Release Packet
 
 **Status:** prepared, not executed. The agent does not deploy to Production, touch the Production DB, or change Vercel env/DNS/BotFather.
-**Prepared:** 2026-11-10 against `launch-mvp` @ `8edb778` (includes PR #42, S3a payment flags, `dc671d3`).
+**Prepared:** 2026-11-11 against `launch-mvp` @ `c6c8d72` (includes PR #41–#44, ticket secret fail-closed hardening).
 **Production today:** running `5c6652a` (29 Oct). Its migration level is **believed** to be 009; unverified until Gate 3.
 
 ---
@@ -45,7 +45,7 @@ Why: Preview tooling refuses any DB URL whose Neon endpoint is on the blocklist.
 | Name | Value / rule |
 |---|---|
 | `DATABASE_URL` | Production Neon URL (Gate 3 endpoint) |
-| `SESSION_SECRET` | ≥ 32 chars, Production-only. **Required:** without it sessions return 503, and ticket QR signing falls back to a hard-coded dev secret |
+| `SESSION_SECRET` | ≥ 32 chars, Production-only. **Required:** without it sessions return 503, and ticket QR signing fails closed (throws 503, no fallback to dev secret) |
 | `TICKET_SECRET` | recommended, ≥ 32 chars; separates QR signing from sessions |
 | `CRON_SECRET` | ≥ 16 chars |
 | `PUBLIC_SITE_URL` | `https://nightlifez.com` |
