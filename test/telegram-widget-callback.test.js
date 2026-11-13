@@ -192,3 +192,165 @@ test('unsafe redirect destinations are sanitized to /me', async () => {
     assert.equal(r.headers.get('location'), '/me', `Unsafe destination ${unsafeTargets[i]} must be sanitized to /me`);
   }
 });
+
+test('payload containing is_premium is verified and establishes session', async () => {
+  const c = new Client();
+  const state = crypto.randomBytes(16).toString('hex');
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({ id: 5020, first_name: 'PremiumUser', username: 'vip_user', is_premium: 'true' });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/me');
+  assert.ok(r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+
+  const u = await db.one('SELECT telegram_user_id, alias FROM users WHERE telegram_user_id = 5020');
+  assert.equal(u.telegram_user_id, 5020);
+  assert.equal(u.alias, 'PremiumUser');
+});
+
+test('payload containing language_code is verified and establishes session', async () => {
+  const c = new Client();
+  const state = crypto.randomBytes(16).toString('hex');
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({ id: 5021, first_name: 'LangUser', username: 'lang_user', language_code: 'en' });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/me');
+  assert.ok(r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+});
+
+test('payload containing multiple extra Telegram fields is verified', async () => {
+  const c = new Client();
+  const state = crypto.randomBytes(16).toString('hex');
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({
+    id: 5022,
+    first_name: 'FullMeta',
+    last_name: 'User',
+    username: 'meta_user',
+    photo_url: 'https://t.me/i/userpic/320/meta.jpg',
+    is_premium: 'true',
+    language_code: 'hi',
+    allows_write_to_pm: 'true'
+  });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/me');
+  assert.ok(r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+
+  const u = await db.one('SELECT telegram_user_id, alias FROM users WHERE telegram_user_id = 5022');
+  assert.equal(u.alias, 'FullMeta User');
+});
+
+test('missing required Telegram fields (hash, id, or auth_date) are rejected', async () => {
+  const state = crypto.randomBytes(16).toString('hex');
+
+  // Missing hash
+  const c1 = new Client();
+  c1.cookies.sm_tg_state = state;
+  const widgetNoHash = makeWidgetData({ id: 5030, first_name: 'NoHash' });
+  delete widgetNoHash.hash;
+  const r1 = await c1.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoHash, state, '/me')}`);
+  assert.equal(r1.status, 302);
+  assert.equal(r1.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+  assert.ok(!r1.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+
+  // Missing id
+  const c2 = new Client();
+  c2.cookies.sm_tg_state = state;
+  const widgetNoId = makeWidgetData({ id: 5031, first_name: 'NoId' });
+  delete widgetNoId.id;
+  const r2 = await c2.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoId, state, '/me')}`);
+  assert.equal(r2.status, 302);
+  assert.equal(r2.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+
+  // Missing auth_date
+  const c3 = new Client();
+  c3.cookies.sm_tg_state = state;
+  const widgetNoDate = makeWidgetData({ id: 5032, first_name: 'NoDate' });
+  delete widgetNoDate.auth_date;
+  const r3 = await c3.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoDate, state, '/me')}`);
+  assert.equal(r3.status, 302);
+  assert.equal(r3.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+});
+
+test('malformed required fields (invalid hash format, non-numeric id) are rejected', async () => {
+  const state = crypto.randomBytes(16).toString('hex');
+
+  // Malformed hash (short non-64 hex)
+  const c1 = new Client();
+  c1.cookies.sm_tg_state = state;
+  const widgetShortHash = { ...makeWidgetData({ id: 5033, first_name: 'ShortHash' }), hash: 'badhash' };
+  const r1 = await c1.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetShortHash, state, '/me')}`);
+  assert.equal(r1.status, 302);
+  assert.equal(r1.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+
+  // Malformed ID (non-numeric string)
+  const c2 = new Client();
+  c2.cookies.sm_tg_state = state;
+  const widgetBadId = makeWidgetData({ id: 5034, first_name: 'BadId' });
+  widgetBadId.id = 'not-a-number';
+  const r2 = await c2.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetBadId, state, '/me')}`);
+  assert.equal(r2.status, 302);
+  assert.equal(r2.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+});
+
+test('payload signed with a different bot token is rejected', async () => {
+  const c = new Client();
+  const state = crypto.randomBytes(16).toString('hex');
+  c.cookies.sm_tg_state = state;
+
+  const differentToken = '987654321:DIFFERENT_BOT_TOKEN_1234567890';
+  const widget = makeWidgetData({ id: 5035, first_name: 'WrongBot' }, { token: differentToken });
+  const qs = buildCallbackQuery(widget, state, '/admin');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fadmin');
+  assert.ok(!r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+});
+
+test('duplicate security-sensitive parameters (HTTP parameter pollution) are rejected', async () => {
+  const c = new Client();
+  const state = crypto.randomBytes(16).toString('hex');
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({ id: 5036, first_name: 'DupParam' });
+  const qs = buildCallbackQuery(widget, state, '/me') + '&id=9999999';
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+  assert.ok(!r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+});
+
+test('unauthorized user cannot access /admin and cannot bootstrap administrator role', async () => {
+  const c = new Client();
+  const state = crypto.randomBytes(16).toString('hex');
+  c.cookies.sm_tg_state = state;
+
+  // ID 888888888 !== ADMIN_BOOTSTRAP_TELEGRAM_ID (which is 900000001)
+  const widget = makeWidgetData({ id: 888888888, first_name: 'NormalUser' });
+  const qs = buildCallbackQuery(widget, state, '/admin');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/admin');
+
+  // Attempt to access /admin with the issued attendee session
+  const adminRes = await c.get('/admin');
+  assert.equal(adminRes.status, 403, 'Unauthorized attendee must receive 403 on /admin');
+
+  // Verify database: user 888888888 must NOT be in admin_users
+  const adminRow = await db.one('SELECT * FROM admin_users WHERE telegram_user_id = 888888888');
+  assert.equal(adminRow, null, 'User must not exist in admin_users');
+});
