@@ -136,9 +136,34 @@ Verify that `SELECT count(*) FROM events WHERE status = 'published' AND NOT is_d
 
 Before publishing the first live event and selling tickets:
 
-- [ ] **1. Telegram Super-Admin Bootstrap:** Set `ADMIN_BOOTSTRAP_TELEGRAM_ID` in Vercel Production environment to the owner's numeric Telegram User ID. Sign in to confirm `/admin` console access.
-- [ ] **2. Telegram Event Chat Setup:** Create a private group for the event, add `@Nightlifez_bot` as Administrator with *Invite Users via Link* and *Ban Users* rights, and record its numeric Chat ID (`TG_CHAT_ID_EVENTS` or event-level chat ID).
-- [ ] **3. Webhook Registration:** Run the webhook registration command against `https://nightlifez.com/api/telegram/webhook` with Bot API credentials.
-- [ ] **4. Cloudflare Inbound Aliases:** Create forwarding rules in Cloudflare Email Routing for `contact@`, `safety@`, and `grievance@` pointing to `nightlifezofficial@gmail.com`. Add the `_dmarc` TXT record.
-- [ ] **5. End-to-End Free Booking Test:** Book one test ticket on mobile; verify the bot delivers the single-use invite DM; test scanning the QR pass at `/admin/checkin`.
-- [ ] **6. Archive Sample Demo Data:** Execute the query in Section 6 to archive sample events before publishing the live experience.
+- [ ] **1. Telegram Super-Admin Bootstrap (`ADMIN_BOOTSTRAP_TELEGRAM_ID`):**
+  - Obtain numeric Telegram User ID from `@userinfobot`.
+  - Add `ADMIN_BOOTSTRAP_TELEGRAM_ID` in Vercel Production environment variables.
+  - Sign in at `https://nightlifez.com/signin` and navigate to `/admin` to verify `super_admin` access.
+- [ ] **2. Telegram Event Chat Setup (`TG_CHAT_ID_EVENTS`):**
+  - Create a private group for the event baseline.
+  - Add `@Nightlifez_bot` as Administrator with *Invite Users via Link* and *Ban Users* rights.
+  - Extract the signed numeric Chat ID (e.g. `-100...`) and add `TG_CHAT_ID_EVENTS` to Vercel Production environment variables.
+- [ ] **3. Bot Webhook & Slash Commands:**
+  - Run `node scripts/telegram-setup.js` with bot credentials, or run Bot API commands (`setWebhook`, `setMyCommands`, `setChatMenuButton`).
+  - Verify `https://api.telegram.org/bot<TOKEN>/getWebhookInfo` reports `0` pending updates.
+- [ ] **4. Cloudflare Inbound Aliases & DMARC:**
+  - In Cloudflare Email Routing, add 3 forwarding rules (`contact@`, `safety@`, `grievance@` $\to$ `nightlifezofficial@gmail.com`). Keep Catch-all Disabled.
+  - In Cloudflare DNS, add TXT record: Name `_dmarc`, Value `v=DMARC1; p=none; rua=mailto:nightlifezofficial@gmail.com`.
+  - Test inbound email delivery from external email to `contact@nightlifez.com`.
+- [ ] **5. Demo Event Archival:**
+  - Execute Section 6 query to archive sample events: `UPDATE events SET status = 'archived' WHERE is_demo = true;`.
+- [ ] **6. First Event Creation & Publishing:**
+  - In `/admin/events/new`, create the first event with authentic details, attach dedicated private group chat ID, configure a ₹0 test tier, and publish.
+- [ ] **7. End-to-End Free Booking Test on Mobile:**
+  - Open `https://nightlifez.com/events/<slug>` on a mobile browser; complete Telegram authentication and book a free ticket.
+  - Verify booking confirmation page displays reference and dynamic QR pass.
+- [ ] **8. Telegram DM & Single-Use Invite Verification:**
+  - Confirm `@Nightlifez_bot` delivers booking DM with the private group invite link.
+  - Join the group; verify that forwarding the link to another user rejects entry as expired/already used.
+- [ ] **9. Door QR Check-In & Duplicate-Scan Rejection:**
+  - In `/admin/checkin`, scan the attendee QR pass: confirm first scan returns `200 OK` (Checked In).
+  - Immediately scan the same pass again: confirm duplicate scan returns `409 Conflict` (`already_checked_in`).
+- [ ] **10. Support & Safety Escalation Test:**
+  - Submit test report via `https://nightlifez.com/trust-safety` or `/report` in bot.
+  - Verify report appears in `/admin/leads` and triggers high-priority alert.
