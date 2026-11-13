@@ -183,9 +183,18 @@
         container.appendChild(el('div', { class: 'cmd-alert cmd-alert-warning', role: 'alert' }, [
           el('strong', { text: 'Action Required: ' }),
           el('span', { text: 'Reconciliation exceptions detected: ' + alertIssues.join(', ') + '. ' }),
-          btn('Review Orders', function () { show('orders', { focus: true }); }, 'btn-sm btn-primary', 'Go to orders tab')
+          can(['super_admin', 'finance', 'support']) ? btn('Review Orders', function () { show('orders', { focus: true }); }, 'btn-sm btn-primary', 'Go to orders tab') : null
         ]));
       }
+
+      function leadCount(type) {
+        var found = (ops.leads_by_type || []).filter(function (l) { return l.type === type; })[0];
+        return found ? found.count : 0;
+      }
+
+      var u7 = (exec.users && exec.users.new_7d) || 0;
+      var u30 = (exec.users && exec.users.new_30d) || 0;
+      var pendingBookings = (exec.bookings && exec.bookings.pending_approval) || 0;
 
       // ======================================================================
       // Section A: Executive Overview
@@ -196,10 +205,10 @@
           el('p', { class: 'cmd-sec-desc', text: 'High-level platform metrics, member growth, and volume telemetry.' })
         ]),
         el('div', { class: 'cmd-kpi-grid' }, [
-          kpiCard('Registered Users', Number(k.users).toLocaleString('en-IN'), '+' + (exec.users?.new_7d || 0) + ' (7d) • +' + (exec.users?.new_30d || 0) + ' (30d)', true),
+          kpiCard('Registered Users', Number(k.users).toLocaleString('en-IN'), '+' + u7 + ' (7d) • +' + u30 + ' (30d)', true),
           kpiCard('Active Members', Number(k.members).toLocaleString('en-IN'), (k.expiring_memberships || 0) + ' expiring ≤7d'),
           kpiCard('Upcoming Live Events', Number(k.upcoming_events).toLocaleString('en-IN'), (k.upcoming_demo_events || 0) + ' sample listings', true),
-          kpiCard('Confirmed Bookings', Number(k.confirmed_bookings).toLocaleString('en-IN'), (exec.bookings?.pending_approval || 0) + ' pending host approval'),
+          kpiCard('Confirmed Bookings', Number(k.confirmed_bookings).toLocaleString('en-IN'), pendingBookings + ' pending host approval'),
           kpiCard('Gross Live Revenue', rupees(k.paid_live_paise), 'Live checkout disabled (fail-closed)'),
           kpiCard('SuperProfile Orders', Number(fin.sp_paid_orders_count || 0).toLocaleString('en-IN'), rupees(fin.sp_paid_orders_paise || 0) + ' gross external volume'),
           kpiCard('Telegram Stars', (k.paid_stars || 0) + ' XTR', 'Telegram in-app currency'),
@@ -230,7 +239,7 @@
         ['Checkout Mode', function (e) { return pill(e.checkout_mode || 'none'); }],
         ['', function (e) {
           return el('div', { class: 'row-actions' }, [
-            e.seats_taken > 0 ? btn('Check-in', function () { loadAttendees(e, main); }, 'btn-sm btn-primary', 'Check in attendees for ' + e.title) : null,
+            (e.seats_taken > 0 && can(['super_admin', 'event_manager', 'support'])) ? btn('Check-in', function () { loadAttendees(e, main); }, 'btn-sm btn-primary', 'Check in attendees for ' + e.title) : null,
             el('a', { class: 'btn btn-sm btn-ghost', href: (['weekend_trip', 'resort_getaway'].indexOf(e.category) !== -1 ? '/trips/' : '/events/') + e.slug, target: '_blank', rel: 'noopener' }, ['View Page'])
           ]);
         }]
@@ -252,19 +261,19 @@
           el('div', { class: 'cmd-card' }, [
             el('div', { class: 'cmd-card-head' }, [
               el('h3', { class: 'cmd-card-title', text: 'Onboarding Leads Pipeline' }),
-              btn('View Leads', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost')
+              can(['super_admin', 'event_manager', 'support']) ? btn('View Leads', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost') : null
             ]),
             el('div', { class: 'cmd-stat-list' }, [
-              statRow('Host Applications', (ops.leads_by_type || []).find(function (l) { return l.type === 'host'; })?.count || 0),
-              statRow('Venue Submissions', (ops.leads_by_type || []).find(function (l) { return l.type === 'venue'; })?.count || 0),
-              statRow('Partner Inquiries', (ops.leads_by_type || []).find(function (l) { return l.type === 'partner'; })?.count || 0),
+              statRow('Host Applications', leadCount('host')),
+              statRow('Venue Submissions', leadCount('venue')),
+              statRow('Partner Inquiries', leadCount('partner')),
               statRow('Total New Leads', k.new_leads)
             ])
           ]),
           el('div', { class: 'cmd-card' }, [
             el('div', { class: 'cmd-card-head' }, [
               el('h3', { class: 'cmd-card-title', text: 'Event Pipeline Status' }),
-              btn('View Discovery', function () { show('discovery', { focus: true }); }, 'btn-sm btn-ghost')
+              can(['super_admin', 'event_manager', 'moderator']) ? btn('View Discovery', function () { show('discovery', { focus: true }); }, 'btn-sm btn-ghost') : null
             ]),
             el('div', { class: 'cmd-stat-list' }, [
               statRow('Organiser Drafts', ops.pending_drafts || 0),
@@ -276,7 +285,7 @@
           el('div', { class: 'cmd-card' }, [
             el('div', { class: 'cmd-card-head' }, [
               el('h3', { class: 'cmd-card-title', text: 'Reconciliation Health' }),
-              btn('View Orders', function () { show('orders', { focus: true }); }, 'btn-sm btn-ghost')
+              can(['super_admin', 'finance', 'support']) ? btn('View Orders', function () { show('orders', { focus: true }); }, 'btn-sm btn-ghost') : null
             ]),
             el('div', { class: 'cmd-stat-list' }, [
               statRow('Unmatched Orders', k.unmatched_orders),
@@ -331,9 +340,9 @@
             ]),
             el('p', { class: 'small muted', text: 'NIGHTLIFEZ enforces an intentional payment boundary: in-app card & UPI checkout are disabled in production (ENABLE_LIVE_PAYMENTS=false, UPI_CHECKOUT_ENABLED=false). All ticket checkout is routed via external verified SuperProfile links.' }),
             el('div', { class: 'cmd-stat-list' }, [
-              statRow('Live Payments Flag', r.config?.livePayments ? 'Enabled (Warning)' : 'Disabled (Safe)'),
-              statRow('UPI Checkout Flag', r.config?.upiCheckout ? 'Enabled (Warning)' : 'Disabled (Safe)'),
-              statRow('Ticket Checkout Mode', r.config?.ticketCheckout || 'superprofile_link')
+              statRow('Live Payments Flag', (r.config && r.config.livePayments) ? 'Enabled (Warning)' : 'Disabled (Safe)'),
+              statRow('UPI Checkout Flag', (r.config && r.config.upiCheckout) ? 'Enabled (Warning)' : 'Disabled (Safe)'),
+              statRow('Ticket Checkout Mode', (r.config && r.config.ticketCheckout) || 'superprofile_link')
             ])
           ])
         ])
@@ -352,15 +361,15 @@
           el('div', { class: 'cmd-card' }, [
             el('div', { class: 'cmd-card-head' }, [
               el('h3', { class: 'cmd-card-title', text: 'User Roles & Verification' }),
-              btn('View Admins', function () { show('admins', { focus: true }); }, 'btn-sm btn-ghost')
+              can(['super_admin']) ? btn('View Admins', function () { show('admins', { focus: true }); }, 'btn-sm btn-ghost') : null
             ]),
             el('div', { class: 'cmd-stat-list' }, [
               statRow('Total Registered Users', Number(k.users).toLocaleString('en-IN')),
               statRow('Active Platform Admins', (growth.admins_by_role || []).reduce(function (acc, curr) { return acc + curr.count; }, 0)),
               statRow('Enabled Organisers', growth.organisers_count || 0),
-              statRow('Verified 21+ Age Confirmed', exec.users?.age_confirmed || 0),
+              statRow('Verified 21+ Age Confirmed', (exec.users && exec.users.age_confirmed) || 0),
               statRow('Telegram Broadcast Opt-ins', k.alert_subscribers || 0),
-              statRow('Restricted / Suspended Users', exec.users?.restricted || 0)
+              statRow('Restricted / Suspended Users', (exec.users && exec.users.restricted) || 0)
             ])
           ]),
           el('div', { class: 'cmd-card' }, [
@@ -381,6 +390,9 @@
       // Section E: Safety & Trust
       // ======================================================================
       var recentReportRows = safety.recent_reports || [];
+      var repSummary = safety.reports_summary || {};
+      var auditSummary = safety.audit || {};
+      var canViewReports = can(['super_admin', 'event_manager', 'support', 'moderator']);
       var reportCols = [
         ['Date', function (rp) { return fmtDT(rp.created_at); }],
         ['Category', function (rp) { return pill(rp.category || 'general'); }],
@@ -390,7 +402,7 @@
         }],
         ['Status', function (rp) { return pill(rp.status); }],
         ['', function () {
-          return btn('Review Case', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost');
+          return canViewReports ? btn('Review Case', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost') : '';
         }]
       ];
 
@@ -403,15 +415,15 @@
           el('div', { class: 'cmd-card' }, [
             el('div', { class: 'cmd-card-head' }, [
               el('h3', { class: 'cmd-card-title', text: 'Safety Case Governance' }),
-              btn('Open Reports Console', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost')
+              canViewReports ? btn('Open Reports Console', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost') : null
             ]),
             el('div', { class: 'cmd-stat-list' }, [
               statRow('New Unresolved Reports', k.new_reports),
-              statRow('Reports Under Investigation', safety.reports_summary?.reviewing || 0),
-              statRow('Total User Blocks', safety.reports_summary?.total_blocks || 0),
-              statRow('Restricted Accounts', safety.reports_summary?.restricted_users || 0),
-              statRow('Audit Log Activity (Past 24h)', safety.audit?.past_24h || 0),
-              statRow('Total Audit Trail Events', safety.audit?.total || 0)
+              statRow('Reports Under Investigation', repSummary.reviewing || 0),
+              statRow('Total User Blocks', repSummary.total_blocks || 0),
+              statRow('Restricted Accounts', repSummary.restricted_users || 0),
+              statRow('Audit Log Activity (Past 24h)', auditSummary.past_24h || 0),
+              statRow('Total Audit Trail Events', auditSummary.total || 0)
             ])
           ]),
           el('div', { class: 'cmd-card' }, [
