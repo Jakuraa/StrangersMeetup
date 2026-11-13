@@ -129,3 +129,16 @@ Before publishing the first live event, sample demo data must be archived:
 UPDATE events SET status = 'archived' WHERE is_demo = true;
 ```
 Verify that `SELECT count(*) FROM events WHERE status = 'published' AND NOT is_demo;` returns the expected number of authentic events.
+
+---
+
+## 7. First-Event Operational Readiness Checklist
+
+Before publishing the first live event and selling tickets:
+
+- [ ] **1. Telegram Super-Admin Bootstrap:** Set `ADMIN_BOOTSTRAP_TELEGRAM_ID` in Vercel Production environment to the owner's numeric Telegram User ID. Sign in to confirm `/admin` console access.
+- [ ] **2. Telegram Event Chat Setup:** Create a private group for the event, add `@Nightlifez_bot` as Administrator with *Invite Users via Link* and *Ban Users* rights, and record its numeric Chat ID (`TG_CHAT_ID_EVENTS` or event-level chat ID).
+- [ ] **3. Webhook Registration:** Run the webhook registration command against `https://nightlifez.com/api/telegram/webhook` with Bot API credentials.
+- [ ] **4. Cloudflare Inbound Aliases:** Create forwarding rules in Cloudflare Email Routing for `contact@`, `safety@`, and `grievance@` pointing to `nightlifezofficial@gmail.com`. Add the `_dmarc` TXT record.
+- [ ] **5. End-to-End Free Booking Test:** Book one test ticket on mobile; verify the bot delivers the single-use invite DM; test scanning the QR pass at `/admin/checkin`.
+- [ ] **6. Archive Sample Demo Data:** Execute the query in Section 6 to archive sample events before publishing the live experience.
