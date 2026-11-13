@@ -136,6 +136,7 @@ async function clearPersonaData(c) {
     UNION SELECT org_id FROM org_memberships WHERE role = 'owner' AND user_id IN (SELECT id FROM _pu)`);
   await c.query(`UPDATE events SET organiser_org_id = NULL WHERE organiser_org_id IN (SELECT id FROM _po)`);
   await c.query(`DELETE FROM event_team WHERE org_id IN (SELECT id FROM _po) OR user_id IN (SELECT id FROM _pu)`);
+  await c.query(`DELETE FROM venue_enquiries WHERE org_id IN (SELECT id FROM _po)`);
   await c.query(`DELETE FROM venues WHERE org_id IN (SELECT id FROM _po)`);
   await c.query(`DELETE FROM org_memberships WHERE org_id IN (SELECT id FROM _po) OR user_id IN (SELECT id FROM _pu)`);
   await c.query(`DELETE FROM organisations WHERE id IN (SELECT id FROM _po)`);
@@ -179,8 +180,24 @@ async function insertOrgs(c, users) {
       await c.query(`INSERT INTO org_memberships (user_id, org_id, role) VALUES ($1, $2, $3)`, [users[who], org.id, role]);
     }
     for (const v of o.venues || []) {
-      await c.query(`INSERT INTO venues (org_id, name, capacity, address_private, lat, lng) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [org.id, v.name, v.capacity, v.address, v.lat, v.lng]);
+      await c.query(
+        `INSERT INTO venues (
+           org_id, name, capacity, address_private, lat, lng, address_public, description,
+           facilities, operating_hours, contact_name, contact_phone, contact_email, rules
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14)`,
+        [
+          org.id, v.name, v.capacity, v.address, v.lat, v.lng,
+          'Besant Nagar Beach Road, Chennai',
+          'A premier rooftop social lounge with panoramic coastline views, ambient sound, and open terrace seating.',
+          JSON.stringify(['sound_system', 'bar_license', 'outdoor_terrace', 'valet_parking', 'air_conditioning', 'wifi_highspeed']),
+          JSON.stringify({
+            monday: '18:00 - 01:00', tuesday: '18:00 - 01:00', wednesday: '18:00 - 01:00',
+            thursday: '18:00 - 02:00', friday: '17:00 - 02:00', saturday: '16:00 - 02:00', sunday: '16:00 - 00:00'
+          }),
+          'Jai Vardhan', '+91 98765 43210', 'jai@rooftop9.test',
+          '21+ only after 20:00. Smart casual dress code. Outside food and beverages prohibited.'
+        ]
+      );
     }
     orgs[o.name] = org.id;
   }
@@ -221,6 +238,24 @@ async function insertEvents(c, users) {
     }
     events[e.slug] = { id: row.id, tierId: tiers[0] };
   }
+
+  const rooftop = (await c.query(`SELECT id FROM venues WHERE name = 'Test venue: Rooftop 9'`)).rows[0];
+  if (rooftop && events['local-board-games-night']) {
+    await c.query(`UPDATE events SET venue_id = $1 WHERE id = $2`, [rooftop.id, events['local-board-games-night'].id]);
+  }
+  if (rooftop) {
+    const venueOrg = (await c.query(`SELECT org_id FROM venues WHERE id = $1`, [rooftop.id])).rows[0]?.org_id;
+    if (venueOrg) {
+      await c.query(
+        `INSERT INTO venue_enquiries (venue_id, org_id, requester_name, requester_email, requester_phone, event_name, event_date, start_time, end_time, expected_guests, budget_notes, notes, status)
+         VALUES
+         ($1, $2, 'Aarav Sharma', 'aarav@music.test', '+91 98111 22334', 'Sunset Deep House Session', CURRENT_DATE + interval '7 days', '17:00', '22:00', 60, 'F&B spend budget ₹60,000', 'DJ console and terrace setup needed.', 'pending'),
+         ($1, $2, 'Rhea Pillai', 'rhea@supperclub.test', '+91 98222 33445', 'Artisan Gin & Tapas Tasting', CURRENT_DATE + interval '14 days', '19:30', '23:00', 35, 'Fixed cover ₹2,500/guest', 'Sommelier table layout required.', 'approved')`,
+        [rooftop.id, venueOrg]
+      );
+    }
+  }
+
   return events;
 }
 
