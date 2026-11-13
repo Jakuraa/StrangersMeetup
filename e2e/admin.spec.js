@@ -7,7 +7,7 @@ test('super admin sees the console and the roles and audit screens', async ({ pa
   test.setTimeout(90_000); // axe on the dense overview takes ~30s on a loaded runner
   await signInAs(page, 'admin');
   await expect(page.locator('.admin-role')).toHaveText(/super admin/i);
-  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
   await expectNoHorizontalOverflow(page);
   await expectAccessible(page);
   await screenshot(page, testInfo, 'admin-overview');

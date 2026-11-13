@@ -124,3 +124,208 @@ details summary { cursor: pointer; font-size: .82rem; color: var(--muted); }
 @container (max-width: 400px) {
   .t:is(.t, .t-wide) td { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+
+/* ==========================================================================
+   Command Centre Upgrade Styles
+   ========================================================================== */
+
+.cmd-centre { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+
+.cmd-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+}
+
+.cmd-header-left { display: flex; flex-direction: column; gap: 4px; }
+.cmd-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cmd-title-row h1 { font-size: 1.5rem; margin: 0; }
+.cmd-sub { color: var(--muted); font-size: 0.88rem; margin: 0; }
+
+.cmd-header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cmd-meta-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-light); color: var(--ink-2); }
+.cmd-pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--neon-cyan); box-shadow: 0 0 6px var(--neon-cyan); flex-shrink: 0; }
+
+.cmd-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px auto 400px;
+}
+
+.cmd-sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+
+.cmd-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.cmd-sec-desc { color: var(--muted); font-size: 0.82rem; margin: 0; }
+
+.cmd-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 49, 91, 0.1);
+  border: 1px solid rgba(255, 49, 91, 0.35);
+  color: #ff94a8;
+  font-size: 0.88rem;
+}
+
+.cmd-alert strong { color: #fff; }
+.cmd-alert-warning {
+  background: rgba(255, 170, 0, 0.08);
+  border-color: rgba(255, 170, 0, 0.35);
+  color: #ffd074;
+}
+
+.cmd-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+  gap: 12px;
+}
+
+.cmd-kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  transition: border-color 0.15s ease;
+}
+
+.cmd-kpi-card:hover { border-color: var(--line-light); }
+.cmd-kpi-top { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.cmd-kpi-val { font-size: 1.6rem; font-weight: 700; line-height: 1.1; color: #fff; }
+.cmd-kpi-val.highlight { color: var(--neon-cyan); }
+.cmd-kpi-lbl { font-size: 0.82rem; font-weight: 600; color: var(--ink-2); line-height: 1.3; }
+.cmd-kpi-sub { font-size: 0.72rem; color: var(--muted); line-height: 1.3; }
+
+.cmd-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+
+.cmd-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 14px;
+}
+
+.cmd-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.cmd-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 8px;
+}
+
+.cmd-card-title { font-size: 0.95rem; font-weight: 700; color: #fff; margin: 0; }
+
+.cmd-stat-list { display: flex; flex-direction: column; gap: 8px; }
+.cmd-stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.85rem;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.cmd-stat-label { color: var(--muted); }
+.cmd-stat-value { font-weight: 600; color: #fff; text-align: right; }
+
+.cmd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.cmd-badge-ok { background: rgba(0, 217, 255, 0.12); color: var(--neon-cyan); border-color: rgba(0, 217, 255, 0.3); }
+.cmd-badge-locked { background: rgba(49, 91, 255, 0.15); color: #8ba5ff; border-color: rgba(49, 91, 255, 0.4); }
+.cmd-badge-warn { background: rgba(255, 170, 0, 0.12); color: #ffd074; border-color: rgba(255, 170, 0, 0.35); }
+.cmd-badge-error { background: rgba(255, 49, 91, 0.15); color: #ff859c; border-color: rgba(255, 49, 91, 0.4); }
+.cmd-badge-info { background: rgba(255, 255, 255, 0.08); color: #ddd; border-color: var(--line-light); }
+
+.cmd-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+
+.cmd-health-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cmd-health-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cmd-health-label { font-size: 0.88rem; font-weight: 700; color: #fff; }
+.cmd-health-val { font-size: 0.82rem; font-weight: 600; color: var(--ink-2); }
+.cmd-health-note { font-size: 0.75rem; color: var(--muted); line-height: 1.4; margin: 0; }
+
+@media (max-width: 600px) {
+  .cmd-header { padding: 12px 14px; }
+  .cmd-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .cmd-kpi-val { font-size: 1.3rem; }
+  .cmd-grid-2, .cmd-grid-3, .cmd-health-grid { grid-template-columns: 1fr; }
+}
