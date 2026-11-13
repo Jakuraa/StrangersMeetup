@@ -249,6 +249,21 @@
       }
       doAuth(user);
     };
+
+    var stateNonce = '';
+    if (window.crypto && window.crypto.getRandomValues) {
+      var arr = new Uint8Array(16);
+      window.crypto.getRandomValues(arr);
+      stateNonce = Array.from(arr, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    } else {
+      stateNonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    }
+    var isHttps = location.protocol === 'https:';
+    document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/auth/telegram; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
+
+    var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
+    var callbackUrl = '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
+
     var s = document.createElement('script');
     s.async = true;
     s.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -256,7 +271,7 @@
     s.setAttribute('data-size', 'large');
     s.setAttribute('data-radius', '22');
     s.setAttribute('data-request-access', 'write');
-    s.setAttribute('data-onauth', 'smTelegramAuth(user)');
+    s.setAttribute('data-auth-url', callbackUrl);
     widget.appendChild(s);
   }
 
