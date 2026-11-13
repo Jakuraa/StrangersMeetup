@@ -1,72 +1,129 @@
-# ADR-001: Launch architecture — single Node router on Vercel + Postgres, webhook-driven state
+# NIGHTLIFEZ — Technical Architecture
 
-**Status:** Accepted · **Date:** 2026-10-26 · **Deciders:** engineering; owner informed
+**Status:** Production Baseline  
+**Runtime:** Node.js 24.x on Vercel Serverless Platform  
+**Database:** PostgreSQL 16 (Neon Serverless Postgres)  
 
-## Context
-- Existing app: zero-build static HTML + 9 Node functions, data in ephemeral SQLite (`/tmp`) — not viable (AUDIT P0-1).
-- Vercel **Hobby** plan: crons at most daily; non-commercial terms (Pro needed before live money).
-- Needs: SEO-rendered event pages, one money loop, Telegram webhook bot, admin, strict idempotency.
-- Small team, no build pipeline today, Node 24.
+---
 
-## Decision
-1. **Keep zero-build.** All server code is one Vercel function `api/index.js` → `lib/router.js`. `vercel.json` rewrites `/api/*`, `/events/*`, `/trips/*`, `/admin*`, city pages, `sitemap.xml` to it. Static CSS/JS/images served from `public/`. `server.js` runs the same router locally.
-2. **Postgres** via `pg` Pool (`DATABASE_URL`, Neon/Supabase from Vercel Marketplace). Tracked migrations (`schema_migrations`) run by `npm run migrate` (and in the Vercel Production build; previews only with `MIGRATE_ON_PREVIEW=true`). No SQLite anywhere.
-3. **Server is source of truth.** Booking/entitlement transitions happen only inside webhook handlers or crons, in one DB transaction, after signature verification and `webhook_events` insert (unique) for idempotency.
-4. **Side effects after commit** via a `notifications` outbox row (DM + invite). Sent inline right after commit; failures retried by cron. Invite failures are a KPI.
-5. **Holds expire lazily**: capacity query counts `pending_payment` only while `hold_expires_at > now()`; daily cron flips stale holds to `cancelled` (Hobby constraint). On Pro, cron frequency can increase with no code change.
-6. **Sessions**: HMAC-signed cookie (`sm_session`, httpOnly, Secure, SameSite=Lax, 7 days) carrying the user id, a session id and `exp`, backed by a `user_sessions` row (migration 009) so sign-out revokes it server-side; user status and the session row are re-checked per request. CSRF token = HMAC(session, "csrf") sent in `X-CSRF-Token` for all mutating session-authenticated calls.
-7. **Rate limiting** in Postgres (`rate_limits` fixed window). Good enough at launch volume; swap for Upstash if needed.
+## 1. Architectural Overview
 
-## Options considered
-| | A: Keep zero-build + one router (chosen) | B: Migrate to Next.js App Router |
-|---|---|---|
-| Complexity | Low — no framework, plain templates | Medium — rewrite all pages into React |
-| Cost | Same | Same |
-| SEO | Server-rendered HTML strings | Excellent |
-| Team familiarity | Matches current code | New |
-| Risk to launch | Low | Higher (full rewrite) |
+NIGHTLIFEZ is built on a high-efficiency, zero-build architecture. All server execution flows through a single serverless function routed by an internal HTTP dispatcher.
 
-B is the better long-term frontend but doubles the surface of this phase; revisit after first events run.
-
-## State machines
-
-### Booking
 ```
-            createCheckout (tx, FOR UPDATE, capacity ok)
-   (none) ───────────────────────────────────────────► pending_payment ──(hold expiry / cron)──► cancelled
-                                                             │
-                                  verified webhook: paid     │       verified webhook: failed → stays pending,
-                                  (in tx, capacity re-check) ▼       payment.status=failed; expires normally
-                                                         confirmed ──admin check-in──► checked_in
-                                                             │
-                                          finance refund ok  ▼
-                                                          refunded
-   confirmed/pending ──admin cancel──► cancelled  (refund issued separately by finance)
+                           ┌───────────────────────────┐
+                           │      Client Request       │
+                           │ (Browser / Telegram Mini) │
+                           └─────────────┬─────────────┘
+                                         │
+                                         ▼
+                           ┌───────────────────────────┐
+                           │       Vercel Edge         │
+                           │  - TLS 1.3 Termination    │
+                           │  - Static Asset Delivery  │
+                           │  - vercel.json Rewrites   │
+                           └─────────────┬─────────────┘
+                                         │
+                                         ▼
+                           ┌───────────────────────────┐
+                           │      api/index.js         │
+                           │  (Serverless Entry Point) │
+                           └─────────────┬─────────────┘
+                                         │
+                                         ▼
+                           ┌───────────────────────────┐
+                           │       lib/router.js       │
+                           │ - Route Matcher & Auth    │
+                           │ - Rate Limiting & CSRF    │
+                           │ - Escaped HTML SSR / JSON │
+                           └─────────────┬─────────────┘
+                                         │
+                        ┌────────────────┴────────────────┐
+                        ▼                                 ▼
+             ┌─────────────────────┐           ┌─────────────────────┐
+             │    Neon Postgres    │           │ Telegram Bot API    │
+             │ - Pooled Connections│           │ - Webhooks          │
+             │ - Advisory Locks    │           │ - Private Invites   │
+             │ - Outbox Pattern    │           │ - Check-in Passes   │
+             └─────────────────────┘           └─────────────────────┘
 ```
-Late payment (hold expired) → if capacity still free: confirm; else booking `cancelled`, payment `paid`, `notifications(kind=refund_needed)` + admin alert. Never silently keep money.
 
-### Payment
-`created → paid | failed`, `paid → refunded`. Unique `(provider, provider_txn_id)`.
+---
 
-### Entitlement (membership)
+## 2. Core Components
+
+### A. Serverless Entry & Routing (`api/index.js`, `lib/router.js`)
+- **Zero-Build Pipeline:** No transpilation, bundling, or Webpack overhead. Node.js runs native ESM modules directly.
+- **Route Matching:** Clean URL pattern matching supporting parameter extraction (`/events/:slug`, `/trips/:slug`, `/admin/events/:id`).
+- **Template Rendering (`lib/views/`):** Pure server-side rendering using an auto-escaping tagged template literal (`html` tag), preventing Cross-Site Scripting (XSS) at the templating layer.
+
+### B. Database Layer & Migration Policy (`lib/db.js`, `scripts/migrate.js`)
+- **Connection Management:** `pg.Pool` with TLS support, keepalives, and connection pooling optimized for serverless execution.
+- **Idempotent Migrations:** Numbered SQL migration files (`migrations/003_*.sql` through `020_*.sql`) tracked in the `schema_migrations` table.
+- **Concurrency Protection:** Migrations acquire a PostgreSQL advisory lock (`pg_advisory_lock(839201948)`) before running, guaranteeing zero race conditions even during concurrent deployment invocations.
+- **Database Isolation:** Production database hostnames (`ep-dawn-glitter-b4mkwxkl`) are hard-coded into `DEFAULT_BLOCKED_PRODUCTION_ENDPOINTS` in `lib/config.js` to strictly block Preview deployments from connecting to Production storage.
+
+---
+
+## 3. Finite State Machines
+
+### A. Booking Lifecycle
 ```
-successful_payment (first) → active (expires_at = subscription_expiration_date)
-successful_payment (renewal, same user+tier) → active, expires_at extended
-user cancels in Telegram → cancelled (keeps access until expires_at)
-cron: now > expires_at → expired → revoke (ban+unban in tier chat) → revoked
-admin revoke → revoked
+           createCheckout (Capacity Lock in Tx)
+  (None) ──────────────────────────────────────────► pending_payment
+                                                           │
+                                                           │ Hold expires (15 min)
+                                                           ▼
+                                                       cancelled
+                                                           │
+                                 Verified Webhook: Paid    │
+            pending_payment ───────────────────────────────┼────────► confirmed
+                                                           │              │
+                                                           │              │ Door Scan
+                                                           │              ▼
+                                                           │          checked_in
+                                                           │              │
+                                                           │ Admin Refund │
+                                                           ▼              ▼
+                                                       refunded ◄─────────┘
 ```
-Optional `grace` reserved (not used at launch).
+- **Capacity Integrity:** Checkouts check available slots inside a database transaction using `SELECT ... FOR UPDATE` against the event capacity, preventing overselling.
+- **Stale Hold Recovery:** Holds that remain unpaid after 15 minutes are released lazily by queries and swept by the daily cron.
 
-### Invite link
-Created per booking (event chat: `events.telegram_chat_id` or `TG_CHAT_ID_EVENTS`) or entitlement (tier chat). `member_limit=1`, `expire_date=now+24h`. `used_at` set when `chat_member` update shows the user joined via that link.
+### B. Payment Transaction States
+`created` $\to$ `paid` | `failed` $\to$ `refunded`
+- **Idempotency Guarantee:** Every webhook event is checked against `webhook_events(provider, provider_event_id)` inside a unique constraint check before processing. Duplicate webhooks return `200 OK` with zero side effects.
 
-## Consequences
-- Easier: one deploy unit, one DB, testable in-process with real Postgres.
-- Harder: HTML templating by hand (escape helper is mandatory; tests assert escaping).
-- Revisit: Next.js migration; queue (Vercel Queues) if notification volume grows; Pro plan cron cadence.
+### C. Telegram Entitlement & Membership States
+`active` $\to$ `cancelled` (user cancels, retains access until `expires_at`) $\to$ `expired` (cron sweeps) $\to$ `revoked` (bot issues ban+unban to kick from chat).
 
-## Action items
-1. [x] Postgres migrations 003/004 + runner
-2. [ ] Router + pages, auth, bot, providers, admin, crons (phases 3–6)
-3. [ ] Owner: provision Neon via Vercel Marketplace, set env vars, upgrade to Pro before live
+---
+
+## 4. Authentication & Security Architecture
+
+### A. Telegram Mini App Authentication
+- Mini Apps pass an `initData` query string containing user attributes and a cryptographic `hash`.
+- The server validates the signature using `HMAC-SHA-256("WebAppData", bot_token)`.
+- Validates `auth_date` ($\le$ 300 seconds) and enforces nonce checking against replay attacks.
+
+### B. Telegram Login Widget (OIDC)
+- Sign-ins via the Telegram Login Widget generate a SHA-256 HMAC hash verified using `SHA256(bot_token)`.
+
+### C. Session Management (`user_sessions`)
+- Authenticated clients receive an HTTP-only, Secure, SameSite=Lax cookie named `sm_session`.
+- Sessions contain a cryptographic signature verifying user ID, session UUID, and expiration.
+- Sessions are actively cross-referenced against the `user_sessions` database table, enabling immediate server-side revocation on logout or admin ban.
+
+### D. CSRF Mitigation
+- All state-mutating requests (`POST`, `PUT`, `DELETE`) require an `X-CSRF-Token` header.
+- The CSRF token is derived via `HMAC(session_secret, session_id + "csrf")`, ensuring zero token spoofing without active cookies.
+
+---
+
+## 5. Notification & Asynchronous Outbox Pattern
+
+To prevent external network failures (e.g., Telegram API latency) from rolling back critical financial transactions:
+1. When a booking confirms, the database transaction writes a row to the `notifications` outbox table.
+2. The server attempts inline dispatch immediately following transaction commit.
+3. If the Telegram API is unavailable, the notification remains in `pending` status with an incremental retry backoff counter.
+4. Scheduled cron jobs sweep and retry pending notifications automatically.

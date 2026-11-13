@@ -1,0 +1,26 @@
+# Dockerfile.mcp - Container runtime for StrangersMeetup Control MCP with Playwright Chromium support
+# Base image includes all Linux dependencies for headless Chromium, Firefox and WebKit
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
+
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    PORT=3333 \
+    MCP_PORT=3333 \
+    MCP_HOST=0.0.0.0 \
+    MCP_LOG_STDOUT=true
+
+# Copy package manifests first for efficient layer caching
+COPY package*.json ./
+
+# Install production dependencies
+RUN npm ci
+
+# Copy project source files
+COPY . .
+
+# Expose MCP HTTP port
+EXPOSE 3333
+
+# Start the MCP server
+CMD ["node", "mcp/server.js"]

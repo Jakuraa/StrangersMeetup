@@ -94,6 +94,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test('check-in: the list stays open, updates in place, and is audit-logged in full', async ({ page, hasTouch }, testInfo) => {
+      test.setTimeout(90_000); // sign-in + axe + audit-log checks run close to the 30s default under load
       await signInAs(page, 'staff');
       await openAdminTab(page, 'Events');
       await page.getByRole('button', { name: 'Attendees for Test: Board games night' }).click();
@@ -143,11 +144,12 @@ for (const vp of VIEWPORTS) {
       expect((await inspectTable(leads)).problems).toEqual([]);
       await expect(page.getByRole('heading', { name: 'Safety reports' })).toHaveCount(0); // support cannot see reports
       expect((await (await page.request.get('/api/admin/leads')).json()).reports).toEqual([]);
-      const select = leads.getByRole('combobox', { name: /^Status of venue lead from/ });
+      // Other specs submit real venue leads into the shared DB, so target the seeded one.
+      const select = leads.locator('tbody tr', { hasText: 'Test Venue Owner' }).getByRole('combobox', { name: /^Status of venue lead from/ });
       await select.selectOption('contacted');
       await expect(page.getByRole('status').filter({ hasText: 'Updated' })).toBeVisible();
       await openAdminTab(page, 'Leads & reports');
-      await expect(leads.getByRole('combobox', { name: /^Status of venue lead from/ })).toHaveValue('contacted');
+      await expect(leads.locator('tbody tr', { hasText: 'Test Venue Owner' }).getByRole('combobox', { name: /^Status of venue lead from/ })).toHaveValue('contacted');
       await shot(page, testInfo, 'leads');
 
       await signInAs(page, 'admin');

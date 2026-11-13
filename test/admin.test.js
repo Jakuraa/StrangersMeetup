@@ -78,21 +78,27 @@ test('invalid event payloads are rejected with field errors', async () => {
   assert.ok(fields.includes('slug') && fields.includes('capacity') && fields.includes('bookmyshow_url'));
 });
 
-test('finance can refund a paid ticket; booking becomes refunded and member is told', async () => {
-  const ev = await createEvent();
+test('finance can refund a Stars membership payment once; ticket refunds are not done in the app', async () => {
   const member = await signedInClient();
-  const bk = await member.post('/api/bookings', { eventId: ev.id });
-  const pay = await db.one('SELECT * FROM payments WHERE booking_id = $1', [bk.json.bookingId]);
-  await db.query(`UPDATE payments SET status = 'paid', provider_payment_id = 'pay_REAL1' WHERE id = $1`, [pay.id]);
-  await db.query(`UPDATE bookings SET status = 'confirmed' WHERE id = $1`, [bk.json.bookingId]);
+  const pay = await db.one(
+    `INSERT INTO payments (provider, provider_txn_id, purpose, user_id, amount, currency, status, is_test)
+     VALUES ('telegram_stars', 'stxREFUND1', 'membership', $1, 250, 'XTR', 'paid', true) RETURNING id`, [member.userId]);
   assert.equal((await manager.post(`/api/admin/payments/${pay.id}/refund`, {})).status, 403);
   const r = await finance.post(`/api/admin/payments/${pay.id}/refund`, {});
   assert.equal(r.status, 200, r.text);
-  const call = callsTo('POST').find((c) => c.path === '/v1/payments/pay_REAL1/refund');
-  assert.equal(call.params.amount, Number(pay.amount));
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [bk.json.bookingId])).status, 'refunded');
+  const call = callsTo('refundStarPayment')[0];
+  assert.equal(call.params.telegram_payment_charge_id, 'stxREFUND1');
+  assert.equal((await db.one('SELECT status FROM payments WHERE id = $1', [pay.id])).status, 'refunded');
   assert.equal((await finance.post(`/api/admin/payments/${pay.id}/refund`, {})).status, 409); // no double refund
-  assert.ok(callsTo('sendMessage').some((m) => /refunded/.test(m.params.text)));
+
+  // A legacy ticket payment row can never be refunded through a provider any more.
+  const legacy = await db.one(
+    `INSERT INTO payments (provider, provider_txn_id, purpose, user_id, amount, currency, status, is_test)
+     VALUES ('razorpay', 'legacy1', 'ticket', $1, 49900, 'INR', 'paid', true) RETURNING id`, [member.userId]);
+  const no = await finance.post(`/api/admin/payments/${legacy.id}/refund`, {});
+  assert.equal(no.status, 501);
+  assert.equal(no.json.error, 'NOT_SUPPORTED_IN_APP');
+  assert.equal((await db.one('SELECT status FROM payments WHERE id = $1', [legacy.id])).status, 'paid');
 });
 
 test('only super_admin can set tier Stars prices; change is audited', async () => {

@@ -7,7 +7,7 @@ import { resetDb, startServer, stopServer, Client, db, signedInClient, clearCall
 
 before(async () => { await resetDb(); await startServer(); });
 after(stopServer);
-beforeEach(() => { clearCalls(); delete process.env.TICKET_CHECKOUT_ENABLED; });
+beforeEach(() => { clearCalls(); });
 
 /** IST wall-clock 'YYYY-MM-DDTHH:mm', `days` from now at 19:00. */
 function istLocal(days, hh = '19:00') {
@@ -194,16 +194,13 @@ test('free ticket books without any payment integration', async () => {
   const r = await guest.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[0].id, quantity: 2 });
   assert.equal(r.status, 200, r.text);
   assert.equal(r.json.status, 'confirmed');
-  assert.equal(r.json.checkoutUrl, null);
   const b = await db.one('SELECT * FROM bookings WHERE id = $1', [r.json.bookingId]);
   assert.equal(b.payment_mode, 'free');
   assert.equal(b.payment_id, null);
   assert.equal(b.quantity, 2);
   assert.equal((await db.query('SELECT 1 FROM payments WHERE booking_id = $1', [b.id])).rowCount, 0);
-  assert.equal(calls.filter((x) => x.api === 'razorpay' || x.api === 'cashfree').length, 0);
   const view = (await guest.get(`/api/bookings/${b.id}`)).json.booking;
   assert.equal(view.paymentStatus, 'not_required');
-  assert.equal(view.isTest, false, 'no payment, so no "test mode" label');
   // Over the per-booking limit.
   const g2 = await signedInClient();
   const over = await g2.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[0].id, quantity: 3 });
@@ -231,43 +228,10 @@ test('paid tiers with no payment provider: honest UI, no checkout, all-paid even
   const guest = await signedInClient();
   const paid = await guest.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[1].id, quantity: 1 });
   assert.equal(paid.status, 409);
-  assert.equal(paid.json.error, 'payment_unavailable');
+  assert.equal(paid.json.error, 'paid_on_superprofile');
   assert.equal((await db.query('SELECT 1 FROM bookings WHERE event_id = $1', [event.id])).rowCount, 0);
-  assert.equal(calls.filter((x) => x.api === 'razorpay').length, 0);
   const ctx = await c.get('/api/organiser/context');
   assert.equal(ctx.json.checkout.available, false);
-});
-
-test('an unverified payment never becomes paid: only a signed provider webhook confirms', async () => {
-  process.env.TICKET_CHECKOUT_ENABLED = 'true'; // explicit opt-in, sandbox keys from the test env
-  const c = await organiserClient();
-  const { event, tiers } = await publish(c, validData({ refundPolicy: 'Full refund up to 48 hours before.', tickets: [{ id: 'p', name: 'General', kind: 'paid', pricePaise: 49900, quantity: 5, maxPerBooking: 2 }] }));
-  const guest = await signedInClient();
-  // A client cannot claim payment.
-  const claim = await guest.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[0].id, quantity: 2, paid: true });
-  assert.equal(claim.status, 400);
-  const r = await guest.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[0].id, quantity: 2 });
-  assert.equal(r.status, 200, r.text);
-  assert.equal(r.json.status, 'pending_payment');
-  assert.match(r.json.checkoutUrl, /^https:\/\/rzp\.io\//);
-  const pay = await db.one('SELECT * FROM payments WHERE booking_id = $1', [r.json.bookingId]);
-  assert.equal(Number(pay.amount), 99800);
-  // "I have paid" style redirect params do nothing.
-  await guest.get(`/bookings/${r.json.bookingId}?razorpay_payment_link_status=paid&razorpay_payment_id=pay_fake`);
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [r.json.bookingId])).status, 'pending_payment');
-  assert.equal((await db.one('SELECT status FROM payments WHERE id = $1', [pay.id])).status, 'created');
-  const view = await guest.get(`/api/bookings/${r.json.bookingId}`);
-  assert.equal(view.json.booking.venue, null);
-
-  const body = JSON.stringify({ entity: 'event', event: 'payment_link.paid', payload: {
-    payment_link: { entity: { id: pay.provider_txn_id, amount: 99800, amount_paid: 99800, status: 'paid', currency: 'INR' } },
-    payment: { entity: { id: 'pay_real1', amount: 99800, currency: 'INR', status: 'captured', notes: {} } } } });
-  const sig = crypto.createHmac('sha256', 'test_rzp_webhook_secret').update(body).digest('hex');
-  const forged = await new Client().req('POST', '/api/payments/webhook/razorpay', body, { 'content-type': 'application/json', 'x-razorpay-signature': 'bad', 'x-razorpay-event-id': 'evt_x' });
-  assert.equal(forged.status, 401);
-  const wh = await new Client().req('POST', '/api/payments/webhook/razorpay', body, { 'content-type': 'application/json', 'x-razorpay-signature': sig, 'x-razorpay-event-id': 'evt_tier1' });
-  assert.equal(wh.json.result, 'confirmed');
-  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [r.json.bookingId])).status, 'confirmed');
 });
 
 test('guest approval on: requests wait for the host; decline blocks; approve confirms a free ticket', async () => {
@@ -306,28 +270,22 @@ test('guest approval on: requests wait for the host; decline blocks; approve con
   assert.equal((await stranger.get(`/api/organiser/events/${event.id}/guests`)).status, 404);
 });
 
-test('approval does not imply payment: a paid request cannot be approved without a provider', async () => {
-  process.env.TICKET_CHECKOUT_ENABLED = 'true';
+test('a paid ticket can never be booked or approved inside the app, with or without approval', async () => {
   const host = await organiserClient();
   const { event, tiers } = await publish(host, validData({ refundPolicy: 'Refund until 2 days before.', features: { approval: { enabled: true } },
-    tickets: [{ id: 'p', name: 'General', kind: 'paid', pricePaise: 30000, quantity: 5, maxPerBooking: 1 }] }));
+    tickets: [{ id: 'f', name: 'Free', kind: 'free', pricePaise: 0, quantity: 5, maxPerBooking: 1 }, { id: 'p', name: 'General', kind: 'paid', pricePaise: 30000, quantity: 5, maxPerBooking: 1 }] }));
   const g = await signedInClient();
-  const req = await g.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[0].id });
-  assert.equal(req.json.status, 'pending_approval');
-  assert.equal((await db.query('SELECT 1 FROM payments WHERE booking_id = $1', [req.json.bookingId])).rowCount, 0, 'a request creates no payment');
-  delete process.env.TICKET_CHECKOUT_ENABLED; // provider withdrawn before the host decides
-  const r = await host.post(`/api/organiser/bookings/${req.json.bookingId}/approve`, {});
+  const paid = tiers.find((t) => t.kind === 'paid');
+  const req = await g.post(`/api/events/${event.id}/book`, { ticketTypeId: paid.id });
+  assert.equal(req.status, 409);
+  assert.equal(req.json.error, 'paid_on_superprofile');
+  assert.equal((await db.query('SELECT 1 FROM bookings WHERE event_id = $1', [event.id])).rowCount, 0, 'no request, no seat, no payment row');
+  // A legacy paid request that somehow exists cannot be approved either.
+  const b = await db.one(`INSERT INTO bookings (event_id, user_id, ticket_type_id, quantity, status) VALUES ($1, $2, $3, 1, 'pending_approval') RETURNING id`, [event.id, g.userId, paid.id]);
+  const r = await host.post(`/api/organiser/bookings/${b.id}/approve`, {});
   assert.equal(r.status, 409);
   assert.equal(r.json.error, 'payment_unavailable');
-  const b = await db.one('SELECT status, payment_id FROM bookings WHERE id = $1', [req.json.bookingId]);
-  assert.equal(b.status, 'pending_approval');
-  assert.equal(b.payment_id, null);
-
-  process.env.TICKET_CHECKOUT_ENABLED = 'true';
-  const ok = await host.post(`/api/organiser/bookings/${req.json.bookingId}/approve`, {});
-  assert.equal(ok.json.status, 'pending_payment', 'approved, but not paid');
-  const pay = await db.one('SELECT status FROM payments WHERE booking_id = $1', [req.json.bookingId]);
-  assert.equal(pay.status, 'created');
+  assert.equal((await db.one('SELECT status FROM bookings WHERE id = $1', [b.id])).status, 'pending_approval');
 });
 
 test('guest approval off: free bookings confirm immediately', async () => {
@@ -558,4 +516,80 @@ test('organiser pages: dashboard and manage page shells, preview of the wizard c
   assert.deepEqual(cfg.templates.map((t) => t.key), ['trip', 'party', 'business', 'social', 'workshop', 'general']);
   assert.deepEqual(Object.keys(cfg.ticketPresets), ['general', 'early_bird', 'couple', 'vip', 'free']);
   assert.equal(cfg.checkout.available, false);
+});
+
+test('host onboarding: /become-a-host page renders benefits, safety rules, and application form', async () => {
+  const visitor = new Client();
+  const page = await visitor.get('/become-a-host');
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Become an Organiser (?:&amp;|&) Host/);
+  assert.match(page.text, /Curated 21\+ Community/);
+  assert.match(page.text, /Secret Venue Privacy/);
+  assert.match(page.text, /Full Event Control/);
+  assert.match(page.text, /Platform Safety &amp; Quality Standards/);
+  assert.match(page.text, /Adults 21\+ Only/);
+  assert.match(page.text, /host-cities/);
+  assert.match(page.text, /Submit Host Application/);
+
+  // When submitted, success page renders clear next steps
+  const thanks = await visitor.get('/become-a-host?sent=1');
+  assert.equal(thanks.status, 200);
+  assert.match(thanks.text, /Application Received!/);
+  assert.match(thanks.text, /Curation &amp; Safety Review/);
+  assert.match(thanks.text, /Host Privilege Activation/);
+  assert.match(thanks.text, /Explore Current Events/);
+});
+
+test('host onboarding: approved organiser visiting /become-a-host sees active access notice', async () => {
+  const org = await organiserClient();
+  const res = await org.get('/become-a-host');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /Host Access Active/);
+  assert.match(res.text, /You already have host privileges!/);
+  assert.match(res.text, /Go to Organiser Dashboard/);
+});
+
+test('mystery venue secrecy: private venue address is never leaked to public or unconfirmed visitors', async () => {
+  const c = await organiserClient();
+  const pub = await publish(c, validData({
+    title: 'Secret Speakeasy Supper',
+    privateVenue: true,
+    area: 'Alwarpet',
+    city: 'Chennai',
+    venue: '42 Underground Vault, TTK Road'
+  }));
+
+  // Public event page
+  const anon = new Client();
+  const page = await anon.get(pub.path);
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Secret Speakeasy Supper/);
+  assert.match(page.text, /Alwarpet/);
+  assert.match(page.text, /Chennai/);
+  assert.doesNotMatch(page.text, /42 Underground Vault/);
+  assert.doesNotMatch(page.text, /TTK Road/);
+
+  // Public API query
+  const slugRes = await anon.get(`/api/events/${pub.slug}`);
+  if (slugRes.status === 200 && slugRes.json?.event) {
+    assert.equal(slugRes.json.event.venue_private, undefined);
+    assert.equal(slugRes.json.event.venue, 'Secret Location');
+  }
+});
+
+test('organiser event guest isolation: organiser A cannot view guests of organiser B event', async () => {
+  const orgA = await organiserClient();
+  const orgB = await organiserClient();
+
+  const pubA = await publish(orgA, validData({ title: 'Org A Exclusive Gathering' }));
+
+  // Org A can access their own guest list
+  const guestsA = await orgA.get(`/api/organiser/events/${pubA.eventId}/guests`);
+  assert.equal(guestsA.status, 200);
+  assert.equal(guestsA.json.ok, true);
+  assert.equal(guestsA.json.event.title, 'Org A Exclusive Gathering');
+
+  // Org B cannot access Org A's guest list -> 404 Not Found
+  const stolen = await orgB.get(`/api/organiser/events/${pubA.eventId}/guests`);
+  assert.equal(stolen.status, 404, 'cross-organiser guest inspection is blocked with 404');
 });

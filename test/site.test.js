@@ -102,14 +102,14 @@ test('health reports DB ok and config by name only', async () => {
   const r = await new Client().get('/api/health');
   assert.equal(r.status, 200);
   assert.equal(r.json.database, 'ok');
-  assert.doesNotMatch(r.text, /TEST_ONLY_token|test_key_secret|test_rzp_webhook_secret|test-session-secret/);
+  assert.doesNotMatch(r.text, /TEST_ONLY_token|test_sp_webhook_secret|test-session-secret/);
 });
 
 test('no secrets or server-only env names in client assets', () => {
   const files = [];
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : files.push(path.join(d, e.name))));
   walk(path.join(ROOT, 'public'));
-  const forbidden = /(TELEGRAM_BOT_TOKEN|RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET|CASHFREE_SECRET_KEY|SESSION_SECRET|CRON_SECRET|DATABASE_URL|TELEGRAM_WEBHOOK_SECRET|TELEGRAM_LOGIN_CLIENT_SECRET|rzp_live_|\d{6,}:[A-Za-z0-9_-]{30,}|postgres(ql)?:\/\/)/;
+  const forbidden = /(TELEGRAM_BOT_TOKEN|SESSION_SECRET|CRON_SECRET|DATABASE_URL|TELEGRAM_WEBHOOK_SECRET|TELEGRAM_LOGIN_CLIENT_SECRET|\d{6,}:[A-Za-z0-9_-]{30,}|postgres(ql)?:\/\/)/;
   for (const f of files.filter((x) => /\.(js|css|html|svg|json|txt)$/.test(x))) {
     assert.doesNotMatch(fs.readFileSync(f, 'utf8'), forbidden, f);
   }
@@ -117,7 +117,7 @@ test('no secrets or server-only env names in client assets', () => {
 
 test('rendered HTML contains no secret values', async () => {
   const html = (await new Client().get('/')).text + (await new Client().get('/signin')).text;
-  for (const v of [process.env.TELEGRAM_BOT_TOKEN, process.env.RAZORPAY_KEY_SECRET, process.env.SESSION_SECRET, process.env.TELEGRAM_WEBHOOK_SECRET]) {
+  for (const v of [process.env.TELEGRAM_BOT_TOKEN, process.env.SUPERPROFILE_WEBHOOK_SECRET, process.env.SESSION_SECRET, process.env.TELEGRAM_WEBHOOK_SECRET]) {
     assert.ok(!html.includes(v));
   }
 });
@@ -130,18 +130,17 @@ test('legacy routes redirect via vercel.json and old API endpoints are gone', as
   }
 });
 
-test('cinematic homepage: content is server-rendered, readable without JS, and motion respects reduced-motion', async () => {
+test('discovery homepage: content is server-rendered, readable without JS, and includes discovery shelves', async () => {
   const r = await new Client().get('/');
-  assert.match(r.text, /<body class="home-cinema"/);
-  // Headline words are wrapped for the rise-in but the full sentence is still present as text.
-  const h1 = r.text.match(/<h1 class="cine-title">([\s\S]*?)<\/h1>/)[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-  assert.equal(h1, 'Your next favourite people are still strangers.');
-  // All four scenes ship as plain list items; JS only upgrades them to the scroll-scrubbed version.
-  assert.equal((r.text.match(/<li class="scene" data-scene=/g) || []).length, 4);
-  assert.doesNotMatch(r.text, /class="scenes is-live/);
+  assert.match(r.text, /<body class="home-discovery"/);
+  assert.match(r.text, /class="cat-bar"/);
+  assert.match(r.text, /class="promo-carousel"/);
   assert.doesNotMatch(r.text, /gsap/i); // no third-party animation runtime
-  const css = fs.readFileSync(path.join(ROOT, 'public/css/site.css'), 'utf8');
-  assert.match(css, /prefers-reduced-motion: reduce\) \{\s*\.js \.reveal \{ filter: none; \}\s*\.js \.stagger > \* \{ opacity: 1; transform: none; \}/);
-  const js = fs.readFileSync(path.join(ROOT, 'public/js/site.js'), 'utf8');
-  assert.match(js, /if \(scenesEl && !reduce\)/);
+});
+
+test('accessibility contrast: .linkish in organiser tools meets WCAG AA on dark theme', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'public/css/organiser.css'), 'utf8');
+  // .linkish must use neon-cyan or high-contrast token on dark surfaces, not low-contrast blue
+  assert.match(css, /\.linkish\s*\{[^}]*color:\s*var\(--neon-cyan/);
+  assert.doesNotMatch(css, /\.linkish\s*\{[^}]*color:\s*var\(--accent\)/);
 });

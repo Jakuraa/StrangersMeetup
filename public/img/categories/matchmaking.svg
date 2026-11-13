@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%">
+      <stop offset="0%" stop-color="#4a182d"/>
+      <stop offset="55%" stop-color="#240a15"/>
+      <stop offset="100%" stop-color="#0f0308"/>
+    </radialGradient>
+    <radialGradient id="sunburst" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#fbcfe8" stop-opacity="0.8"/>
+      <stop offset="40%" stop-color="#f43f5e" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#f43f5e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <circle cx="320" cy="160" r="180" fill="url(#sunburst)"/>
+  <!-- Garden arch outline -->
+  <path d="M180 340 L180 160 Q320 80 460 160 L460 340" stroke="#831843" stroke-width="2.5" fill="none" opacity="0.5"/>
+  <path d="M195 340 L195 170 Q320 100 445 170 L445 340" stroke="#9d174d" stroke-width="1.5" fill="none" opacity="0.4"/>
+  <!-- Bistro table and two chairs silhouette -->
+  <ellipse cx="320" cy="280" rx="35" ry="10" fill="#290d18"/>
+  <line x1="320" y1="285" x2="320" y2="340" stroke="#3d1424" stroke-width="3"/>
+  <!-- Small vase with rose -->
+  <rect x="317" y="260" width="6" height="15" fill="#f43f5e" opacity="0.8"/>
+  <circle cx="320" cy="254" r="5" fill="#fda4af"/>
+  <!-- Left chair -->
+  <path d="M245 270 Q240 240 250 220 M245 270 L260 270 M245 270 L240 330 M260 270 L255 330" stroke="#3d1424" stroke-width="2" fill="none"/>
+  <!-- Right chair -->
+  <path d="M395 270 Q400 240 390 220 M395 270 L380 270 M395 270 L400 330 M380 270 L385 330" stroke="#3d1424" stroke-width="2" fill="none"/>
+</svg>

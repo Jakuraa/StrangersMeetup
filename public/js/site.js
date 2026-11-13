@@ -1,4 +1,4 @@
-/* StrangersMeetup site script. Progressive enhancement: every page works without it except
+/* NIGHTLIFEZ site script. Progressive enhancement: every page works without it except
    member actions (sign-in, booking), which need it. No user ids are ever sent from here —
    the server derives identity from the session cookie. */
 (function () {
@@ -162,8 +162,21 @@
     return api('GET', '/api/me').then(function (r) {
       state.me = r.user || null;
       state.csrf = r.csrf || null;
-      $$('[data-auth-button]').forEach(function (a) {
-        if (state.me) { a.textContent = 'My bookings'; a.setAttribute('aria-label', 'My bookings'); a.setAttribute('href', '/me'); a.classList.remove('btn-tg'); a.classList.add('btn-ghost'); }
+      $$('[data-auth-button], [data-nav-auth-link]').forEach(function (a) {
+        if (state.me) {
+          a.textContent = 'My bookings';
+          a.setAttribute('aria-label', 'My bookings');
+          a.setAttribute('href', '/me');
+          if (a.hasAttribute('data-auth-button')) {
+            a.classList.remove('btn-tg');
+            a.classList.add('btn-ghost');
+          }
+        } else {
+          if (a.hasAttribute('data-nav-auth-link')) {
+            a.textContent = 'Sign in with Telegram';
+            a.setAttribute('href', '/signin');
+          }
+        }
       });
       return state.me;
     }).catch(function () { return null; });
@@ -212,11 +225,29 @@
   if (widget) {
     var age = $('[data-age-confirm]');
     var msg = $('[data-signin-msg]');
-    var sync = function () { widget.setAttribute('aria-disabled', age.checked ? 'false' : 'true'); };
+    var pendingUser = null;
+    var doAuth = function (u) {
+      msg.className = 'form-msg';
+      msg.textContent = 'Verifying Telegram sign-in…';
+      api('POST', '/api/auth/telegram', { widget: u, ageConfirmed: true }).then(function (r) { afterAuth(r, msg); });
+    };
+    var sync = function () {
+      widget.setAttribute('aria-disabled', age.checked ? 'false' : 'true');
+      if (age.checked && pendingUser) {
+        var u = pendingUser;
+        pendingUser = null;
+        doAuth(u);
+      }
+    };
     age.addEventListener('change', sync); sync();
     window.smTelegramAuth = function (user) {
-      if (!age.checked) { msg.className = 'form-msg error'; msg.textContent = 'Please confirm you are 21 or older first.'; return; }
-      api('POST', '/api/auth/telegram', { widget: user, ageConfirmed: true }).then(function (r) { afterAuth(r, msg); });
+      if (!age.checked) {
+        pendingUser = user;
+        msg.className = 'form-msg error';
+        msg.textContent = 'Please confirm you are 21 or older above to complete sign-in.';
+        return;
+      }
+      doAuth(user);
     };
     var s = document.createElement('script');
     s.async = true;
@@ -241,32 +272,18 @@
   });
 
   function confirmAge() {
-    if (!window.confirm('StrangersMeetup events are for adults only. Do you confirm you are 21 or older?')) return Promise.resolve(false);
+    if (!window.confirm('NIGHTLIFEZ events are for adults only. Do you confirm you are 21 or older?')) return Promise.resolve(false);
     return api('POST', '/api/auth/confirm-age', {}).then(function (r) { return r.ok; });
   }
 
   /* ---------- booking ---------- */
-  function book(btn) {
-    var msg = $('[data-book-msg]');
-    var eventId = btn.getAttribute('data-book');
-    track('book_click', eventId);
-    if (!state.me) return goSignin();
-    btn.disabled = true;
-    msg.className = 'book-msg'; msg.textContent = 'Preparing secure checkout…';
-    api('POST', '/api/bookings', { eventId: eventId }).then(function (r) {
-      if (r.status === 403 && r.error === 'age_required') {
-        return confirmAge().then(function (ok) { btn.disabled = false; msg.textContent = ''; if (ok) book(btn); });
-      }
-      if (r.ok && /^https:\/\//.test(r.checkoutUrl || '')) { track('checkout_start', eventId); location.href = r.checkoutUrl; return; }
-      if (r.ok && r.bookingId) { location.href = '/bookings/' + r.bookingId; return; }
-      if (r.status === 401) return goSignin();
-      btn.disabled = false;
-      msg.className = 'book-msg error';
-      msg.textContent = r.message || 'Could not start checkout. Please try again.';
-    });
-  }
-  $$('[data-book]').forEach(function (b) { b.addEventListener('click', function () { book(b); }); });
-  if ($('[data-book]')) track('event_view', $('[data-book]').getAttribute('data-book'));
+  /* Paid tickets are bought on SuperProfile, on the website only: the buy link carries data-web-only and
+     is hidden inside the Telegram Mini App (see "inside Telegram?" above). */
+  $$('[data-sp-buy]').forEach(function (a) {
+    var id = a.getAttribute('data-sp-buy');
+    track('event_view', id);
+    a.addEventListener('click', function () { track('checkout_start', id); });
+  });
 
   /* ---------- organiser events: choose a ticket tier ---------- */
   $$('[data-tier-form]').forEach(function (form) {
@@ -295,6 +312,14 @@
       $$('.field-error', form).forEach(function (f) { f.classList.remove('field-error'); });
       if (!r) { msg.className = 'book-msg error'; msg.textContent = 'Choose a ticket first.'; return; }
       track('book_click', eventId);
+      if (r.getAttribute('data-paid')) {
+        /* Paid tier: hand over to SuperProfile (works signed out). Not available inside the Mini App. */
+        var path = form.getAttribute('data-checkout-path');
+        if (inTelegram || !path) { msg.className = 'book-msg error'; msg.textContent = 'Paid tickets are sold on our website. Open NIGHTLIFEZ in your browser to book.'; return; }
+        track('checkout_start', eventId);
+        location.href = path + '?tier=' + encodeURIComponent(r.value) + '&qty=' + encodeURIComponent(parseInt(qty.value, 10) || 1);
+        return;
+      }
       if (!state.me) return goSignin();
       var body = { ticketTypeId: r.value, quantity: parseInt(qty.value, 10) || 1, answers: {} };
       if (!eligWrap.hidden) body.eligibilityConfirmed = $('input[name="eligibilityConfirmed"]', form).checked;
@@ -323,8 +348,7 @@
           });
           return;
         }
-        if (/^https:\/\//.test(res.checkoutUrl || '')) { track('checkout_start', eventId); location.href = res.checkoutUrl; return; }
-        location.href = '/bookings/' + encodeURIComponent(res.bookingId);
+        location.href = '/bookings/' + encodeURIComponent(res.bookingId) + (res.existing ? '?existing=1' : '');
       });
     }
     form.addEventListener('submit', function (ev) { ev.preventDefault(); submit(); });
@@ -371,51 +395,339 @@
   var STATUS = { pending_approval: 'Request sent — awaiting the host', declined: 'Not accepted', pending_payment: 'Awaiting payment confirmation', confirmed: 'Confirmed', checked_in: 'Checked in', cancelled: 'Cancelled', refunded: 'Refunded' };
   var PAYMENT = { not_required: 'No payment needed', created: 'Waiting for the payment provider to confirm', paid: 'Paid', failed: 'Payment failed', refunded: 'Refunded' };
 
+  var currentBookingFilter = 'all';
+  var allBookingsCache = [];
+
+  function filterAndDisplayBookings(el, filter) {
+    currentBookingFilter = filter || 'all';
+    var list = allBookingsCache;
+    var filtered = list.filter(function (b) {
+      if (currentBookingFilter === 'upcoming') return !b.isPast;
+      if (currentBookingFilter === 'past') return b.isPast;
+      return true;
+    });
+
+    if (!list.length) {
+      el.innerHTML = '<div class="empty-state bookings-empty-state">' +
+        '<div class="empty-state-icon" aria-hidden="true">🎟️</div>' +
+        '<p class="empty-state-title">No bookings yet</p>' +
+        '<p class="muted">When you reserve a spot for a meetup, dinner, party or trip, your digital passes and secret venue locations will be saved here.</p>' +
+        '<p><a class="btn btn-primary btn-sm" href="/events">Explore upcoming events</a></p>' +
+        '</div>';
+      return;
+    }
+
+    if (!filtered.length) {
+      el.innerHTML = '<div class="empty-state"><p class="empty-state-title">No ' + esc(currentBookingFilter) + ' bookings</p><p class="muted">You do not have any ' + esc(currentBookingFilter) + ' bookings.</p></div>';
+      return;
+    }
+
+    el.innerHTML = '<ul class="booking-list">' + filtered.map(function (b) {
+      var shortRef = b.id ? b.id.slice(0, 8).toUpperCase() : '';
+      var checkinNotice = b.isCheckedIn ? '<span class="pill pill-checked_in" style="margin-left:6px;">✓ Checked In</span>' : '';
+      return '<li class="booking-card-item">' +
+        '<div class="booking-card-top">' +
+        '<div><span class="pill pill-' + esc(b.status) + '">' + esc(STATUS[b.status] || b.status) + '</span>' + checkinNotice + '</div>' +
+        '<span class="muted small">#SM-' + esc(shortRef) + '</span>' +
+        '</div>' +
+        '<h3><a href="/bookings/' + esc(b.id) + '">' + esc(b.title) + '</a></h3>' +
+        '<p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>' +
+        '<div class="booking-card-actions">' +
+        '<a class="btn btn-outline-cyan btn-sm" href="/bookings/' + esc(b.id) + '">View Pass &amp; Venue →</a>' +
+        (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Event Details</a>' : '') +
+        '</div>' +
+        '</li>';
+    }).join('') + '</ul>';
+  }
+
   function renderBookings(el) {
     api('GET', '/api/me/bookings').then(function (r) {
       if (r.status === 401) return goSignin();
-      var list = r.bookings || [];
-      if (!list.length) { el.innerHTML = '<p>No bookings yet.</p><p><a class="link-arrow" href="/#upcoming">Find an event</a></p>'; return; }
-      el.innerHTML = '<ul class="booking-list">' + list.map(function (b) {
-        return '<li><p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span><span>' + esc(b.city) + '</span></p>' +
-          '<h3><a href="/bookings/' + esc(b.id) + '">' + esc(b.title) + '</a></h3><p class="muted">' + esc(fmt(b.startAt)) + '</p></li>';
+      allBookingsCache = r.bookings || [];
+      filterAndDisplayBookings(el, currentBookingFilter);
+    });
+  }
+
+  function renderSavedEvents(el) {
+    api('GET', '/api/me/saved-events').then(function (r) {
+      if (r.status === 401) return;
+      var list = r.events || [];
+      if (!list.length) {
+        el.innerHTML = '<div class="empty-state saved-empty-state">' +
+          '<div class="empty-state-icon" aria-hidden="true">🔖</div>' +
+          '<p class="empty-state-title">No saved events yet</p>' +
+          '<p class="muted">Tap the bookmark icon on any event to save it here for quick access later.</p>' +
+          '<p><a class="btn btn-primary btn-sm" href="/events">Explore upcoming events</a></p>' +
+          '</div>';
+        return;
+      }
+      el.innerHTML = '<ul class="saved-events-grid card-grid">' + list.map(function (e) {
+        var href = (e.isTrip ? '/trips/' : '/events/') + e.slug;
+        return '<article class="card event-card" data-event-id="' + esc(e.id) + '">' +
+          '<div class="card-body">' +
+          '<p class="card-meta"><span>' + esc(e.categoryLabel || e.category) + '</span><span>' + esc(e.city) + '</span></p>' +
+          '<h3 class="card-title"><a class="card-link" href="' + esc(href) + '">' + esc(e.title) + '</a></h3>' +
+          '<p class="card-when">' + esc(fmt(e.startAt)) + (e.area ? ' · ' + esc(e.area) : '') + '</p>' +
+          '<div class="card-foot">' +
+          '<span class="price">' + esc(e.priceLabel || 'Free') + '</span>' +
+          '<div style="display:flex; gap:6px;">' +
+          '<a class="btn btn-sm btn-primary" href="' + esc(href) + '">View Details</a>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-unsave-event="' + esc(e.id) + '" title="Remove from saved">Remove</button>' +
+          '</div>' +
+          '</div>' +
+          '</div>' +
+          '</article>';
       }).join('') + '</ul>';
+    });
+  }
+
+  function renderMyAnnouncements(el) {
+    api('GET', '/api/me/announcements').then(function (r) {
+      if (r.status === 401) return;
+      var list = r.announcements || [];
+      if (!list.length) {
+        el.innerHTML = '<div class="empty-state announcements-empty-state">' +
+          '<div class="empty-state-icon" aria-hidden="true">📢</div>' +
+          '<p class="empty-state-title">No host announcements yet</p>' +
+          '<p class="muted">Operational updates, venue reminders, and door announcements from hosts of your events will appear here.</p>' +
+          '</div>';
+        return;
+      }
+      el.innerHTML = '<div class="announcements-feed">' + list.map(function (a) {
+        return '<div class="announcement-item' + (a.isPinned ? ' is-pinned' : '') + '">' +
+          '<div class="announcement-head">' +
+          '<strong>' + esc(a.eventTitle) + '</strong>' +
+          '<span class="muted small">' + esc(fmt(a.createdAt)) + '</span>' +
+          '</div>' +
+          '<h4 class="announcement-title">' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</h4>' +
+          '<p class="announcement-body">' + esc(a.message) + '</p>' +
+          '<p class="muted small"><a href="/events/' + esc(a.eventSlug) + '">View event page →</a></p>' +
+          '</div>';
+      }).join('') + '</div>';
+    });
+  }
+
+  function initAttendeeHub() {
+    var hub = $('[data-attendee-hub]');
+    if (!hub) return;
+    var tabBtns = $$('[data-hub-tab]', hub);
+    tabBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tab = btn.getAttribute('data-hub-tab');
+        tabBtns.forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+        });
+        $$('[data-hub-section]', hub).forEach(function (sec) {
+          var isTarget = sec.getAttribute('data-hub-section') === tab;
+          sec.hidden = !isTarget;
+        });
+      });
+    });
+
+    var filterBtns = $$('[data-booking-filter]', hub);
+    filterBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var filter = btn.getAttribute('data-booking-filter');
+        filterBtns.forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+        var mb = $('[data-my-bookings]', hub);
+        if (mb) filterAndDisplayBookings(mb, filter);
+      });
+    });
+  }
+
+  function initSaveEventHandlers() {
+    document.addEventListener('click', function (ev) {
+      var saveBtn = ev.target && ev.target.closest ? ev.target.closest('[data-save-event]') : null;
+      if (saveBtn) {
+        ev.preventDefault();
+        var eventId = saveBtn.getAttribute('data-save-event');
+        var isSaved = saveBtn.classList.contains('is-saved');
+        if (!state.me) {
+          return goSignin();
+        }
+        var nextState = !isSaved;
+        var updateBtn = function (btn, saved) {
+          btn.classList.toggle('is-saved', saved);
+          btn.setAttribute('aria-pressed', saved ? 'true' : 'false');
+          btn.setAttribute('aria-label', saved ? 'Remove from saved events' : 'Save event');
+          var svg = btn.querySelector('svg');
+          if (svg) svg.setAttribute('fill', saved ? 'currentColor' : 'none');
+          var span = btn.querySelector('span');
+          if (span) span.textContent = saved ? 'Saved' : 'Save';
+        };
+
+        updateBtn(saveBtn, nextState);
+        var method = nextState ? 'POST' : 'DELETE';
+        api(method, '/api/events/' + encodeURIComponent(eventId) + '/save').then(function (r) {
+          if (!r.ok) {
+            updateBtn(saveBtn, isSaved);
+          }
+        }).catch(function () {
+          updateBtn(saveBtn, isSaved);
+        });
+        return;
+      }
+
+      var unsaveBtn = ev.target && ev.target.closest ? ev.target.closest('[data-unsave-event]') : null;
+      if (unsaveBtn) {
+        ev.preventDefault();
+        var eid = unsaveBtn.getAttribute('data-unsave-event');
+        api('DELETE', '/api/events/' + encodeURIComponent(eid) + '/save').then(function (r) {
+          if (r.ok) {
+            var card = unsaveBtn.closest('.card');
+            if (card) card.remove();
+            var se = $('[data-saved-events]');
+            if (se && !se.querySelectorAll('.card').length) {
+              renderSavedEvents(se);
+            }
+          }
+        });
+        return;
+      }
     });
   }
 
   function renderStatus(el) {
     var id = el.getAttribute('data-booking-status');
+    var isExistingRedirect = new URLSearchParams(location.search).get('existing') === '1';
     var tries = 0;
     var tick = function () {
       api('GET', '/api/bookings/' + encodeURIComponent(id)).then(function (r) {
         if (r.status === 401) return goSignin();
-        if (!r.ok) { el.innerHTML = '<p>We could not find that booking.</p>'; return; }
+        if (!r.ok) {
+          el.innerHTML = '<div class="empty-state"><p class="empty-state-title">Booking not found</p><p class="muted">We could not find this booking. It may belong to another account or have expired.</p><p><a class="btn btn-primary btn-sm" href="/me">View your bookings</a> <a class="btn btn-ghost btn-sm" href="/events">Explore events</a></p></div>';
+          return;
+        }
         var b = r.booking;
-        var html = '<p class="card-meta"><span>' + esc(STATUS[b.status] || b.status) + '</span>' + (b.isTest ? '<span>Test mode</span>' : '') + '</p>' +
-          '<h2>' + esc(b.title) + '</h2><p class="muted">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>';
+        var shortRef = b.id ? b.id.slice(0, 8).toUpperCase() : '';
+        var statusLabel = STATUS[b.status] || b.status;
+        var html = '';
+        if (isExistingRedirect) {
+          html += '<div class="booking-notice booking-notice-info" role="status">' +
+            '<span class="notice-icon" aria-hidden="true">ℹ️</span>' +
+            '<div class="booking-notice-content">' +
+            '<strong>You already hold a pass for this event</strong>' +
+            '<p class="muted">Your existing booking pass and entry details are shown below.</p>' +
+            '</div></div>';
+        }
+
+        html += '<div class="digital-pass-card">' +
+          '<div class="digital-pass-header">' +
+          '<div class="pass-brand"><span class="pass-badge-icon" aria-hidden="true">🎟️</span> <span>NIGHTLIFEZ Pass</span></div>' +
+          '<span class="pill pill-' + esc(b.status) + '">' + esc(statusLabel) + '</span>' +
+          '</div>' +
+          '<div class="pass-ref"><span class="pass-label">Pass Reference</span><span class="pass-code">#SM-' + esc(shortRef) + '</span></div>' +
+          '<h2 class="pass-title">' + esc(b.title) + '</h2>' +
+          '<p class="pass-datetime">' + esc(fmt(b.startAt)) + ' · ' + esc(b.city) + '</p>';
+
         var facts = '';
         if (b.ticket) facts += '<div><dt>Ticket</dt><dd>' + esc(b.ticket.name) + ' × ' + esc(b.ticket.quantity) + (b.amountLabel ? ' · ' + esc(b.amountLabel) : '') + '</dd></div>';
         if (b.paymentStatus && PAYMENT[b.paymentStatus]) facts += '<div><dt>Payment</dt><dd>' + esc(PAYMENT[b.paymentStatus]) + '</dd></div>';
         if (b.pickup) facts += '<div><dt>Pickup</dt><dd>' + esc(b.pickup.name) + (b.pickup.location ? ' — ' + esc(b.pickup.location) : '') + (b.pickup.time ? ' · ' + esc(new Date(b.pickup.time + ':00Z').toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })) : '') + '</dd></div>';
         if (b.contact) facts += '<div><dt>On-ground contact</dt><dd>' + esc(b.contact.name || '') + ' · <a href="' + safeUrl(b.contact.whatsappUrl) + '" rel="noopener">WhatsApp ' + esc(b.contact.phone) + '</a></dd></div>';
         if (b.mapsUrl) facts += '<div><dt>Map</dt><dd><a href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener nofollow">Open in Maps</a></dd></div>';
-        if (facts) html += '<dl>' + facts + '</dl>';
+        if (facts) html += '<dl class="pass-facts">' + facts + '</dl>';
+
         if (b.status === 'pending_approval') {
+          html += '<div class="mystery-venue-card"><p><span class="mystery-badge-icon" aria-hidden="true">🔒</span> <strong>Mystery Venue:</strong> The exact address will be unlocked here once your booking is approved by the host.</p></div>';
           html += '<p>The host reviews each request. You’ll get a Telegram message when they decide — nothing is charged before then.</p>';
         } else if (b.status === 'declined') {
           html += '<p>The host couldn’t accept your request this time. You have not been charged.</p>';
         } else if (b.status === 'pending_payment') {
-          html += '<p>We are waiting for the payment provider to confirm your payment. This page updates automatically.</p>';
-          if (b.checkoutUrl && b.holdActive) html += '<p><a class="btn btn-primary" href="' + safeUrl(b.checkoutUrl) + '">Return to checkout</a></p>';
-          if (!b.holdActive) html += '<p class="muted">Your seat hold has expired. If you already paid, we will confirm or refund it automatically.</p>';
+          html += '<p>We are waiting for SuperProfile to confirm your payment. If you already paid, send <strong>/claim</strong> to our Telegram bot with your SuperProfile order ID.</p>';
         } else if (b.status === 'confirmed' || b.status === 'checked_in') {
-          html += '<p><strong>You are in.</strong> ' + (b.venue ? 'Venue: ' + esc(b.venue) + '. ' : '') + (b.ticket ? 'Your confirmation is sent by our Telegram bot.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
+          if (b.isCheckedIn || b.status === 'checked_in') {
+            html += '<div class="checkin-notice-banner" role="status">' +
+              '<span class="checkin-notice-icon" aria-hidden="true">✓</span>' +
+              '<div><strong>Admitted at the door</strong><p class="muted small">' + (b.checkedInAt ? 'Checked in at ' + esc(fmt(b.checkedInAt)) : 'Your ticket has been validated and checked in.') + '</p></div>' +
+              '</div>';
+          }
+          if (b.tickets && b.tickets.length > 0) {
+            html += '<div class="digital-pass-tickets">' +
+              b.tickets.map(function (tk, idx) {
+                return '<div class="ticket-qr-card' + (tk.status === 'checked_in' ? ' ticket-used' : '') + '">' +
+                  '<div class="ticket-qr-header">' +
+                  '<strong>Pass #' + (idx + 1) + (tk.ticketTypeName ? ' · ' + esc(tk.ticketTypeName) : '') + '</strong>' +
+                  '<span class="pill pill-' + esc(tk.status) + '">' + esc(tk.status === 'checked_in' ? 'Checked In' : tk.status) + '</span>' +
+                  '</div>' +
+                  (tk.qrSvg ? '<div class="ticket-qr-graphic" aria-label="Ticket QR code">' + tk.qrSvg + '</div>' : '') +
+                  '<div class="ticket-code-display"><code>' + esc(tk.ticketCode) + '</code></div>' +
+                  (tk.status === 'checked_in' ? '<p class="muted small text-center">✓ Admitted' + (tk.checkedInAt ? ' · ' + esc(fmt(tk.checkedInAt)) : '') + '</p>' : '<p class="muted small text-center">Present this QR code at the door for entry</p>') +
+                  '</div>';
+              }).join('') +
+              '</div>';
+          }
+          if (b.venue) {
+            html += '<div class="unlocked-venue-card"><div class="unlocked-venue-badge"><span class="unlocked-icon" aria-hidden="true">🔓</span> <strong>Venue Unlocked</strong></div><p class="unlocked-venue-addr">' + esc(b.venue) + '</p>' + (b.mapsUrl ? '<p><a class="btn btn-outline-cyan btn-sm" href="' + safeUrl(b.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a></p>' : '') + '</div>';
+          }
+          if (b.announcements && b.announcements.length > 0) {
+            html += '<div class="booking-announcements-card">' +
+              '<h3>📢 Updates from your host</h3>' +
+              b.announcements.map(function (a) {
+                return '<div class="announcement-mini-item">' +
+                  '<strong>' + (a.isPinned ? '📌 ' : '') + esc(a.title) + '</strong> <span class="muted small">· ' + esc(fmt(a.createdAt)) + '</span>' +
+                  '<p>' + esc(a.message) + '</p>' +
+                  '</div>';
+              }).join('') +
+              '</div>';
+          }
+          html += '<p><strong>You are in.</strong> ' + (b.ticket ? 'Your booking pass is confirmed.' : 'Your confirmation and private group invite are sent by our Telegram bot.') + '</p>';
           if (b.invite) html += '<p><a class="btn btn-tg" href="' + safeUrl(b.invite.link) + '" rel="noopener">Join the private group</a></p><p class="muted">Single-use invite, valid until ' + esc(fmt(b.invite.expiresAt)) + '.</p>';
           if (BOT) html += '<p><a class="link-arrow" href="https://t.me/' + esc(BOT) + '?start=booking_' + esc(b.id) + '">Open the bot to get a fresh invite</a></p>';
+        } else if (b.status === 'cancelled') {
+          html += '<div class="booking-notice booking-notice-warning" role="status">' +
+            '<span class="notice-icon" aria-hidden="true">✕</span>' +
+            '<div class="booking-notice-content">' +
+            '<strong>Reservation Cancelled</strong>' +
+            '<p class="muted">This booking has been cancelled and admission passes have been revoked.</p>' +
+            '</div></div>';
         } else if (b.status === 'refunded') {
           html += '<p>This booking was refunded to your original payment method.</p>';
         }
+        html += '<div class="pass-footer-note"><p class="muted small">Show this digital pass at the entrance for verification.</p></div>' +
+          '</div>';
+
+        var canCancel = ['confirmed', 'pending_approval'].indexOf(b.status) !== -1 && !b.isCheckedIn;
+        if (canCancel) {
+          html += '<div class="booking-cancel-section mt-4 text-center">' +
+            '<button type="button" class="btn btn-outline-danger btn-sm" data-cancel-booking="' + esc(b.id) + '">Cancel Reservation</button>' +
+            '</div>';
+        }
+
+        html += '<div class="booking-nav-actions">' +
+          '<a class="btn btn-primary btn-sm" href="/me">View All My Bookings</a>' +
+          '<a class="btn btn-outline-cyan btn-sm" href="/events">Explore More Events</a>' +
+          (b.slug ? '<a class="btn btn-ghost btn-sm" href="/events/' + esc(b.slug) + '">Back to Event</a>' : '') +
+          (b.eventId ? '<a class="btn btn-ghost btn-sm" href="/trust-safety?event=' + esc(b.eventId) + '#report">Report an Issue</a>' : '') +
+          '</div>';
+
         el.innerHTML = html;
+
+        var cancelBtn = el.querySelector('[data-cancel-booking]');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', function () {
+            if (!confirm('Are you sure you want to cancel your reservation? Any tickets will be revoked and your seat released.')) return;
+            cancelBtn.disabled = true;
+            cancelBtn.textContent = 'Cancelling...';
+            api('POST', '/api/me/bookings/' + encodeURIComponent(b.id) + '/cancel', { reason: 'Attendee requested cancellation' }).then(function (res) {
+              if (res.ok) {
+                toast('Reservation cancelled');
+                tick();
+              } else {
+                alert(res.error?.message || 'Failed to cancel reservation');
+                cancelBtn.disabled = false;
+                cancelBtn.textContent = 'Cancel Reservation';
+              }
+            }).catch(function (err) {
+              alert(err.message || 'Network error');
+              cancelBtn.disabled = false;
+              cancelBtn.textContent = 'Cancel Reservation';
+            });
+          });
+        }
         if (b.status === 'pending_payment' && tries++ < 40) setTimeout(tick, 3000);
       });
     };
@@ -434,7 +746,7 @@
   var LABELS = {
     female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say',
     '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+',
-    nightlife: 'Nightlife', strangers_trips: 'Strangers trips', meetups: 'Meetups', dinners: 'Dinners', weekend_parties: 'Weekend parties',
+    nightlife: 'Nightlife', weekend_trips: 'Weekend trips', strangers_trips: 'Weekend trips', meetups: 'Meetups', dinners: 'Dinners', weekend_parties: 'Weekend parties',
     dating: 'Dating', matchmaking: 'Matchmaking', board_games: 'Board games', movies: 'Movies'
   };
   function renderProfile(el) {
@@ -466,9 +778,601 @@
     });
   }
 
+  /* ---------- safety reporting & user blocking ---------- */
+  function renderSafetyReport(el) {
+    var params = new URLSearchParams(location.search);
+    var prefillEvent = params.get('event') || '';
+    if (!state.me) {
+      var bot = el.getAttribute('data-bot');
+      var supportEmail = el.getAttribute('data-support-email');
+      var botPart = bot
+        ? 'send <code>/report</code> to <a class="link-cyan" href="https://t.me/' + esc(bot) + '" target="_blank" rel="noopener">@' + esc(bot) + '</a> on Telegram'
+        : 'send <code>/report</code> to our Telegram bot';
+      var emailPart = supportEmail
+        ? ' or email <a class="link-cyan" href="mailto:' + esc(supportEmail) + '">' + esc(supportEmail) + '</a>'
+        : '';
+      el.innerHTML = '<div class="safety-box">' +
+        '<h3>Submit a Confidential Safety Report</h3>' +
+        '<p class="muted">To submit a confidential report online, please <a class="link-cyan" href="/signin">sign in with Telegram</a> first. You can also ' + botPart + emailPart + '. If you are in immediate danger, call 112.</p>' +
+        '</div>';
+      return;
+    }
+    el.innerHTML = '<form class="lead-form safety-form" data-report-form>' +
+      '<h3>Submit a Confidential Safety Report</h3>' +
+      '<p class="muted">Reports are confidential and reviewed directly by platform moderators. If you are in immediate danger, call 112.</p>' +
+      '<label class="field"><span>Reason for report</span><select name="category" required>' +
+      '<option value="">Select a reason</option>' +
+      '<option value="harassment">Harassment or abusive behaviour</option>' +
+      '<option value="fraud_suspicious">Suspicious or fraudulent event</option>' +
+      '<option value="unwanted_contact">Unwanted contact or messaging</option>' +
+      '<option value="safety_concern">Safety concern at an event</option>' +
+      '<option value="policy_violation">Conduct or policy violation</option>' +
+      '<option value="other">Other safety concern</option>' +
+      '</select></label>' +
+      '<label class="field"><span>Details (required)</span><textarea name="body" rows="4" minlength="10" maxlength="3000" placeholder="Please describe what happened, when, and where. Include any names, handles or relevant details..." required></textarea></label>' +
+      (prefillEvent ? '<input type="hidden" name="eventId" value="' + esc(prefillEvent) + '">' : '') +
+      '<button class="btn btn-primary" type="submit">Submit Confidential Report</button>' +
+      '<p class="form-msg" role="status" aria-live="polite" data-report-msg></p>' +
+      '</form>';
+
+    var form = $('[data-report-form]', el);
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var btn = $('button[type=submit]', form);
+      var msg = $('[data-report-msg]', form);
+      var category = form.category.value;
+      var body = form.body.value;
+      var eventId = form.eventId ? form.eventId.value : null;
+      btn.disabled = true;
+      msg.className = 'form-msg';
+      msg.textContent = 'Submitting report…';
+      api('POST', '/api/reports', { category: category, body: body, eventId: eventId || null }).then(function (r) {
+        if (!r.ok) {
+          btn.disabled = false;
+          msg.className = 'form-msg error';
+          msg.textContent = r.message || 'Could not submit report. Please try again.';
+          return;
+        }
+        form.reset();
+        btn.disabled = false;
+        msg.className = 'form-msg ok';
+        msg.textContent = 'Thank you. Your report has been submitted to moderators and will be reviewed confidentially.';
+      }).catch(function (err) {
+        btn.disabled = false;
+        msg.className = 'form-msg error';
+        msg.textContent = err.message || 'Network error. Please try again.';
+      });
+    });
+  }
+
+  function renderSafetySettings(el) {
+    function loadBlocks() {
+      api('GET', '/api/me/blocks').then(function (r) {
+        if (!r.ok) return;
+        var blocks = r.blocks || [];
+        var html = '<div class="safety-settings-card">' +
+          '<h2>Safety &amp; Blocked Users</h2>' +
+          '<p class="muted">Blocked users cannot book your hosted events and you will not see their events.</p>';
+        if (!blocks.length) {
+          html += '<p class="muted small">You have not blocked any users.</p>';
+        } else {
+          html += '<ul class="blocked-users-list">' + blocks.map(function (b) {
+            return '<li class="blocked-user-item">' +
+              '<div><strong>' + esc(b.alias) + '</strong> <span class="muted small">· Blocked ' + esc(fmt(b.createdAt)) + '</span></div>' +
+              '<button class="btn btn-ghost btn-sm" type="button" data-unblock-id="' + esc(b.blockedUserId) + '">Unblock</button>' +
+              '</li>';
+          }).join('') + '</ul>';
+        }
+        html += '<div class="safety-actions">' +
+          '<a class="btn btn-outline-cyan btn-sm" href="/trust-safety#report">Submit a Safety Report</a>' +
+          '</div></div>';
+        el.innerHTML = html;
+
+        $$('[data-unblock-id]', el).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var uid = btn.getAttribute('data-unblock-id');
+            btn.disabled = true;
+            api('DELETE', '/api/me/blocks/' + encodeURIComponent(uid)).then(function () {
+              loadBlocks();
+            });
+          });
+        });
+      });
+    }
+    loadBlocks();
+  }
+
+  /* ---------- location picker modal & discovery integration ---------- */
+  function initLocationPicker() {
+    var dialog = $('[data-location-dialog]');
+    var triggers = $$('[data-loc-trigger]');
+    var closeBtn = dialog && $('[data-loc-close]', dialog);
+    var searchInput = dialog && $('[data-loc-search]', dialog);
+    var stateFilter = dialog && $('[data-loc-state-filter]', dialog);
+    var gpsBtn = dialog && $('[data-loc-gps]', dialog);
+    var statusMsg = dialog && $('[data-loc-status]', dialog);
+    var emptyState = dialog && $('[data-loc-empty]', dialog);
+    var resetSearchBtn = dialog && $('[data-loc-reset-search]', dialog);
+    var cityItems = dialog ? $$('.loc-city-item', dialog) : [];
+    var tierSections = dialog ? $$('.loc-tier-section', dialog) : [];
+    var pillBtns = dialog ? $$('.loc-pill', dialog) : [];
+    var labels = $$('[data-loc-current-label]');
+    var citySelects = $$('[data-header-city]');
+
+    var params = new URLSearchParams(location.search);
+    var curCity = params.get('city');
+    var curLat = params.get('lat');
+    var curLng = params.get('lng');
+
+    function updateLabel(text) {
+      labels.forEach(function (lbl) { lbl.textContent = text; });
+    }
+
+    // Set initial label
+    if (curLat && curLng) {
+      updateLabel('Near You (📍 50km)');
+    } else if (curCity) {
+      var found = cityItems.filter(function (btn) {
+        return btn.getAttribute('data-city-slug') === curCity.toLowerCase();
+      })[0];
+      if (found) {
+        updateLabel(found.getAttribute('data-city-name'));
+        citySelects.forEach(function (s) { s.value = curCity; });
+      } else {
+        updateLabel(curCity.charAt(0).toUpperCase() + curCity.slice(1));
+      }
+    } else {
+      updateLabel('All Cities');
+    }
+
+    if (!dialog) return;
+
+    function openDialog() {
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.setAttribute('open', '');
+      }
+      triggers.forEach(function (t) { t.setAttribute('aria-expanded', 'true'); });
+      if (statusMsg) statusMsg.textContent = '';
+      if (searchInput) {
+        searchInput.value = '';
+        filterCities();
+        setTimeout(function () { searchInput.focus(); }, 50);
+      }
+    }
+
+    function closeDialog() {
+      if (typeof dialog.close === 'function') {
+        dialog.close();
+      } else {
+        dialog.removeAttribute('open');
+      }
+      triggers.forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+    }
+
+    triggers.forEach(function (t) {
+      t.addEventListener('click', function (e) {
+        e.preventDefault();
+        openDialog();
+      });
+    });
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeDialog);
+    }
+
+    dialog.addEventListener('click', function (e) {
+      if (e.target === dialog) closeDialog();
+    });
+
+    dialog.addEventListener('cancel', function () {
+      triggers.forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+    });
+
+    function filterCities() {
+      var q = (searchInput ? searchInput.value : '').trim().toLowerCase();
+      var selectedState = (stateFilter ? stateFilter.value : '').trim().toLowerCase();
+      var visibleTotal = 0;
+
+      tierSections.forEach(function (sec) {
+        var items = $$('.loc-city-item', sec);
+        var visibleInTier = 0;
+        items.forEach(function (item) {
+          var name = (item.getAttribute('data-city-name') || '').toLowerCase();
+          var slug = (item.getAttribute('data-city-slug') || '').toLowerCase();
+          var state = (item.getAttribute('data-state') || '').toLowerCase();
+          var aliases = (item.getAttribute('data-aliases') || '').toLowerCase();
+
+          var matchesState = !selectedState || state === selectedState;
+          var matchesQ = !q || name.indexOf(q) !== -1 || slug.indexOf(q) !== -1 || aliases.indexOf(q) !== -1;
+
+          var show = matchesState && matchesQ;
+          var li = item.closest('li');
+          if (li) li.hidden = !show;
+          if (show) {
+            visibleInTier++;
+            visibleTotal++;
+          }
+        });
+        sec.hidden = (visibleInTier === 0);
+      });
+
+      if (emptyState) {
+        emptyState.hidden = (visibleTotal > 0);
+      }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', filterCities);
+    if (stateFilter) stateFilter.addEventListener('change', filterCities);
+    if (resetSearchBtn) {
+      resetSearchBtn.addEventListener('click', function () {
+        if (searchInput) searchInput.value = '';
+        if (stateFilter) stateFilter.value = '';
+        filterCities();
+        if (searchInput) searchInput.focus();
+      });
+    }
+
+    function applyCity(slug, name) {
+      closeDialog();
+      updateLabel(name || 'All Cities');
+      citySelects.forEach(function (s) { s.value = slug || ''; });
+
+      var targetPath = '/events';
+      var u = new URL(location.href);
+      u.pathname = targetPath;
+      u.searchParams.delete('lat');
+      u.searchParams.delete('lng');
+      u.searchParams.delete('radius_km');
+      if (slug) {
+        u.searchParams.set('city', slug);
+      } else {
+        u.searchParams.delete('city');
+      }
+
+      var nextUrl = u.pathname + u.search;
+      if (typeof window.__smLoadDiscovery === 'function') {
+        window.__smLoadDiscovery(nextUrl, true);
+      } else {
+        location.href = nextUrl;
+      }
+    }
+
+    cityItems.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var slug = btn.getAttribute('data-city-slug') || '';
+        var name = btn.getAttribute('data-city-name') || 'All Cities';
+        applyCity(slug, name);
+      });
+    });
+
+    pillBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var slug = btn.getAttribute('data-city-slug') || '';
+        var name = btn.getAttribute('data-city-name') || 'All Cities';
+        applyCity(slug, name);
+      });
+    });
+
+    citySelects.forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        var val = sel.value;
+        var found = cityItems.filter(function (b) { return b.getAttribute('data-city-slug') === val; })[0];
+        applyCity(val, found ? found.getAttribute('data-city-name') : (val ? val.toUpperCase() : 'All Cities'));
+      });
+    });
+
+    if (gpsBtn) {
+      gpsBtn.addEventListener('click', function () {
+        if (!navigator.geolocation) {
+          if (statusMsg) {
+            statusMsg.textContent = 'Geolocation is not supported by your browser.';
+            statusMsg.className = 'loc-status-msg loc-status-err';
+          }
+          return;
+        }
+
+        if (statusMsg) {
+          statusMsg.textContent = 'Locating your device…';
+          statusMsg.className = 'loc-status-msg loc-status-loading';
+        }
+        gpsBtn.disabled = true;
+
+        navigator.geolocation.getCurrentPosition(
+          function (pos) {
+            gpsBtn.disabled = false;
+            var lat = pos.coords.latitude;
+            var lng = pos.coords.longitude;
+            if (statusMsg) {
+              statusMsg.textContent = 'Location found! Finding events near you…';
+              statusMsg.className = 'loc-status-msg loc-status-ok';
+            }
+            setTimeout(function () {
+              closeDialog();
+              updateLabel('Near You (📍 50km)');
+              var targetPath = '/events';
+              var u = new URL(location.href);
+              u.pathname = targetPath;
+              u.searchParams.delete('city');
+              u.searchParams.set('lat', lat.toFixed(4));
+              u.searchParams.set('lng', lng.toFixed(4));
+              u.searchParams.set('radius_km', '50');
+
+              var nextUrl = u.pathname + u.search;
+              if (typeof window.__smLoadDiscovery === 'function') {
+                window.__smLoadDiscovery(nextUrl, true);
+              } else {
+                location.href = nextUrl;
+              }
+            }, 400);
+          },
+          function (err) {
+            gpsBtn.disabled = false;
+            if (statusMsg) {
+              statusMsg.className = 'loc-status-msg loc-status-err';
+              if (err.code === 1 /* PERMISSION_DENIED */) {
+                statusMsg.textContent = 'Location permission denied. Please select your city manually below.';
+              } else if (err.code === 2 /* POSITION_UNAVAILABLE */) {
+                statusMsg.textContent = 'Location unavailable. Please select your city manually below.';
+              } else if (err.code === 3 /* TIMEOUT */) {
+                statusMsg.textContent = 'Location request timed out. Please select your city manually below.';
+              } else {
+                statusMsg.textContent = 'Could not determine location. Please select your city manually below.';
+              }
+            }
+          },
+          { timeout: 8000, enableHighAccuracy: false, maximumAge: 300000 }
+        );
+      });
+    }
+  }
+
+  initLocationPicker();
+
+  /* ---------- instant attendee discovery (progressive enhancement) ---------- */
+  function initInstantDiscovery() {
+    var feed = $('[data-discovery-feed]');
+    if (!feed) return;
+
+    var announcer = $('[data-discovery-announcer]');
+    if (!announcer) {
+      announcer = document.createElement('div');
+      announcer.setAttribute('data-discovery-announcer', '1');
+      announcer.setAttribute('role', 'status');
+      announcer.setAttribute('aria-live', 'polite');
+      announcer.className = 'sr-only';
+      feed.prepend(announcer);
+    }
+
+    var debounceTimer = null;
+    function announce(msg) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () {
+        announcer.textContent = msg;
+      }, 150);
+    }
+
+    var activeAbort = null;
+
+    function loadDiscoveryUrl(url, push) {
+      if (activeAbort && activeAbort.abort) activeAbort.abort();
+      activeAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
+
+      var results = $('[data-discovery-results]', feed);
+      if (results) results.classList.add('is-loading');
+
+      var fetchOptions = {
+        headers: { 'Accept': 'text/html' }
+      };
+      if (activeAbort) fetchOptions.signal = activeAbort.signal;
+
+      fetch(url, fetchOptions).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+      }).then(function (htmlStr) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(htmlStr, 'text/html');
+
+        var newFeed = doc.querySelector('[data-discovery-feed]');
+        if (!newFeed) { location.href = url; return; }
+
+        var updateDOM = function () {
+          // Update search notice banner
+          var oldNotice = feed.querySelector('.search-notice');
+          var newNotice = newFeed.querySelector('.search-notice');
+          if (oldNotice && newNotice) oldNotice.replaceWith(newNotice);
+          else if (oldNotice && !newNotice) oldNotice.remove();
+          else if (!oldNotice && newNotice) {
+            var formEl = feed.querySelector('[data-filters]');
+            if (formEl) formEl.before(newNotice);
+            else feed.prepend(newNotice);
+          }
+
+          // Update filters form values
+          var oldFilters = feed.querySelector('[data-filters]');
+          var newFilters = newFeed.querySelector('[data-filters]');
+          if (oldFilters && newFilters) {
+            oldFilters.innerHTML = newFilters.innerHTML;
+          }
+
+          // Update results grid
+          var oldResults = feed.querySelector('[data-discovery-results]');
+          var newResults = newFeed.querySelector('[data-discovery-results]');
+          if (oldResults && newResults) {
+            oldResults.innerHTML = newResults.innerHTML;
+            oldResults.classList.remove('is-loading');
+          }
+        };
+
+        if (document.startViewTransition && !reduce) {
+          var transition = document.startViewTransition(updateDOM);
+          transition.finished.finally(function () {
+            var resultsHeading = feed.querySelector('h1, h2');
+            if (resultsHeading && document.activeElement === document.body) {
+              resultsHeading.setAttribute('tabindex', '-1');
+              resultsHeading.focus();
+            }
+          });
+        } else {
+          updateDOM();
+        }
+
+        // Update document title
+        if (doc.title) document.title = doc.title;
+
+        // Push state if requested
+        if (push) {
+          history.pushState({ url: url }, '', url);
+        }
+
+        // Sync header city selector and location label
+        var uObj = new URL(url, location.origin);
+        var currentCity = uObj.searchParams.get('city') || '';
+        var currentLat = uObj.searchParams.get('lat');
+        var currentLng = uObj.searchParams.get('lng');
+        $$('[data-header-city]').forEach(function (sel) {
+          sel.value = currentCity;
+        });
+        $$('[data-loc-current-label]').forEach(function (lbl) {
+          if (currentLat && currentLng) {
+            lbl.textContent = 'Near You (📍 50km)';
+          } else if (currentCity) {
+            var found = document.querySelector('.loc-city-item[data-city-slug="' + currentCity.toLowerCase() + '"]');
+            lbl.textContent = found ? found.getAttribute('data-city-name') : currentCity.charAt(0).toUpperCase() + currentCity.slice(1);
+          } else {
+            lbl.textContent = 'All Cities';
+          }
+        });
+
+        // Accessible announcement
+        var count = feed.querySelectorAll('.card').length;
+        if (count > 0) {
+          announce(count + ' upcoming event' + (count === 1 ? '' : 's') + ' found.');
+        } else {
+          announce('No upcoming events found matching your filters.');
+        }
+
+        bindFilterEvents();
+      }).catch(function (err) {
+        if (err.name === 'AbortError') return;
+        location.href = url;
+      });
+    }
+
+    window.__smLoadDiscovery = loadDiscoveryUrl;
+
+    function onFilterChange() {
+      var form = feed.querySelector('[data-filters]');
+      if (!form) return;
+      var fd = new FormData(form);
+      var params = new URLSearchParams();
+      fd.forEach(function (v, k) {
+        if (v && v.trim()) params.set(k, v.trim());
+      });
+      var action = form.getAttribute('action') || '/events';
+      var newUrl = action + (params.toString() ? '?' + params.toString() : '');
+      loadDiscoveryUrl(newUrl, true);
+    }
+
+    function bindFilterEvents() {
+      var form = feed.querySelector('[data-filters]');
+      if (!form) return;
+      if (!form.getAttribute('data-async-bound')) {
+        form.setAttribute('data-async-bound', '1');
+        form.addEventListener('change', function (ev) {
+          if (ev.target && (ev.target.name === 'city' || ev.target.name === 'category' || ev.target.name === 'when' || ev.target.name === 'price' || ev.target.name === 'sort')) {
+            onFilterChange();
+          }
+        });
+        form.addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          onFilterChange();
+        });
+      }
+
+      var clearLinks = feed.querySelectorAll('.clear-search, .filter-clear');
+      clearLinks.forEach(function (a) {
+        if (!a.getAttribute('data-async-bound')) {
+          a.setAttribute('data-async-bound', '1');
+          a.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            loadDiscoveryUrl(a.getAttribute('href'), true);
+          });
+        }
+      });
+    }
+
+    bindFilterEvents();
+
+    window.addEventListener('popstate', function () {
+      loadDiscoveryUrl(location.href, false);
+    });
+  }
+
+  /* ---------- promotional carousel ---------- */
+  var carousel = $('[data-promo-carousel]');
+  if (carousel) {
+    var slides = $$('.carousel-slide', carousel);
+    var dots = $$('[data-carousel-dot]', carousel);
+    var prevBtn = $('[data-carousel-prev]', carousel);
+    var nextBtn = $('[data-carousel-next]', carousel);
+    var currentSlide = 0;
+    var timer = null;
+
+    function showSlide(idx) {
+      if (!slides.length) return;
+      currentSlide = (idx + slides.length) % slides.length;
+      slides.forEach(function (s, i) { s.classList.toggle('is-active', i === currentSlide); });
+      dots.forEach(function (d, i) { d.classList.toggle('active', i === currentSlide); });
+    }
+
+    function autoNext() { showSlide(currentSlide + 1); }
+    function startTimer() { if (!timer) timer = setInterval(autoNext, 6000); }
+    function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+
+    if (prevBtn) prevBtn.addEventListener('click', function () { stopTimer(); showSlide(currentSlide - 1); startTimer(); });
+    if (nextBtn) nextBtn.addEventListener('click', function () { stopTimer(); showSlide(currentSlide + 1); startTimer(); });
+    dots.forEach(function (dot, i) {
+      dot.addEventListener('click', function () { stopTimer(); showSlide(i); startTimer(); });
+    });
+
+    carousel.addEventListener('mouseenter', stopTimer);
+    carousel.addEventListener('mouseleave', startTimer);
+    startTimer();
+  }
+
+  initInstantDiscovery();
+
   miniApp().then(refreshMe).then(function () {
+    initAttendeeHub();
+    initSaveEventHandlers();
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
     var mb = $('[data-my-bookings]'); if (mb) renderBookings(mb);
+    var se = $('[data-saved-events]'); if (se && state.me) renderSavedEvents(se);
+    var ma = $('[data-my-announcements]'); if (ma && state.me) renderMyAnnouncements(ma);
     var bs = $('[data-booking-status]'); if (bs) renderStatus(bs);
+    var sr = $('[data-safety-report]'); if (sr) renderSafetyReport(sr);
+    var ss = $('[data-safety-settings]'); if (ss && state.me) renderSafetySettings(ss);
+    var tf = $('form[data-tier-form]');
+    if (tf && state.me) {
+      api('GET', '/api/me/bookings').then(function (r) {
+        if (!r.ok || !r.bookings) return;
+        var existing = r.bookings.find(function (b) {
+          return b.slug && location.pathname.indexOf('/events/' + b.slug) === 0;
+        });
+        if (existing && !$('.already-booked-banner', tf.parentNode)) {
+          var bnr = document.createElement('div');
+          bnr.className = 'already-booked-banner';
+          bnr.setAttribute('role', 'status');
+          bnr.innerHTML = '<span class="already-booked-icon" aria-hidden="true">🎟️</span>' +
+            '<div class="already-booked-text">' +
+            '<p><strong>You have a pass for this event (' + esc(STATUS[existing.status] || existing.status) + ').</strong></p>' +
+            '<p><a class="link-arrow" href="/bookings/' + esc(existing.id) + '">View your digital ticket pass &amp; venue details →</a></p>' +
+            '</div>';
+          tf.parentNode.insertBefore(bnr, tf);
+        }
+      });
+    }
   });
 })();
