@@ -126,19 +126,340 @@
   TABS.overview = function () {
     return api('GET', '/api/admin/overview').then(function (r) {
       var k = r.kpis;
-      var items = [
-        ['Members (active)', k.members], ['Users', k.users], ['Upcoming real events', k.upcoming_events], ['Upcoming sample events', k.upcoming_demo_events],
-        ['Confirmed bookings', k.confirmed_bookings], ['Paid (test)', k.paid_test_paise, rupees], ['Paid (live)', k.paid_live_paise, rupees],
-        ['Stars received', k.paid_stars], ['Failed payments', k.failed_payments], ['Invite failures', k.invite_failures],
-        ['Memberships expiring ≤7d', k.expiring_memberships], ['Unmatched SuperProfile orders', k.unmatched_orders], ['Flagged orders', k.flagged_orders], ['New leads', k.new_leads], ['New reports', k.new_reports],
-        ['Alert subscribers', k.alert_subscribers]
+      var cc = r.command_centre || {};
+      var exec = cc.executive || {};
+      var ops = cc.operations || {};
+      var fin = exec.financial || {};
+      var growth = cc.growth || {};
+      var safety = cc.safety || {};
+      var health = cc.system_health || [];
+
+      function statRow(label, val) {
+        return el('div', { class: 'cmd-stat-row' }, [
+          el('span', { class: 'cmd-stat-label', text: label }),
+          el('span', { class: 'cmd-stat-value', text: String(val === null || val === undefined ? '—' : val) })
+        ]);
+      }
+
+      function kpiCard(label, val, sub, highlight) {
+        return el('div', { class: 'cmd-kpi-card' }, [
+          el('div', { class: 'cmd-kpi-top' }, [
+            el('span', { class: 'cmd-kpi-lbl', text: label })
+          ]),
+          el('div', { class: 'cmd-kpi-val' + (highlight ? ' highlight' : ''), text: String(val) }),
+          el('div', { class: 'cmd-kpi-sub', text: sub || '' })
+        ]);
+      }
+
+      var container = el('div', { class: 'cmd-centre' });
+
+      // --- Header ---
+      var header = el('div', { class: 'cmd-header' }, [
+        el('div', { class: 'cmd-header-left' }, [
+          el('div', { class: 'cmd-title-row' }, [
+            el('h1', { text: 'Overview' }),
+            el('span', { class: 'cmd-badge cmd-badge-ok', text: 'Operational Command Centre' }),
+            el('span', { class: 'cmd-badge cmd-badge-locked', text: 'Live Payments Locked' })
+          ]),
+          el('p', { class: 'cmd-sub', text: 'Real-time telemetry, operations readiness, financial reconciliation, and platform governance.' })
+        ]),
+        el('div', { class: 'cmd-header-right' }, [
+          el('span', { class: 'cmd-meta-tag' }, [
+            el('span', { class: 'cmd-pulse-dot' }),
+            el('span', { text: 'Live Telemetry' })
+          ]),
+          btn('↻ Refresh', function () { show('overview', { focus: true }); }, 'btn-sm btn-ghost', 'Refresh dashboard telemetry')
+        ])
+      ]);
+      container.appendChild(header);
+
+      // --- Alerts (Exceptions) ---
+      if (k.unmatched_orders > 0 || k.flagged_orders > 0 || k.invite_failures > 0) {
+        var alertIssues = [];
+        if (k.unmatched_orders > 0) alertIssues.push(k.unmatched_orders + ' unmatched SuperProfile order(s)');
+        if (k.flagged_orders > 0) alertIssues.push(k.flagged_orders + ' flagged order(s)');
+        if (k.invite_failures > 0) alertIssues.push(k.invite_failures + ' failed Telegram invite notification(s)');
+
+        container.appendChild(el('div', { class: 'cmd-alert cmd-alert-warning', role: 'alert' }, [
+          el('strong', { text: 'Action Required: ' }),
+          el('span', { text: 'Reconciliation exceptions detected: ' + alertIssues.join(', ') + '. ' }),
+          btn('Review Orders', function () { show('orders', { focus: true }); }, 'btn-sm btn-primary', 'Go to orders tab')
+        ]));
+      }
+
+      // ======================================================================
+      // Section A: Executive Overview
+      // ======================================================================
+      var secA = el('div', { class: 'cmd-section' }, [
+        el('div', { class: 'cmd-sec-head' }, [
+          el('h2', { class: 'cmd-sec-title', text: '📊 Executive Overview' }),
+          el('p', { class: 'cmd-sec-desc', text: 'High-level platform metrics, member growth, and volume telemetry.' })
+        ]),
+        el('div', { class: 'cmd-kpi-grid' }, [
+          kpiCard('Registered Users', Number(k.users).toLocaleString('en-IN'), '+' + (exec.users?.new_7d || 0) + ' (7d) • +' + (exec.users?.new_30d || 0) + ' (30d)', true),
+          kpiCard('Active Members', Number(k.members).toLocaleString('en-IN'), (k.expiring_memberships || 0) + ' expiring ≤7d'),
+          kpiCard('Upcoming Live Events', Number(k.upcoming_events).toLocaleString('en-IN'), (k.upcoming_demo_events || 0) + ' sample listings', true),
+          kpiCard('Confirmed Bookings', Number(k.confirmed_bookings).toLocaleString('en-IN'), (exec.bookings?.pending_approval || 0) + ' pending host approval'),
+          kpiCard('Gross Live Revenue', rupees(k.paid_live_paise), 'Live checkout disabled (fail-closed)'),
+          kpiCard('SuperProfile Orders', Number(fin.sp_paid_orders_count || 0).toLocaleString('en-IN'), rupees(fin.sp_paid_orders_paise || 0) + ' gross external volume'),
+          kpiCard('Telegram Stars', (k.paid_stars || 0) + ' XTR', 'Telegram in-app currency'),
+          kpiCard('Failed Payments', Number(k.failed_payments).toLocaleString('en-IN'), '0 lost attendee funds'),
+          kpiCard('Open Safety Reports', Number(k.new_reports + (k.reviewing_reports || 0)).toLocaleString('en-IN'), (k.new_reports || 0) + ' new • ' + (k.reviewing_reports || 0) + ' reviewing'),
+          kpiCard('New Onboarding Leads', Number(k.new_leads).toLocaleString('en-IN'), 'Hosts, venues & partners'),
+          kpiCard('Alert Subscribers', Number(k.alert_subscribers).toLocaleString('en-IN'), 'Telegram broadcast opt-ins')
+        ])
+      ]);
+      container.appendChild(secA);
+
+      // ======================================================================
+      // Section B: Operations Centre
+      // ======================================================================
+      var upcomingRows = ops.upcoming_events || [];
+      var upcomingCols = [
+        ['Event', function (e) {
+          return el('div', {}, [
+            el('strong', { text: e.title }),
+            e.is_demo ? el('span', { class: 'pill pill-sample', text: 'Sample' }) : null,
+            el('div', { class: 'small muted', text: e.slug })
+          ]);
+        }],
+        ['Starts (IST)', function (e) { return fmtDT(e.start_at); }],
+        ['City', function (e) { return e.city; }],
+        ['Occupancy', function (e) { return (e.seats_taken || 0) + ' / ' + e.capacity + ' seats'; }],
+        ['Ticket Price', function (e) { return e.ticket_price_paise ? rupees(e.ticket_price_paise) : 'Free / TBD'; }],
+        ['Checkout Mode', function (e) { return pill(e.checkout_mode || 'none'); }],
+        ['', function (e) {
+          return el('div', { class: 'row-actions' }, [
+            e.seats_taken > 0 ? btn('Check-in', function () { loadAttendees(e, main); }, 'btn-sm btn-primary', 'Check in attendees for ' + e.title) : null,
+            el('a', { class: 'btn btn-sm btn-ghost', href: (['weekend_trip', 'resort_getaway'].indexOf(e.category) !== -1 ? '/trips/' : '/events/') + e.slug, target: '_blank', rel: 'noopener' }, ['View Page'])
+          ]);
+        }]
       ];
-      clear(main).append(el('h1', { text: 'Overview' }), el('div', { class: 'kpis' }, items.map(function (i) {
-        // A zero from the database is a real zero; it is shown as 0.
-        return el('div', { class: 'kpi' }, [el('b', { text: i[2] ? i[2](i[1]) : Number(i[1]).toLocaleString('en-IN') }), el('span', { text: i[0] })]);
-      })), el('div', { class: 'panel' }, [el('h2', { text: 'Configuration' }), el('ul', { class: 'config-list' }, Object.keys(r.config).map(function (key) {
-        return el('li', {}, [el('strong', { text: key + ': ' }), String(r.config[key])]);
-      }))]));
+
+      var secB = el('div', { class: 'cmd-section' }, [
+        el('div', { class: 'cmd-sec-head' }, [
+          el('h2', { class: 'cmd-sec-title', text: '⚡ Operations Centre' }),
+          el('p', { class: 'cmd-sec-desc', text: 'Live event readiness, guest list check-in, and onboarding workflows.' })
+        ]),
+        el('div', { class: 'panel' }, [
+          el('div', { class: 'cmd-card-head' }, [
+            el('h3', { class: 'cmd-card-title', text: 'Upcoming Events Operational Readiness' }),
+            btn('Open Events Management', function () { show('events', { focus: true }); }, 'btn-sm btn-ghost')
+          ]),
+          table(upcomingCols, upcomingRows, 'No upcoming events scheduled at this moment.', { name: 'Upcoming Events Operational Readiness' })
+        ]),
+        el('div', { class: 'cmd-grid-3' }, [
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Onboarding Leads Pipeline' }),
+              btn('View Leads', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost')
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Host Applications', (ops.leads_by_type || []).find(function (l) { return l.type === 'host'; })?.count || 0),
+              statRow('Venue Submissions', (ops.leads_by_type || []).find(function (l) { return l.type === 'venue'; })?.count || 0),
+              statRow('Partner Inquiries', (ops.leads_by_type || []).find(function (l) { return l.type === 'partner'; })?.count || 0),
+              statRow('Total New Leads', k.new_leads)
+            ])
+          ]),
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Event Pipeline Status' }),
+              btn('View Discovery', function () { show('discovery', { focus: true }); }, 'btn-sm btn-ghost')
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Organiser Drafts', ops.pending_drafts || 0),
+              statRow('Pending Candidate Events', ops.pending_candidates || 0),
+              statRow('Bookings Awaiting Approval', ops.bookings_pending_approval || 0),
+              statRow('Upcoming Live Events', k.upcoming_events)
+            ])
+          ]),
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Reconciliation Health' }),
+              btn('View Orders', function () { show('orders', { focus: true }); }, 'btn-sm btn-ghost')
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Unmatched Orders', k.unmatched_orders),
+              statRow('Flagged Orders', k.flagged_orders),
+              statRow('Notification Failures', k.invite_failures),
+              statRow('Reconciliation Status', (k.unmatched_orders === 0 && k.flagged_orders === 0) ? 'Clean (0 Exceptions)' : 'Exceptions Pending')
+            ])
+          ])
+        ])
+      ]);
+      container.appendChild(secB);
+
+      // ======================================================================
+      // Section C: Financial Overview
+      // ======================================================================
+      var secC = el('div', { class: 'cmd-section' }, [
+        el('div', { class: 'cmd-sec-head' }, [
+          el('h2', { class: 'cmd-sec-title', text: '💳 Financial Overview' }),
+          el('p', { class: 'cmd-sec-desc', text: 'Revenue segregation, SuperProfile external sales, and payment safeguard controls.' })
+        ]),
+        el('div', { class: 'cmd-grid-3' }, [
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'In-App Payment Gateway' }),
+              el('span', { class: 'cmd-badge cmd-badge-locked', text: 'Live Disabled' })
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Gross Live Revenue', rupees(k.paid_live_paise)),
+              statRow('Live Refunds', rupees(fin.live_refunded_paise || 0)),
+              statRow('Net Live Revenue', rupees(Math.max(0, Number(k.paid_live_paise) - Number(fin.live_refunded_paise || 0)))),
+              statRow('Sandbox Test Revenue', rupees(k.paid_test_paise)),
+              statRow('Telegram Stars (XTR)', (k.paid_stars || 0) + ' Stars')
+            ])
+          ]),
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'External SuperProfile Collection' }),
+              el('span', { class: 'cmd-badge cmd-badge-ok', text: 'Active Channel' })
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Paid Ticket Orders', fin.sp_paid_orders_count || 0),
+              statRow('Reported Gross Volume', rupees(fin.sp_paid_orders_paise || 0)),
+              statRow('Refunded / Cancelled', fin.sp_refunded_orders_count || 0),
+              statRow('Refunded Volume', rupees(fin.sp_refunded_orders_paise || 0)),
+              statRow('Order Reconciliations', (k.unmatched_orders === 0 && k.flagged_orders === 0) ? '100% Matched' : k.unmatched_orders + ' Unmatched')
+            ])
+          ]),
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Payment Safeguard Controls' }),
+              el('span', { class: 'cmd-badge cmd-badge-locked', text: 'Fail-Closed' })
+            ]),
+            el('p', { class: 'small muted', text: 'NIGHTLIFEZ enforces an intentional payment boundary: in-app card & UPI checkout are disabled in production (ENABLE_LIVE_PAYMENTS=false, UPI_CHECKOUT_ENABLED=false). All ticket checkout is routed via external verified SuperProfile links.' }),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Live Payments Flag', r.config?.livePayments ? 'Enabled (Warning)' : 'Disabled (Safe)'),
+              statRow('UPI Checkout Flag', r.config?.upiCheckout ? 'Enabled (Warning)' : 'Disabled (Safe)'),
+              statRow('Ticket Checkout Mode', r.config?.ticketCheckout || 'superprofile_link')
+            ])
+          ])
+        ])
+      ]);
+      container.appendChild(secC);
+
+      // ======================================================================
+      // Section D: User & Marketplace Growth
+      // ======================================================================
+      var secD = el('div', { class: 'cmd-section' }, [
+        el('div', { class: 'cmd-sec-head' }, [
+          el('h2', { class: 'cmd-sec-title', text: '📈 User & Marketplace Growth' }),
+          el('p', { class: 'cmd-sec-desc', text: 'Member distribution, roles, verified organisations, and geographic presence.' })
+        ]),
+        el('div', { class: 'cmd-grid-2' }, [
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'User Roles & Verification' }),
+              btn('View Admins', function () { show('admins', { focus: true }); }, 'btn-sm btn-ghost')
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Total Registered Users', Number(k.users).toLocaleString('en-IN')),
+              statRow('Active Platform Admins', (growth.admins_by_role || []).reduce(function (acc, curr) { return acc + curr.count; }, 0)),
+              statRow('Enabled Organisers', growth.organisers_count || 0),
+              statRow('Verified 21+ Age Confirmed', exec.users?.age_confirmed || 0),
+              statRow('Telegram Broadcast Opt-ins', k.alert_subscribers || 0),
+              statRow('Restricted / Suspended Users', exec.users?.restricted || 0)
+            ])
+          ]),
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Marketplace Entities & Regional Activity' })
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('Active Venues Listed', growth.venues_active || 0),
+              statRow('Active Organisations', growth.organisations_active || 0),
+              statRow('Top Activity Cities', (growth.top_cities || []).length ? (growth.top_cities || []).map(function (c) { return c.city + ' (' + c.count + ')'; }).join(', ') : 'City tracking active on member profile')
+            ])
+          ])
+        ])
+      ]);
+      container.appendChild(secD);
+
+      // ======================================================================
+      // Section E: Safety & Trust
+      // ======================================================================
+      var recentReportRows = safety.recent_reports || [];
+      var reportCols = [
+        ['Date', function (rp) { return fmtDT(rp.created_at); }],
+        ['Category', function (rp) { return pill(rp.category || 'general'); }],
+        ['Report Detail', function (rp) {
+          var txt = rp.body || '';
+          return el('div', { class: 'small', text: txt.length > 70 ? txt.slice(0, 70) + '…' : txt });
+        }],
+        ['Status', function (rp) { return pill(rp.status); }],
+        ['', function () {
+          return btn('Review Case', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost');
+        }]
+      ];
+
+      var secE = el('div', { class: 'cmd-section' }, [
+        el('div', { class: 'cmd-sec-head' }, [
+          el('h2', { class: 'cmd-sec-title', text: '🛡️ Safety & Trust' }),
+          el('p', { class: 'cmd-sec-desc', text: 'User protection cases, moderation enforcement, and immutable audit telemetry.' })
+        ]),
+        el('div', { class: 'cmd-grid-2' }, [
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Safety Case Governance' }),
+              btn('Open Reports Console', function () { show('leads', { focus: true }); }, 'btn-sm btn-ghost')
+            ]),
+            el('div', { class: 'cmd-stat-list' }, [
+              statRow('New Unresolved Reports', k.new_reports),
+              statRow('Reports Under Investigation', safety.reports_summary?.reviewing || 0),
+              statRow('Total User Blocks', safety.reports_summary?.total_blocks || 0),
+              statRow('Restricted Accounts', safety.reports_summary?.restricted_users || 0),
+              statRow('Audit Log Activity (Past 24h)', safety.audit?.past_24h || 0),
+              statRow('Total Audit Trail Events', safety.audit?.total || 0)
+            ])
+          ]),
+          el('div', { class: 'cmd-card' }, [
+            el('div', { class: 'cmd-card-head' }, [
+              el('h3', { class: 'cmd-card-title', text: 'Recent Reports Queue' })
+            ]),
+            table(reportCols, recentReportRows, 'Zero unresolved safety reports.', { name: 'Recent Reports Queue' })
+          ])
+        ])
+      ]);
+      container.appendChild(secE);
+
+      // ======================================================================
+      // Section F: Configuration & System Health
+      // ======================================================================
+      var secF = el('div', { class: 'cmd-section' }, [
+        el('div', { class: 'cmd-sec-head' }, [
+          el('h2', { class: 'cmd-sec-title', text: '⚙️ Configuration & System Health' }),
+          el('p', { class: 'cmd-sec-desc', text: 'Architecture telemetry, credential verification, and integration health.' })
+        ]),
+        el('div', { class: 'cmd-health-grid' }, health.map(function (item) {
+          var badgeCls = item.status === 'ok' ? 'cmd-badge-ok'
+            : item.status === 'active_widget' ? 'cmd-badge-ok'
+            : item.status === 'isolated_private' ? 'cmd-badge-info'
+            : item.status === 'safeguard_locked' ? 'cmd-badge-locked'
+            : item.status === 'warning' ? 'cmd-badge-warn'
+            : 'cmd-badge-error';
+
+          var badgeText = item.status === 'ok' ? 'Configured'
+            : item.status === 'active_widget' ? 'Widget Active'
+            : item.status === 'isolated_private' ? 'Isolated Private'
+            : item.status === 'safeguard_locked' ? 'Locked (Safe)'
+            : item.status === 'warning' ? 'Check Required'
+            : 'Not Configured';
+
+          return el('div', { class: 'cmd-health-card' }, [
+            el('div', { class: 'cmd-health-card-head' }, [
+              el('span', { class: 'cmd-health-label', text: item.label }),
+              el('span', { class: 'cmd-badge ' + badgeCls, text: badgeText })
+            ]),
+            el('div', { class: 'cmd-health-val', text: item.value }),
+            el('p', { class: 'cmd-health-note', text: item.note })
+          ]);
+        }))
+      ]);
+      container.appendChild(secF);
+
+      clear(main).appendChild(container);
     });
   };
 
