@@ -239,7 +239,7 @@
         ['Checkout Mode', function (e) { return pill(e.checkout_mode || 'none'); }],
         ['', function (e) {
           return el('div', { class: 'row-actions' }, [
-            (e.seats_taken > 0 && can(['super_admin', 'event_manager', 'support'])) ? btn('Check-in', function () { loadAttendees(e, main); }, 'btn-sm btn-primary', 'Check in attendees for ' + e.title) : null,
+            (e.seats_taken > 0 && can(['super_admin', 'event_manager', 'support'])) ? btn('Check-in', function () { loadAttendees(e, main, { backTab: 'overview' }); }, 'btn-sm btn-primary', 'Check in attendees for ' + e.title) : null,
             el('a', { class: 'btn btn-sm btn-ghost', href: (['weekend_trip', 'resort_getaway'].indexOf(e.category) !== -1 ? '/trips/' : '/events/') + e.slug, target: '_blank', rel: 'noopener' }, ['View Page'])
           ]);
         }]
@@ -291,7 +291,7 @@
               statRow('Unmatched Orders', k.unmatched_orders),
               statRow('Flagged Orders', k.flagged_orders),
               statRow('Notification Failures', k.invite_failures),
-              statRow('Reconciliation Status', (k.unmatched_orders === 0 && k.flagged_orders === 0) ? 'Clean (0 Exceptions)' : 'Exceptions Pending')
+              statRow('Reconciliation Status', (k.unmatched_orders === 0 && k.flagged_orders === 0 && (k.invite_failures || 0) === 0) ? 'Clean (0 Exceptions)' : 'Exceptions Pending')
             ])
           ])
         ])
@@ -392,7 +392,7 @@
       var recentReportRows = safety.recent_reports || [];
       var repSummary = safety.reports_summary || {};
       var auditSummary = safety.audit || {};
-      var canViewReports = can(['super_admin', 'event_manager', 'support', 'moderator']);
+      var canViewReports = can(['super_admin', 'moderator']);
       var reportCols = [
         ['Date', function (rp) { return fmtDT(rp.created_at); }],
         ['Category', function (rp) { return pill(rp.category || 'general'); }],
@@ -426,7 +426,7 @@
               statRow('Total Audit Trail Events', auditSummary.total || 0)
             ])
           ]),
-          el('div', { class: 'cmd-card' }, [
+          el('div', { class: 'cmd-card panel' }, [
             el('div', { class: 'cmd-card-head' }, [
               el('h3', { class: 'cmd-card-title', text: 'Recent Reports Queue' })
             ]),
@@ -557,7 +557,11 @@
       var canCheck = can(['super_admin', 'event_manager', 'support']);
       var done = r.attendees.filter(function (a) { return a.status === 'checked_in'; }).length;
       var heading = el('h2', { text: 'Check-in — ' + ev.title, tabindex: '-1' });
-      var panel = el('div', { class: 'panel', role: 'region', 'aria-label': 'Check-in for ' + ev.title }, [heading,
+      var panel = el('div', { class: 'panel', role: 'region', 'aria-label': 'Check-in for ' + ev.title }, [
+        heading,
+        opts.backTab ? el('p', { class: 'row-actions' }, [
+          btn('← Back to ' + (opts.backTab === 'overview' ? 'Command Centre' : 'Events'), function () { show(opts.backTab, { focus: true }); }, 'btn-sm btn-ghost')
+        ]) : null,
         el('p', { class: 'muted', role: 'status', text: r.attendees.length ? done + ' of ' + r.attendees.length + ' checked in' : '' }),
         table([
           ['Name', function (a) { return a.alias || 'Unnamed guest'; }], ['Ref', function (a) { return a.ref; }], ['Status', function (a) { return pill(a.status); }],
@@ -566,7 +570,7 @@
               var b = e.currentTarget; b.disabled = true;
               api('POST', '/api/admin/bookings/' + a.id + '/check-in', {}).then(function () {
                 toast('Checked in ' + (a.alias || a.ref));
-                return loadAttendees(ev, holder, { keepScroll: true });
+                return loadAttendees(ev, holder, { keepScroll: true, backTab: opts.backTab });
               }).catch(function (err) { b.disabled = false; fail(err); });
             }, null, a.alias || a.ref) : '';
           }]

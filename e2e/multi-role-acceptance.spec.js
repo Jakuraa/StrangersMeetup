@@ -275,7 +275,7 @@ test.describe('Milestone 9 Multi-Role E2E Acceptance Suite', () => {
     // A. Sign In as Super Admin
     await signInAs(page, 'admin');
     await expect(page.locator('.admin-role')).toHaveText(/super admin/i);
-    await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
 
     // B. Review Leads Section
     await openAdminTab(page, 'Leads & reports');

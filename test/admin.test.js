@@ -131,3 +131,36 @@ test('overview KPIs come from real queries', async () => {
 test('admin cannot demote themselves', async () => {
   assert.equal((await owner.post('/api/admin/admins', { telegram_user_id: 900000001, role: 'support' })).status, 409);
 });
+
+test('moderator can view leads & reports and update report status while support cannot see reports', async () => {
+  const mod = await signedInClient();
+  const supp = await signedInClient();
+  await owner.post('/api/admin/admins', { telegram_user_id: mod.tgId, role: 'moderator' });
+  await owner.post('/api/admin/admins', { telegram_user_id: supp.tgId, role: 'support' });
+
+  // Insert a test report
+  const rep = await db.one(`INSERT INTO reports (user_id, category, body, status) VALUES ($1, 'conduct', 'Test incident', 'new') RETURNING id`, [mod.userId]);
+
+  // Moderator can list leads and see reports
+  const modLeads = await mod.get('/api/admin/leads');
+  assert.equal(modLeads.status, 200);
+  assert.ok(Array.isArray(modLeads.json.leads));
+  assert.ok(Array.isArray(modLeads.json.reports));
+  assert.ok(modLeads.json.reports.some((r) => r.id === rep.id));
+
+  // Moderator can update report status
+  const updateRes = await mod.patch(`/api/admin/reports/${rep.id}`, { status: 'reviewing' });
+  assert.equal(updateRes.status, 200);
+  const updatedRep = await db.one('SELECT status FROM reports WHERE id = $1', [rep.id]);
+  assert.equal(updatedRep.status, 'reviewing');
+
+  // Support can list leads but reports array is empty (data isolation)
+  const suppLeads = await supp.get('/api/admin/leads');
+  assert.equal(suppLeads.status, 200);
+  assert.ok(Array.isArray(suppLeads.json.leads));
+  assert.deepEqual(suppLeads.json.reports, []);
+
+  // Support cannot update report status (403 forbidden_role)
+  const suppUpdate = await supp.patch(`/api/admin/reports/${rep.id}`, { status: 'actioned' });
+  assert.equal(suppUpdate.status, 403);
+});
