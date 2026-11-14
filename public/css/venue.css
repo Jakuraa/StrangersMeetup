@@ -499,6 +499,46 @@
 }
 
 /* Form Styles */
+.venue-empty-state {
+  text-align: center;
+  padding: 36px 20px;
+  background: var(--bg-alt, #0c0c12);
+  border: 1px dashed var(--line, #242432);
+  border-radius: var(--radius, 8px);
+  margin: 12px 0;
+}
+.venue-empty-state p {
+  margin: 0 0 10px;
+  color: var(--muted, #8a8a9a);
+  font-size: .95rem;
+}
+.venue-empty-state p:last-child {
+  margin-bottom: 0;
+}
+.venue-notice-card {
+  background: var(--surface, #121218);
+  border: 1px solid rgba(0, 217, 255, 0.4);
+  border-radius: var(--radius, 10px);
+  padding: 20px;
+  margin-bottom: 24px;
+}
+.venue-notice-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  color: var(--neon-cyan, #00D9FF);
+}
+.venue-notice-card p {
+  margin: 0 0 12px;
+  font-size: .92rem;
+  color: var(--muted, #8a8a9a);
+}
+.venue-notice-card p:last-child {
+  margin-bottom: 0;
+}
+.btn-retry {
+  margin-left: 10px;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));

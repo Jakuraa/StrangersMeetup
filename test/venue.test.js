@@ -414,3 +414,51 @@ test('POST /api/venue/apply: signed-in user submits venue application', async ()
   assert.equal(ctxRes.json.context.applications[0].venueName, 'The Glasshouse Studio');
   assert.equal(ctxRes.json.context.applications[0].status, 'new');
 });
+
+// ---------- 10. Super Admin & Zero-Venues Resilience ----------
+
+test('GET /api/venue/context: Super Admin accesses all active venues across organisations', async () => {
+  const res = await superAdmin.get('/api/venue/context');
+  assert.equal(res.status, 200);
+  assert.equal(res.json.ok, true);
+  assert.equal(res.json.context.hasVenue, true);
+  assert.equal(res.json.context.isSuperAdmin, true);
+  // Super admin should see both Venue A and Venue B
+  const vIds = res.json.context.venues.map((v) => v.id);
+  assert.ok(vIds.includes(venueId));
+  assert.ok(vIds.includes(outsiderVenueId));
+});
+
+test('GET /api/venue/context: operator with org but no venues returns clean hasVenue: false', async () => {
+  const bareOperator = await signedInClient();
+  const emptyOrg = (await db.one(
+    `INSERT INTO organisations (kind, name, status) VALUES ('venue_operator', 'Empty Spaces Co', 'active') RETURNING id`
+  ));
+  await db.query(`INSERT INTO org_memberships (user_id, org_id, role, status) VALUES ($1, $2, 'owner', 'active')`, [bareOperator.userId, emptyOrg.id]);
+
+  const res = await bareOperator.get('/api/venue/context');
+  assert.equal(res.status, 200);
+  assert.equal(res.json.ok, true);
+  assert.equal(res.json.context.hasVenue, false);
+  assert.equal(res.json.context.activeVenueId, null);
+  assert.equal(res.json.context.activeVenue, null);
+  assert.deepEqual(res.json.context.venues, []);
+});
+
+test('GET & PATCH /api/me/notification-preferences: updates venue operator quiet hours and alerts', async () => {
+  const getRes = await venueOwner.get('/api/me/notification-preferences');
+  assert.equal(getRes.status, 200);
+  assert.equal(getRes.json.ok, true);
+
+  const patchRes = await venueOwner.patch('/api/me/notification-preferences', {
+    quietHoursEnabled: true,
+    remindersEnabled: true,
+    quietHoursStart: '23:30',
+    quietHoursEnd: '07:30'
+  });
+  assert.equal(patchRes.status, 200);
+  assert.equal(patchRes.json.ok, true);
+  assert.equal(patchRes.json.preferences.quietHoursEnabled, true);
+  assert.ok(patchRes.json.preferences.quietHoursStart.startsWith('23:30'));
+  assert.ok(patchRes.json.preferences.quietHoursEnd.startsWith('07:30'));
+});

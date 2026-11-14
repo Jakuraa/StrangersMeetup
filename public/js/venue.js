@@ -98,8 +98,24 @@
     initTabs();
     initModals();
     initFilterButtons();
+    initRetryButtons();
+    bindFormSubmissions();
     loadDashboard();
   });
+
+  function initRetryButtons() {
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('.btn-retry');
+      if (!btn) return;
+      var target = btn.getAttribute('data-retry');
+      if (target === 'events') loadEvents();
+      else if (target === 'enquiries') loadEnquiries();
+      else if (target === 'profile') loadProfile();
+      else if (target === 'analytics') loadAnalytics();
+      else if (target === 'staff') loadStaff();
+      else if (target === 'reports') loadReports();
+    });
+  }
 
   // ---------- Onboarding Flow ----------
   function initOnboarding(form) {
@@ -245,6 +261,10 @@
     var btnEditProfile = $('#btnEditProfile');
     var modalEdit = $('#modalEditProfile');
     var openEdit = function () {
+      if (!state.venueId) {
+        showAlert('No active venue to edit.', true);
+        return;
+      }
       populateEditModal();
       if (modalEdit && typeof modalEdit.showModal === 'function') modalEdit.showModal();
     };
@@ -255,6 +275,10 @@
     var modalNewEnquiry = $('#modalNewEnquiry');
     if (btnNewEnquiry && modalNewEnquiry) {
       btnNewEnquiry.addEventListener('click', function () {
+        if (!state.venueId) {
+          showAlert('No active venue to receive enquiries.', true);
+          return;
+        }
         $('#formNewEnquiry').reset();
         $('#newEnquiryMsg').textContent = '';
         var today = new Date().toISOString().split('T')[0];
@@ -268,6 +292,10 @@
     var modalAddStaff = $('#modalAddStaff');
     if (btnAddStaff && modalAddStaff) {
       btnAddStaff.addEventListener('click', function () {
+        if (!state.venueId) {
+          showAlert('No active venue to add staff to.', true);
+          return;
+        }
         $('#formAddStaff').reset();
         $('#addStaffMsg').textContent = '';
         modalAddStaff.showModal();
@@ -278,13 +306,15 @@
     var modalReport = $('#modalReportIssue');
     if (btnReportIssue && modalReport) {
       btnReportIssue.addEventListener('click', function () {
+        if (!state.venueId) {
+          showAlert('No active venue to report incidents against.', true);
+          return;
+        }
         $('#formReportIssue').reset();
         $('#reportIssueMsg').textContent = '';
         modalReport.showModal();
       });
     }
-
-    bindFormSubmissions();
   }
 
   // ---------- Data Loading ----------
@@ -297,7 +327,7 @@
       state.context = cRes.context;
 
       if (!state.context || !state.context.hasVenue) {
-        window.location.reload();
+        renderNoVenueEmptyState();
         return;
       }
 
@@ -311,6 +341,18 @@
       var verifiedBadge = $('#venueVerifiedBadge');
       if (verifiedBadge) verifiedBadge.hidden = !venue.orgVerified;
 
+      var statusBadge = $('#venueStatusBadge');
+      if (statusBadge) {
+        statusBadge.textContent = 'Active';
+        statusBadge.className = 'venue-pill venue-pill-status';
+      }
+
+      var btnQuickEdit = $('#btnQuickEdit');
+      if (btnQuickEdit) btnQuickEdit.hidden = false;
+
+      var btnNewEnquiry = $('#btnNewEnquiry');
+      if (btnNewEnquiry) btnNewEnquiry.hidden = false;
+
       // Venue selector
       var select = $('#venueSelect');
       var wrap = $('#venueSelectorWrap');
@@ -323,6 +365,8 @@
           var nextId = select.value;
           window.location.search = '?venueId=' + encodeURIComponent(nextId);
         };
+      } else if (wrap) {
+        wrap.hidden = true;
       }
 
       // Load all sections in parallel
@@ -339,20 +383,150 @@
     }
   }
 
+  function renderNoVenueEmptyState() {
+    state.venueId = null;
+
+    // Header info
+    var heading = $('#currentVenueName');
+    if (heading) heading.textContent = 'Venue Command Centre — No Active Venue';
+
+    var verifiedBadge = $('#venueVerifiedBadge');
+    if (verifiedBadge) verifiedBadge.hidden = true;
+
+    var statusBadge = $('#venueStatusBadge');
+    if (statusBadge) {
+      statusBadge.textContent = 'Setup Required';
+      statusBadge.className = 'venue-pill venue-pill-pending';
+    }
+
+    var wrap = $('#venueSelectorWrap');
+    if (wrap) wrap.hidden = true;
+
+    var btnQuickEdit = $('#btnQuickEdit');
+    if (btnQuickEdit) btnQuickEdit.hidden = true;
+
+    var btnNewEnquiry = $('#btnNewEnquiry');
+    if (btnNewEnquiry) btnNewEnquiry.hidden = true;
+
+    // Render zero/neutral KPIs
+    renderKPIs({
+      venueCapacity: '—',
+      upcomingEvents: 0,
+      totalAttendees: 0,
+      avgUtilization: 0,
+      pendingEnquiries: 0,
+      openReports: 0
+    });
+
+    // Overview Next Event & Enquiries
+    var nextEl = $('#overviewNextEvent');
+    if (nextEl) {
+      nextEl.innerHTML = '<div class="venue-empty-state"><p class="muted">No upcoming events scheduled. Link events to a venue to track attendance and guest capacity.</p></div>';
+    }
+
+    var overviewEnquiries = $('#overviewRecentEnquiries');
+    if (overviewEnquiries) {
+      overviewEnquiries.innerHTML = '<div class="venue-empty-state"><p class="muted">No booking enquiries received yet.</p></div>';
+    }
+
+    // Notice banner in Overview panel
+    var overviewPanel = $('#panelOverview');
+    if (overviewPanel) {
+      var existingNotice = $('#noVenueNotice');
+      if (!existingNotice) {
+        var noticeDiv = document.createElement('div');
+        noticeDiv.id = 'noVenueNotice';
+        noticeDiv.className = 'venue-notice-card';
+
+        var isSuperAdmin = state.context && state.context.isSuperAdmin;
+        var apps = (state.context && state.context.applications) || [];
+
+        if (apps.length > 0) {
+          var app = apps[0];
+          noticeDiv.innerHTML = '<h3>Venue Application: ' + esc(app.venueName) + '</h3>' +
+            '<p class="muted">Status: <span class="venue-pill venue-pill-pending">' + esc(app.status.toUpperCase()) + '</span> — Submitted on ' +
+            new Date(app.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + '</p>' +
+            '<p class="muted">Your venue application is under review by NIGHTLIFEZ Curation. Once approved, your venue command dashboard and calendar will activate automatically.</p>';
+        } else if (isSuperAdmin) {
+          noticeDiv.innerHTML = '<h3>Welcome to Venue Command Centre (Super Admin Mode)</h3>' +
+            '<p class="muted">No active venues exist in the database yet. You have full platform access to manage venues once they are onboarded or created.</p>' +
+            '<div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap;">' +
+              '<a href="/list-your-venue" class="btn btn-outline-cyan btn-sm">Onboard / Register Venue</a>' +
+              '<a href="/admin/leads" class="btn btn-outline-cyan btn-sm">Review Pending Leads</a>' +
+            '</div>';
+        } else {
+          noticeDiv.innerHTML = '<h3>No Active Venue Registered</h3>' +
+            '<p class="muted">Your account does not have an active venue registered. Complete your venue onboarding to receive booking enquiries and host curated nightlife events.</p>' +
+            '<a href="/list-your-venue" class="btn btn-primary btn-sm" style="margin-top:10px; display:inline-block;">Register Your Venue</a>';
+        }
+
+        overviewPanel.insertBefore(noticeDiv, overviewPanel.firstChild);
+      }
+    }
+
+    // Profile panel empty state
+    var profileView = $('#profileDetailsView');
+    if (profileView) {
+      profileView.innerHTML = '<div class="venue-empty-state">' +
+        '<h3>No Venue Profile</h3>' +
+        '<p class="muted">Register or activate a venue to manage facilities, operating hours, and capacity.</p>' +
+        '<a href="/list-your-venue" class="btn btn-outline-cyan btn-sm" style="margin-top:12px; display:inline-block;">Register Venue</a>' +
+      '</div>';
+    }
+    var facView = $('#profileFacilitiesView');
+    if (facView) facView.innerHTML = '';
+    var hoursView = $('#profileHoursView');
+    if (hoursView) hoursView.innerHTML = '';
+
+    // Events list empty state
+    var eventsContainer = $('#eventsListContainer');
+    if (eventsContainer) {
+      eventsContainer.innerHTML = '<div class="venue-empty-state"><p class="muted">No venue selected. Event listings and attendance tracking will appear once your venue is active.</p></div>';
+    }
+
+    // Enquiries list empty state
+    var enquiriesContainer = $('#enquiriesListContainer');
+    if (enquiriesContainer) {
+      enquiriesContainer.innerHTML = '<div class="venue-empty-state"><p class="muted">No booking enquiries received yet. Organiser booking requests for private events will appear here.</p></div>';
+    }
+
+    // Staff list empty state
+    var staffContainer = $('#staffListContainer');
+    if (staffContainer) {
+      staffContainer.innerHTML = '<div class="venue-empty-state"><p class="muted">No staff members listed. Staff management activates once a venue is assigned.</p></div>';
+    }
+
+    // Safety list empty state
+    var safetyContainer = $('#safetyListContainer');
+    if (safetyContainer) {
+      safetyContainer.innerHTML = '<div class="venue-empty-state"><p class="muted">No incident reports recorded. Operational safety channels are active.</p></div>';
+    }
+  }
+
   async function loadProfile() {
+    var el = $('#profileDetailsView');
+    if (!state.venueId) {
+      if (el) el.innerHTML = '<div class="venue-empty-state"><p class="muted">No venue active. Register or select a venue to manage profile details.</p></div>';
+      return;
+    }
     try {
-      var res = await api('GET', '/api/venue/profile?venueId=' + state.venueId);
+      var res = await api('GET', '/api/venue/profile?venueId=' + encodeURIComponent(state.venueId));
       state.profile = res.profile;
       renderProfileView(state.profile);
     } catch (err) {
-      var el = $('#profileDetailsView');
-      if (el) el.innerHTML = '<p class="error">Failed to load profile details.</p>';
+      if (el) {
+        el.innerHTML = '<div class="venue-empty-state"><p class="error">Failed to load profile details.</p><button type="button" class="btn btn-outline-cyan btn-sm btn-retry" data-retry="profile">Retry</button></div>';
+      }
     }
   }
 
   async function loadAnalytics() {
+    if (!state.venueId) {
+      renderKPIs({ venueCapacity: '—', upcomingEvents: 0, totalAttendees: 0, avgUtilization: 0, pendingEnquiries: 0, openReports: 0 });
+      return;
+    }
     try {
-      var res = await api('GET', '/api/venue/analytics?venueId=' + state.venueId);
+      var res = await api('GET', '/api/venue/analytics?venueId=' + encodeURIComponent(state.venueId));
       state.analytics = res.analytics;
       renderKPIs(state.analytics);
     } catch (err) {
@@ -363,8 +537,14 @@
   async function loadEvents() {
     var container = $('#eventsListContainer');
     if (!container) return;
+    if (!state.venueId) {
+      container.innerHTML = '<div class="venue-empty-state"><p class="muted">No venue active. Scheduled events will appear here.</p></div>';
+      var nextEl = $('#overviewNextEvent');
+      if (nextEl) nextEl.innerHTML = '<div class="venue-empty-state"><p class="muted">No upcoming events scheduled.</p></div>';
+      return;
+    }
     try {
-      var res = await api('GET', '/api/venue/events?venueId=' + state.venueId + '&filter=' + state.eventFilter);
+      var res = await api('GET', '/api/venue/events?venueId=' + encodeURIComponent(state.venueId) + '&filter=' + encodeURIComponent(state.eventFilter));
       state.events = res.events || [];
       renderEventsList(state.events, container);
 
@@ -373,7 +553,7 @@
       if (nextEl) {
         var upcoming = state.events.filter(function (e) { return new Date(e.startAt) >= new Date(); });
         if (upcoming.length === 0) {
-          nextEl.innerHTML = '<p class="muted">No upcoming events scheduled at this venue.</p>';
+          nextEl.innerHTML = '<div class="venue-empty-state"><p class="muted">No upcoming events scheduled at this venue.</p></div>';
         } else {
           var next = upcoming[0];
           nextEl.innerHTML = '<div class="profile-item">' +
@@ -388,15 +568,21 @@
         }
       }
     } catch (err) {
-      container.innerHTML = '<p class="error">Could not load event listings.</p>';
+      container.innerHTML = '<div class="venue-empty-state"><p class="error">Could not load event listings.</p><button type="button" class="btn btn-outline-cyan btn-sm btn-retry" data-retry="events">Retry</button></div>';
     }
   }
 
   async function loadEnquiries() {
     var container = $('#enquiriesListContainer');
     if (!container) return;
+    if (!state.venueId) {
+      container.innerHTML = '<div class="venue-empty-state"><p class="muted">No booking enquiries received yet.</p></div>';
+      var overviewEl = $('#overviewRecentEnquiries');
+      if (overviewEl) overviewEl.innerHTML = '<div class="venue-empty-state"><p class="muted">No booking enquiries received yet.</p></div>';
+      return;
+    }
     try {
-      var res = await api('GET', '/api/venue/enquiries?venueId=' + state.venueId + '&status=' + state.enquiryFilter);
+      var res = await api('GET', '/api/venue/enquiries?venueId=' + encodeURIComponent(state.venueId) + '&status=' + encodeURIComponent(state.enquiryFilter));
       state.enquiries = res.enquiries || [];
       renderEnquiriesList(state.enquiries, container);
 
@@ -416,7 +602,7 @@
       var overviewEl = $('#overviewRecentEnquiries');
       if (overviewEl) {
         if (state.enquiries.length === 0) {
-          overviewEl.innerHTML = '<p class="muted">No booking enquiries received yet.</p>';
+          overviewEl.innerHTML = '<div class="venue-empty-state"><p class="muted">No booking enquiries received yet.</p></div>';
         } else {
           var recent = state.enquiries.slice(0, 3);
           overviewEl.innerHTML = recent.map(function (e) {
@@ -429,31 +615,39 @@
         }
       }
     } catch (err) {
-      container.innerHTML = '<p class="error">Could not load booking enquiries.</p>';
+      container.innerHTML = '<div class="venue-empty-state"><p class="error">Could not load booking enquiries.</p><button type="button" class="btn btn-outline-cyan btn-sm btn-retry" data-retry="enquiries">Retry</button></div>';
     }
   }
 
   async function loadStaff() {
     var container = $('#staffListContainer');
     if (!container) return;
+    if (!state.venueId) {
+      container.innerHTML = '<div class="venue-empty-state"><p class="muted">No staff members listed. Staff management activates once a venue is assigned.</p></div>';
+      return;
+    }
     try {
-      var res = await api('GET', '/api/venue/staff?venueId=' + state.venueId);
+      var res = await api('GET', '/api/venue/staff?venueId=' + encodeURIComponent(state.venueId));
       state.staff = res.staff || [];
       renderStaffList(state.staff, container);
     } catch (err) {
-      container.innerHTML = '<p class="error">Could not load staff members.</p>';
+      container.innerHTML = '<div class="venue-empty-state"><p class="error">Could not load staff members.</p><button type="button" class="btn btn-outline-cyan btn-sm btn-retry" data-retry="staff">Retry</button></div>';
     }
   }
 
   async function loadReports() {
     var container = $('#safetyListContainer');
     if (!container) return;
+    if (!state.venueId) {
+      container.innerHTML = '<div class="venue-empty-state"><p class="muted">No safety reports recorded.</p></div>';
+      return;
+    }
     try {
-      var res = await api('GET', '/api/venue/reports?venueId=' + state.venueId);
+      var res = await api('GET', '/api/venue/reports?venueId=' + encodeURIComponent(state.venueId));
       state.reports = res.reports || [];
       renderReportsList(state.reports, container);
     } catch (err) {
-      container.innerHTML = '<p class="error">Could not load safety reports.</p>';
+      container.innerHTML = '<div class="venue-empty-state"><p class="error">Could not load safety reports.</p><button type="button" class="btn btn-outline-cyan btn-sm btn-retry" data-retry="reports">Retry</button></div>';
     }
   }
 
@@ -854,6 +1048,19 @@
     // 6. Settings Form
     var formSettings = $('#venueSettingsForm');
     if (formSettings) {
+      var qhCheck = $('#settingQuietHours');
+      var qhRange = $('#quietHoursRange');
+      var toggleQh = function () {
+        if (qhRange && qhCheck) {
+          qhRange.style.opacity = qhCheck.checked ? '1' : '0.5';
+          var inputs = qhRange.querySelectorAll('input');
+          inputs.forEach(function (inp) { inp.disabled = !qhCheck.checked; });
+        }
+      };
+      if (qhCheck) {
+        qhCheck.addEventListener('change', toggleQh);
+      }
+
       // Load user notification preferences
       api('GET', '/api/me/notification-preferences').then(function (res) {
         if (res.ok && res.preferences) {
@@ -862,35 +1069,44 @@
           var rem = $('#settingReminders');
           var qs = $('#settingQuietStart');
           var qe = $('#settingQuietEnd');
-          if (qh) qh.checked = Boolean(p.quietHoursEnabled);
-          if (rem) rem.checked = Boolean(p.remindersEnabled);
-          if (qs && p.quietHoursStart) qs.value = p.quietHoursStart;
-          if (qe && p.quietHoursEnd) qe.value = p.quietHoursEnd;
+          if (qh) qh.checked = Boolean(p.quietHoursEnabled != null ? p.quietHoursEnabled : p.quiet_hours_enabled);
+          if (rem) rem.checked = Boolean(p.remindersEnabled != null ? p.remindersEnabled : p.reminders_enabled);
+          var start = p.quietHoursStart || p.quiet_hours_start;
+          var end = p.quietHoursEnd || p.quiet_hours_end;
+          if (qs && start) qs.value = String(start).slice(0, 5);
+          if (qe && end) qe.value = String(end).slice(0, 5);
+          toggleQh();
         }
       }).catch(function () {});
 
       formSettings.addEventListener('submit', async function (e) {
         e.preventDefault();
         var msg = $('#settingsMsg');
-        msg.textContent = 'Saving preferences…';
-        msg.className = 'form-msg';
+        if (msg) {
+          msg.textContent = 'Saving preferences…';
+          msg.className = 'form-msg';
+        }
 
         var fd = new FormData(formSettings);
         var payload = {
-          quietHoursEnabled: $('#settingQuietHours').checked,
-          remindersEnabled: $('#settingReminders').checked,
+          quietHoursEnabled: $('#settingQuietHours') ? $('#settingQuietHours').checked : false,
+          remindersEnabled: $('#settingReminders') ? $('#settingReminders').checked : false,
           quietHoursStart: fd.get('quietHoursStart') || '23:00',
           quietHoursEnd: fd.get('quietHoursEnd') || '08:00'
         };
 
         try {
           await api('PATCH', '/api/me/notification-preferences', payload);
-          msg.textContent = 'Preferences saved successfully.';
-          msg.className = 'form-msg ok';
+          if (msg) {
+            msg.textContent = 'Preferences saved successfully.';
+            msg.className = 'form-msg ok';
+          }
           showAlert('Notification preferences saved.');
         } catch (err) {
-          msg.textContent = err.message || 'Error saving preferences.';
-          msg.className = 'form-msg error';
+          if (msg) {
+            msg.textContent = err.message || 'Error saving preferences.';
+            msg.className = 'form-msg error';
+          }
         }
       });
     }
