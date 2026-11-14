@@ -248,6 +248,40 @@
 .inventory-progress-wrap { margin: 12px 0 20px; }
 .inventory-progress-bar { height: 12px; border-radius: 6px; background: var(--alt); overflow: hidden; display: flex; }
 .inv-fill-sold { background: var(--neon-cyan); height: 100%; transition: width .3s; }
+
+/* Cancellation policy chips */
+.policy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.policy-chip {
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: .88rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.policy-chip:hover {
+  border-color: var(--neon-cyan);
+  background: rgba(0, 217, 255, 0.08);
+}
+.policy-chip.is-active {
+  background: rgba(0, 217, 255, 0.15);
+  border-color: var(--neon-cyan);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.2);
+}
+.policy-summary-box {
+  transition: all .2s ease;
+}
 .inv-fill-holds { background: #ffd15c; height: 100%; transition: width .3s; }
 .inventory-legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: .82rem; color: var(--muted); margin-top: 8px; }
 .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
