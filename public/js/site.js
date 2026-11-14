@@ -220,6 +220,241 @@
     });
   }
 
+  /* Switcher for WhatsApp vs Telegram tabs on /signin */
+  var authTabs = $$('[data-auth-tab]');
+  if (authTabs.length) {
+    authTabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var target = tab.getAttribute('data-auth-tab');
+        authTabs.forEach(function (t) {
+          var isActive = t === tab;
+          t.classList.toggle('active', isActive);
+          t.classList.toggle('wa-tab', isActive && target === 'whatsapp');
+          t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+        $$('[data-auth-panel]').forEach(function (panel) {
+          panel.hidden = panel.getAttribute('data-auth-panel') !== target;
+        });
+      });
+    });
+  }
+
+  /* WhatsApp OTP Authentication on /signin */
+  var waPhoneForm = $('[data-wa-phone-form]');
+  var waOtpCard = $('[data-wa-otp-card]');
+  if (waPhoneForm && waOtpCard) {
+    var signinMsg = $('[data-signin-msg]');
+    var currentChallengeId = null;
+    var currentPhone = null;
+    var currentPromoOptIn = false;
+    var countdownTimer = null;
+    var otpAbortController = null;
+
+    var stopSmsOtpListener = function () {
+      if (otpAbortController) {
+        otpAbortController.abort();
+        otpAbortController = null;
+      }
+    };
+
+    var startSmsOtpListener = function () {
+      var otpInput = document.getElementById('otp-input');
+      var otpForm = document.getElementById('otp-form');
+      if (!otpInput || !('OTPCredential' in window)) return;
+      stopSmsOtpListener();
+      var ac = new AbortController();
+      otpAbortController = ac;
+      navigator.credentials.get({
+        otp: { transport: ['sms'] },
+        signal: ac.signal
+      }).then(function (otp) {
+        if (!otp) return;
+        otpInput.value = otp.code;
+        if (otpForm && otpForm.requestSubmit) {
+          otpForm.requestSubmit();
+        }
+      }).catch(function (err) {
+        if (err && err.name === 'AbortError') return;
+        console.error('WebOTP verification error:', err);
+      });
+    };
+
+    var startCountdown = function (seconds) {
+      if (countdownTimer) clearInterval(countdownTimer);
+      var resendBtn = $('[data-wa-resend-btn]');
+      if (!resendBtn) return;
+      resendBtn.disabled = true;
+      var remaining = seconds || 60;
+      resendBtn.textContent = 'Resend code (' + remaining + 's)';
+      countdownTimer = setInterval(function () {
+        remaining--;
+        if (remaining <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          resendBtn.disabled = false;
+          resendBtn.textContent = 'Resend code via WhatsApp';
+        } else {
+          resendBtn.textContent = 'Resend code (' + remaining + 's)';
+        }
+      }, 1000);
+    };
+
+    waPhoneForm.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var phoneInput = $('#wa-phone');
+      var ageCheck = $('[data-wa-age]');
+      var promoCheck = $('[data-wa-promo]');
+      var submitBtn = $('[data-wa-submit-phone]');
+
+      if (!ageCheck.checked) {
+        signinMsg.className = 'form-msg error';
+        signinMsg.textContent = 'Please confirm you are 21 or older to continue.';
+        return;
+      }
+
+      var rawDigits = phoneInput.value.replace(/\D/g, '');
+      if (rawDigits.length !== 10 || !/^[6-9]/.test(rawDigits)) {
+        signinMsg.className = 'form-msg error';
+        signinMsg.textContent = 'Please enter a valid 10-digit Indian mobile number (starts with 6-9).';
+        phoneInput.focus();
+        return;
+      }
+
+      var fullPhone = '+91' + rawDigits;
+      currentPhone = fullPhone;
+      currentPromoOptIn = Boolean(promoCheck && promoCheck.checked);
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Sending WhatsApp OTP…';
+      signinMsg.className = 'form-msg';
+      signinMsg.textContent = '';
+
+      api('POST', '/api/auth/whatsapp/otp', {
+        phone: fullPhone,
+        promotionalOptIn: currentPromoOptIn
+      }).then(function (r) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send WhatsApp OTP';
+
+        if (!r.ok) {
+          signinMsg.className = 'form-msg error';
+          signinMsg.textContent = r.message || 'Failed to send WhatsApp OTP. Please try again.';
+          return;
+        }
+
+        currentChallengeId = r.challengeId;
+        var maskedEl = $('[data-wa-masked-phone]');
+        if (maskedEl) maskedEl.textContent = r.phoneMasked || fullPhone;
+
+        var phoneStep = $('[data-wa-step="phone"]');
+        if (phoneStep) phoneStep.hidden = true;
+        waOtpCard.hidden = false;
+
+        var otpInput = $('#otp-input');
+        if (otpInput) {
+          otpInput.value = '';
+          otpInput.focus();
+        }
+
+        startCountdown(r.resendAfterSeconds || 60);
+        startSmsOtpListener();
+      }).catch(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send WhatsApp OTP';
+        signinMsg.className = 'form-msg error';
+        signinMsg.textContent = 'Network error while requesting OTP. Please try again.';
+      });
+    });
+
+    var verifyForm = $('[data-wa-verify-form]');
+    if (verifyForm) {
+      verifyForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        stopSmsOtpListener();
+
+        var otpInput = $('#otp-input');
+        var verifyBtn = $('[data-wa-verify-btn]');
+        var code = (otpInput.value || '').trim();
+
+        if (!/^\d{6}$/.test(code)) {
+          signinMsg.className = 'form-msg error';
+          signinMsg.textContent = 'Please enter the complete 6-digit verification code.';
+          otpInput.focus();
+          return;
+        }
+
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'Verifying code…';
+        signinMsg.className = 'form-msg';
+        signinMsg.textContent = '';
+
+        api('POST', '/api/auth/whatsapp/verify', {
+          challengeId: currentChallengeId,
+          phone: currentPhone,
+          code: code,
+          promotionalOptIn: currentPromoOptIn
+        }).then(function (r) {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = 'Verify & Continue';
+
+          if (!r.ok) {
+            signinMsg.className = 'form-msg error';
+            signinMsg.textContent = r.message || 'Invalid or expired OTP code.';
+            otpInput.value = '';
+            otpInput.focus();
+            return;
+          }
+
+          afterAuth(r, signinMsg);
+        }).catch(function () {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = 'Verify & Continue';
+          signinMsg.className = 'form-msg error';
+          signinMsg.textContent = 'Network error while verifying OTP.';
+        });
+      });
+    }
+
+    var changePhoneBtn = $('[data-wa-change-phone]');
+    if (changePhoneBtn) {
+      changePhoneBtn.addEventListener('click', function () {
+        stopSmsOtpListener();
+        if (countdownTimer) clearInterval(countdownTimer);
+        waOtpCard.hidden = true;
+        var phoneStep = $('[data-wa-step="phone"]');
+        if (phoneStep) phoneStep.hidden = false;
+        var phoneInput = $('#wa-phone');
+        if (phoneInput) phoneInput.focus();
+      });
+    }
+
+    var resendBtn = $('[data-wa-resend-btn]');
+    if (resendBtn) {
+      resendBtn.addEventListener('click', function () {
+        if (!currentPhone) return;
+        resendBtn.disabled = true;
+        resendBtn.textContent = 'Sending new OTP…';
+        api('POST', '/api/auth/whatsapp/otp', {
+          phone: currentPhone,
+          promotionalOptIn: currentPromoOptIn
+        }).then(function (r) {
+          if (!r.ok) {
+            signinMsg.className = 'form-msg error';
+            signinMsg.textContent = r.message || 'Could not resend OTP. Please wait before retrying.';
+            resendBtn.disabled = false;
+            resendBtn.textContent = 'Resend code via WhatsApp';
+            return;
+          }
+          currentChallengeId = r.challengeId;
+          startCountdown(r.resendAfterSeconds || 60);
+          startSmsOtpListener();
+          signinMsg.className = 'form-msg ok';
+          signinMsg.textContent = 'A new 6-digit code has been sent to your WhatsApp.';
+        });
+      });
+    }
+  }
+
   /* Telegram Login Widget on /signin */
   var widget = $('[data-tg-widget]');
   if (widget) {
@@ -537,8 +772,121 @@
           var isTarget = sec.getAttribute('data-hub-section') === tab;
           sec.hidden = !isTarget;
         });
+        if (tab === 'account') {
+          renderAccountSettings();
+        }
       });
     });
+
+    var accountBox = $('[data-account-settings]', hub);
+    function renderAccountSettings() {
+      if (!accountBox) return;
+      accountBox.innerHTML = '<p class="muted">Loading connected accounts and preferences…</p>';
+      Promise.all([
+        api('GET', '/api/me/identities'),
+        api('GET', '/api/me/communication-preferences')
+      ]).then(function (results) {
+        var idRes = results[0];
+        var prefRes = results[1];
+        if (!idRes.ok || !prefRes.ok) {
+          accountBox.innerHTML = '<p class="form-msg error">Could not load account settings.</p>';
+          return;
+        }
+
+        var wa = idRes.identities.whatsapp;
+        var tg = idRes.identities.telegram;
+        var prefs = prefRes.preferences;
+
+        var html = '<div class="identity-card">' +
+          '<h3 style="margin-bottom: 4px;">Connected Login Methods</h3>' +
+          '<p class="muted" style="font-size: .88rem; margin-bottom: 12px;">Link both WhatsApp and Telegram to access your tickets and receive operational updates across either service.</p>' +
+          '<div class="identity-row">' +
+            '<div class="identity-meta">' +
+              '<span class="identity-label">WhatsApp</span>' +
+              '<span class="identity-status ' + (wa.linked ? 'connected' : '') + '">' +
+                (wa.linked ? '✓ Connected (' + wa.phoneMasked + ')' : 'Not Connected') +
+              '</span>' +
+            '</div>' +
+            '<div class="identity-action">' +
+              (wa.linked
+                ? (tg.linked ? '<button type="button" class="btn btn-ghost btn-sm" data-unlink-wa>Disconnect</button>' : '<span class="muted" style="font-size: .85rem;">Sole Login Method</span>')
+                : '<a href="/signin" class="btn btn-wa btn-sm">Connect WhatsApp</a>') +
+            '</div>' +
+          '</div>' +
+          '<div class="identity-row">' +
+            '<div class="identity-meta">' +
+              '<span class="identity-label">Telegram</span>' +
+              '<span class="identity-status ' + (tg.linked ? 'connected' : '') + '">' +
+                (tg.linked ? '✓ Connected (Telegram ID: ' + tg.telegramUserId + ')' : 'Not Connected') +
+              '</span>' +
+            '</div>' +
+            '<div class="identity-action">' +
+              (tg.linked
+                ? '<span class="muted" style="font-size: .85rem;">Active</span>'
+                : '<a href="/auth/telegram/start?next=/me" class="btn btn-tg btn-sm">Connect Telegram</a>') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+
+        '<div class="identity-card" style="margin-top: 16px;">' +
+          '<h3 style="margin-bottom: 4px;">Communication Preferences</h3>' +
+          '<p class="muted" style="font-size: .88rem; margin-bottom: 12px;">Manage how and where NIGHTLIFEZ sends you notifications.</p>' +
+          '<div class="identity-row">' +
+            '<div class="identity-meta">' +
+              '<span class="identity-label">Essential Transactional Notices</span>' +
+              '<span class="muted" style="font-size: .82rem;">Booking confirmations, QR entry passes, and schedule changes.</span>' +
+            '</div>' +
+            '<div class="identity-action">' +
+              '<span class="badge" style="background: rgba(37, 211, 102, 0.15); color: #25D366; font-size: .8rem; padding: 4px 10px; border-radius: 999px;">Always Active</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="identity-row">' +
+            '<div class="identity-meta">' +
+              '<span class="identity-label">WhatsApp Event Recommendations</span>' +
+              '<span class="muted" style="font-size: .82rem;">Curated weekend parties, secret meetups, and nightlife invitations.</span>' +
+            '</div>' +
+            '<div class="identity-action">' +
+              '<button type="button" class="btn btn-ghost btn-sm" data-toggle-promo-wa>' +
+                (prefs.whatsapp && prefs.whatsapp.promotional ? '✓ Opted In' : 'Opted Out') +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+        accountBox.innerHTML = html;
+
+        var unlinkBtn = $('[data-unlink-wa]', accountBox);
+        if (unlinkBtn) {
+          unlinkBtn.addEventListener('click', function () {
+            if (!confirm('Are you sure you want to disconnect WhatsApp? You will need Telegram to sign in.')) return;
+            api('POST', '/api/auth/whatsapp/unlink', {}).then(function (r) {
+              if (r.ok) {
+                renderAccountSettings();
+              } else {
+                alert(r.message || 'Could not disconnect WhatsApp.');
+              }
+            });
+          });
+        }
+
+        var promoToggle = $('[data-toggle-promo-wa]', accountBox);
+        if (promoToggle) {
+          promoToggle.addEventListener('click', function () {
+            var currentStatus = prefs.whatsapp && prefs.whatsapp.promotional;
+            var nextStatus = currentStatus ? 'opted_out' : 'opted_in';
+            api('PATCH', '/api/me/communication-preferences', {
+              channel: 'whatsapp',
+              purpose: 'promotional',
+              status: nextStatus
+            }).then(function (r) {
+              if (r.ok) {
+                renderAccountSettings();
+              }
+            });
+          });
+        }
+      });
+    }
 
     var filterBtns = $$('[data-booking-filter]', hub);
     filterBtns.forEach(function (btn) {

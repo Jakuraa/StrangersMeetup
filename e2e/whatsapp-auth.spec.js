@@ -1,0 +1,95 @@
+// e2e/whatsapp-auth.spec.js - End-to-end tests for WhatsApp OTP sign-in, WebOTP form compliance, and account preferences.
+import { test, expect } from '@playwright/test';
+import { expectAccessible, expectNoHorizontalOverflow, screenshot } from './helpers.js';
+import { getWhatsAppProvider } from '../lib/services/whatsapp-provider.js';
+
+test.describe('WhatsApp OTP Authentication E2E', () => {
+  test('Desktop (1280px): complete WhatsApp OTP signup, WebOTP form verification, and preferences', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    getWhatsAppProvider().clearSentMessages();
+
+    // 1. Visit /signin
+    await page.goto('/signin');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Continue to NIGHTLIFEZ');
+    await expect(page.locator('[data-auth-tab="whatsapp"]')).toBeVisible();
+    await expect(page.locator('[data-auth-tab="telegram"]')).toBeVisible();
+    await expect(page.locator('[data-wa-phone-form]')).toBeVisible();
+
+    await expectAccessible(page);
+    await expectNoHorizontalOverflow(page);
+    await screenshot(page, testInfo, 'desktop-signin-whatsapp-tab');
+
+    // 2. Fill mobile number, confirm age, request OTP
+    const phoneInput = page.locator('#wa-phone');
+    await phoneInput.fill('9876543210');
+    await page.locator('[data-wa-age]').check();
+    await page.locator('[data-wa-promo]').check();
+
+    const [otpResponse] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes('/api/auth/whatsapp/otp') && r.status() === 200),
+      page.locator('[data-wa-submit-phone]').click()
+    ]);
+    const otpJson = await otpResponse.json();
+    const code = otpJson.devOtp;
+    expect(code).toMatch(/^\d{6}$/);
+
+    // 3. Verify OTP step is displayed
+    const otpCard = page.locator('[data-wa-otp-card]');
+    await expect(otpCard).toBeVisible();
+    await expect(page.locator('#otp-input')).toBeVisible();
+    await expect(page.locator('#otp-format-hint')).toBeVisible();
+    await expect(page.locator('[data-wa-masked-phone]')).toContainText('+91 98****3210');
+
+    // Check modern web guidance compliance
+    await expect(page.locator('#otp-input')).toHaveAttribute('inputmode', 'numeric');
+    await expect(page.locator('#otp-input')).toHaveAttribute('autocomplete', 'one-time-code');
+    await expect(page.locator('#otp-input')).toHaveAttribute('pattern', '\\d{6}');
+    await expect(page.locator('#otp-input')).toHaveAttribute('maxlength', '6');
+
+    await expectAccessible(page);
+    await screenshot(page, testInfo, 'desktop-signin-otp-step');
+
+    // 4. Fill OTP and submit
+    await page.locator('#otp-input').fill(code);
+    await page.locator('[data-wa-verify-btn]').click();
+
+    // 5. User lands on /me authenticated
+    await page.waitForURL(/\/me$/);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('My bookings');
+
+    // 6. Navigate to Account & Logins tab
+    const accountTab = page.locator('[data-hub-tab="account"]');
+    await expect(accountTab).toBeVisible();
+    await accountTab.click();
+
+    const accountSection = page.locator('[data-hub-section="account"]');
+    await expect(accountSection).toBeVisible();
+    await expect(accountSection).toContainText('Connected Login Methods');
+    await expect(accountSection).toContainText('✓ Connected (+91 98****3210)');
+    await expect(accountSection).toContainText('Communication Preferences');
+
+    await expectAccessible(page);
+    await expectNoHorizontalOverflow(page);
+    await screenshot(page, testInfo, 'desktop-attendee-account-settings');
+  });
+
+  test('Mobile (375px): responsive layout, tap targets, and switcher behavior', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    getWhatsAppProvider().clearSentMessages();
+
+    await page.goto('/signin');
+    await expectNoHorizontalOverflow(page);
+
+    // Switch to Telegram tab
+    await page.locator('[data-auth-tab="telegram"]').click();
+    await expect(page.locator('[data-auth-panel="telegram"]')).toBeVisible();
+    await expect(page.locator('[data-auth-panel="whatsapp"]')).toBeHidden();
+
+    // Switch back to WhatsApp tab
+    await page.locator('[data-auth-tab="whatsapp"]').click();
+    await expect(page.locator('[data-auth-panel="whatsapp"]')).toBeVisible();
+    await expect(page.locator('[data-auth-panel="telegram"]')).toBeHidden();
+
+    await screenshot(page, testInfo, 'mobile-signin-whatsapp');
+  });
+});
