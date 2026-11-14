@@ -190,4 +190,98 @@ test.describe('NIGHTLIFEZ Venue Owner Dashboard Full-Stack E2E Suite', () => {
     // Run Axe automated accessibility audit against WCAG 2.1 AA standards
     await expectAccessible(page);
   });
+
+  test('Journey 4: Zero-venue resilient empty state and settings save verification', async ({ page }, testInfo) => {
+    test.setTimeout(90_000);
+    const consoleErrors = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+
+    // 1. Authenticate as Super Admin persona 'admin'
+    await signInAs(page, 'admin');
+
+    // 2. Intercept /api/venue/context to simulate a zero-venue platform state
+    await page.route('**/api/venue/context*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          context: {
+            hasVenue: false,
+            isSuperAdmin: true,
+            userRole: 'owner',
+            orgs: [],
+            venues: [],
+            activeVenueId: null,
+            activeVenue: null,
+            permissions: {
+              canManage: true,
+              canManageEnquiries: true,
+              canViewAnalytics: true,
+              canViewEvents: true,
+              canManageStaff: true
+            },
+            applications: []
+          }
+        })
+      });
+    });
+
+    await page.goto('/venue');
+
+    // 3. Header must display graceful setup state
+    await expect(page.locator('#currentVenueName')).toHaveText('Venue Command Centre — No Active Venue');
+    await expect(page.locator('#venueStatusBadge')).toHaveText('Setup Required');
+    await expect(page.locator('#venueStatusBadge')).toHaveClass(/venue-pill-pending/);
+    await expect(page.locator('#venueSelectorWrap')).toBeHidden();
+
+    // 4. Super Admin empty-state notice card must be visible
+    await expect(page.locator('#noVenueNotice')).toBeVisible();
+    await expect(page.locator('#noVenueNotice')).toContainText('Super Admin Mode');
+
+    // 5. KPIs must be zeroed/neutral
+    await expect(page.locator('#kpiCapacity')).toHaveText('—');
+    await expect(page.locator('#kpiUpcomingEvents')).toHaveText('0');
+    await expect(page.locator('#kpiTotalAttendees')).toHaveText('0');
+    await expect(page.locator('#kpiAvgUtilization')).toHaveText('0%');
+    await expect(page.locator('#kpiPendingEnquiries')).toHaveText('0');
+
+    // 6. Next Event and Recent Enquiries in Overview show empty states
+    await expect(page.locator('#overviewNextEvent')).toContainText('No upcoming events scheduled');
+    await expect(page.locator('#overviewRecentEnquiries')).toContainText('No booking enquiries received yet');
+
+    // 7. Verify all tabs show clean empty states without triggering 404s
+    await page.locator('#tabProfile').click();
+    await expect(page.locator('#profileDetailsView')).toContainText('No Venue Profile');
+
+    await page.locator('#tabEvents').click();
+    await expect(page.locator('#eventsListContainer')).toContainText('No venue selected');
+
+    await page.locator('#tabEnquiries').click();
+    await expect(page.locator('#enquiriesListContainer')).toContainText('No booking enquiries received yet');
+
+    await page.locator('#tabStaff').click();
+    await expect(page.locator('#staffListContainer')).toContainText('No staff members listed');
+
+    await page.locator('#tabSafety').click();
+    await expect(page.locator('#safetyListContainer')).toContainText('No incident reports recorded');
+
+    // 8. Settings Form save behavior
+    await page.locator('#tabSettings').click();
+    await expect(page.locator('#panelSettings')).toBeVisible();
+
+    const quietHoursCheck = page.locator('#settingQuietHours');
+    await quietHoursCheck.check();
+    await page.locator('#venueSettingsForm button[type="submit"]').click();
+    await expect(page.locator('#settingsMsg')).toContainText('Preferences saved successfully');
+
+    // Return to Overview and screenshot empty state
+    await page.locator('#tabOverview').click();
+    await screenshot(page, testInfo, 'venue-dashboard-empty-state');
+
+    // Zero console errors throughout the journey
+    expect(consoleErrors).toEqual([]);
+  });
 });
