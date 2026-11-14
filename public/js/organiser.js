@@ -1162,6 +1162,82 @@
         nav(null, 'tickets', 'Next: Tickets & payment');
     }
 
+    function policyCardHtml() {
+      var d = S.data;
+      var pol = d.cancellationPolicy || {
+        template: 'standard',
+        primaryDeadlineHours: 48,
+        primaryRefundPercent: 100,
+        secondaryDeadlineHours: 24,
+        secondaryRefundPercent: 50,
+        customTerms: ''
+      };
+      d.cancellationPolicy = pol;
+      var curTpl = pol.template || 'standard';
+
+      var tpls = [
+        { key: 'flexible', name: 'Flexible', desc: '100% refund up to 24h before event' },
+        { key: 'standard', name: 'Standard (Default)', desc: '100% up to 48h, 50% up to 24h' },
+        { key: 'strict', name: 'Strict', desc: '100% up to 7 days, 50% up to 48h' },
+        { key: 'custom', name: 'Custom', desc: 'Configure custom deadlines & percentages' }
+      ];
+
+      var chips = '<div class="chips policy-chips">' + tpls.map(function (t) {
+        var active = curTpl === t.key;
+        return '<button type="button" class="chip policy-chip' + (active ? ' is-active' : '') + '" data-act="select-policy-template" data-policy-key="' + esc(t.key) + '">' +
+          (active ? '✓ ' : '') + esc(t.name) + '</button>';
+      }).join('') + '</div>';
+
+      var customFields = '';
+      if (curTpl === 'custom') {
+        customFields = '<div class="policy-custom-inputs" style="margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--alt);">' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+          text('cancellationPolicy.primaryDeadlineHours', 'Full refund deadline (hours before start)', { max: 720, placeholder: '48' }) +
+          text('cancellationPolicy.primaryRefundPercent', 'Refund percentage (%)', { max: 100, placeholder: '100' }) +
+          text('cancellationPolicy.secondaryDeadlineHours', 'Partial refund deadline (optional hours)', { max: 720, optional: true, placeholder: '24' }) +
+          text('cancellationPolicy.secondaryRefundPercent', 'Partial refund percentage (%)', { max: 100, optional: true, placeholder: '50' }) +
+          '</div>' +
+          text('cancellationPolicy.customTerms', 'Additional host terms (optional)', { area: true, rows: 2, max: 1000, optional: true, placeholder: 'e.g. Late arrivals after 30 mins cannot be admitted.' }) +
+          '</div>';
+      }
+
+      var summaryText = '';
+      if (curTpl === 'flexible') {
+        summaryText = '100% refund up to 24 hours before event start. Non-refundable within 24 hours.';
+      } else if (curTpl === 'standard') {
+        summaryText = '100% refund up to 48 hours before event start; 50% refund between 48h and 24h; non-refundable within 24 hours.';
+      } else if (curTpl === 'strict') {
+        summaryText = '100% refund up to 7 days before event start; 50% refund between 7 days and 48 hours; non-refundable within 48 hours.';
+      } else {
+        summaryText = (pol.primaryRefundPercent || 100) + '% refund up to ' + (pol.primaryDeadlineHours || 48) + 'h before event' +
+          (pol.secondaryDeadlineHours ? '; ' + (pol.secondaryRefundPercent || 50) + '% refund between ' + (pol.primaryDeadlineHours || 48) + 'h and ' + pol.secondaryDeadlineHours + 'h' : '') +
+          '; non-refundable within ' + (pol.secondaryDeadlineHours || pol.primaryDeadlineHours || 48) + 'h.';
+      }
+
+      var liveBox = '<div class="policy-summary-box" data-live="policy-preview" style="margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<strong style="color:var(--ink);font-size:0.95rem;">' + esc(curTpl.charAt(0).toUpperCase() + curTpl.slice(1)) + ' Policy Terms</strong>' +
+        '<span style="font-size:0.8rem;background:rgba(0,255,200,0.12);color:var(--ok);padding:2px 8px;border-radius:12px;font-weight:600;">🛡️ 100% Host Cancel Guarantee</span>' +
+        '</div>' +
+        '<ul style="margin:0 0 10px 0;padding-left:18px;font-size:0.88rem;color:var(--ink);line-height:1.5;">' +
+        '<li><strong>Attendee cancellation:</strong> ' + esc(summaryText) + '</li>' +
+        '<li><strong>Host cancellation guarantee:</strong> 100% full refund automatically if you or the platform cancels the event.</li>' +
+        '<li><strong>Postponement protection:</strong> 100% refund upon request if the date, venue or core format is materially changed.</li>' +
+        '<li><strong>No-show policy:</strong> Non-refundable (0%) once the event starts.</li>' +
+        '<li><strong>Processing timeline:</strong> Refunds arrive in the guest’s original payment method in 5–7 business days.</li>' +
+        '</ul>' +
+        (pol.customTerms ? '<p style="margin:0;font-size:0.85rem;color:var(--muted);"><strong>Host note:</strong> ' + esc(pol.customTerms) + '</p>' : '') +
+        '</div>';
+
+      return card('Cancellation & refunds',
+        '<p class="help">Select a clear, transparent policy for your attendees. Transparent terms build trust and reduce chargebacks.</p>' +
+        chips +
+        customFields +
+        liveBox +
+        errSlot('refundPolicy')
+      );
+    }
+
     function stepTickets() {
       var d = S.data;
       var dates = d.multiDay ? datesBetween(d.startLocal, d.endLocal, CFG.limits.days) : [];
@@ -1192,8 +1268,7 @@
           (tiers ? '<ul class="tier-list">' + tiers + '</ul>' : '<p class="muted">No tickets yet. Add one above.</p>') +
           ((d.tickets || []).length < CFG.limits.tiers ? '<button class="btn btn-ghost btn-sm" type="button" data-act="add-tier" data-preset="general">+ Add another ticket type</button>' : '')) +
         card('Inventory', '<div data-live="inventory"></div>') +
-        card('Cancellation & refunds', text('refundPolicy', 'Your cancellation and refund policy', { area: true, rows: 3, max: 1000, optional: !(d.tickets || []).some(function (t) { return t.kind === 'paid'; }),
-          placeholder: 'e.g. Full refund up to 48 hours before the event. No refunds after that.', help: 'Shown to guests before they book. Required if any ticket is paid.' })) +
+        policyCardHtml() +
         card('Coming later', '<ul class="later"><li>Advance + balance payments</li><li>Promo codes</li><li>Complimentary passes</li></ul><p class="help">These aren’t available yet, so they can’t be switched on.</p>', { cls: 'wz-card-muted' }) +
         nav('basics', 'features', 'Next: Features');
     }
@@ -1262,7 +1337,12 @@
         '<h4>Entry</h4><ul><li>Adults 21+ only. Guests carry a photo ID.</li>' + (f.approval && f.approval.enabled ? '<li>The host approves each guest.</li>' : '') + '</ul>' +
         (qs.length ? '<h4>Questions at booking</h4><ul>' + qs.map(function (x) { return '<li>' + esc(x.label || 'Untitled question') + (x.required ? ' <span class="muted">(required)</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
         (pts.length ? '<h4>Pickup points</h4><ul>' + pts.map(function (p) { return '<li>' + esc(p.name || 'Unnamed') + (p.time ? ' · ' + esc(fmtLocal(p.time)) : '') + '</li>'; }).join('') + '</ul>' : '') +
-        '<h4>Cancellation & refunds</h4><p>' + esc(d.refundPolicy || 'No policy written yet.') + '</p>' +
+        '<h4>Cancellation & refunds</h4>' +
+        '<div class="att-policy-preview" style="font-size:0.88rem;line-height:1.5;background:var(--alt);padding:12px;border-radius:var(--radius);border:1px solid var(--line);margin-bottom:12px;">' +
+        '<p style="margin:0 0 6px 0;"><strong>' + esc(((d.cancellationPolicy && d.cancellationPolicy.template) || 'standard').charAt(0).toUpperCase() + ((d.cancellationPolicy && d.cancellationPolicy.template) || 'standard').slice(1)) + ' Cancellation Policy</strong> · <span style="color:var(--ok);">🛡️ 100% Host Cancel Guarantee</span></p>' +
+        '<p style="margin:0 0 6px 0;">' + esc(d.refundPolicy || 'Standard refund policy applies.') + '</p>' +
+        '<p class="muted small" style="margin:0;">Approved refunds are processed to original payment method in 5–7 business days.</p>' +
+        '</div>' +
         '<p class="muted">Hosted by ' + esc(d.hostName || CFG.alias || 'you') + (f.contact && f.contact.enabled ? ' · on-ground contact shared with confirmed guests' : '') + '</p>' +
         '</div></article>';
     }
@@ -1462,6 +1542,34 @@
           if (path === 'features.questions.enabled' && getPath(S.data, path) && !(feat('questions').items || []).length) feat('questions').items = [];
           if (path === 'features.pickup.enabled' && getPath(S.data, path) && !(feat('pickup').points || []).length) feat('pickup').points = [{ id: uid(), name: '', location: '', time: S.data.startLocal || '' }];
           touch(); return render('[data-act="toggle"][data-path="' + path + '"]');
+        case 'select-policy-template':
+          var pkey = b.getAttribute('data-policy-key');
+          if (!S.data.cancellationPolicy) S.data.cancellationPolicy = {};
+          S.data.cancellationPolicy.template = pkey;
+          if (pkey === 'flexible') {
+            S.data.cancellationPolicy.primaryDeadlineHours = 24;
+            S.data.cancellationPolicy.primaryRefundPercent = 100;
+            S.data.cancellationPolicy.secondaryDeadlineHours = null;
+            S.data.cancellationPolicy.secondaryRefundPercent = 0;
+            S.data.refundPolicy = '100% refund up to 24 hours before the event. Non-refundable within 24 hours.';
+          } else if (pkey === 'standard') {
+            S.data.cancellationPolicy.primaryDeadlineHours = 48;
+            S.data.cancellationPolicy.primaryRefundPercent = 100;
+            S.data.cancellationPolicy.secondaryDeadlineHours = 24;
+            S.data.cancellationPolicy.secondaryRefundPercent = 50;
+            S.data.refundPolicy = '100% refund up to 48 hours before the event; 50% refund between 48h and 24h; non-refundable within 24 hours.';
+          } else if (pkey === 'strict') {
+            S.data.cancellationPolicy.primaryDeadlineHours = 168;
+            S.data.cancellationPolicy.primaryRefundPercent = 100;
+            S.data.cancellationPolicy.secondaryDeadlineHours = 48;
+            S.data.cancellationPolicy.secondaryRefundPercent = 50;
+            S.data.refundPolicy = '100% refund up to 7 days before the event; 50% refund between 7 days and 48 hours; non-refundable within 48 hours.';
+          } else if (pkey === 'custom') {
+            if (!S.data.cancellationPolicy.primaryDeadlineHours) S.data.cancellationPolicy.primaryDeadlineHours = 48;
+            if (!S.data.cancellationPolicy.primaryRefundPercent) S.data.cancellationPolicy.primaryRefundPercent = 100;
+            S.data.refundPolicy = 'Custom cancellation policy configured by host.';
+          }
+          touch(); return render();
         case 'add-tier':
           S.data.tickets = (t || []).concat(presetTier(b.getAttribute('data-preset'))); touch(); return render('.tier-card:last-child input');
         case 'dup-tier':

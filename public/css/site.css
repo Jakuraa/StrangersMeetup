@@ -356,6 +356,103 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .profile-block { margin-top: 40px; }
 .booking-list li, .booking-status { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; }
 
+/* Cancellation & Refund Policy */
+.policy-preview-box {
+  background: var(--alt);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: .84rem;
+}
+.policy-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.policy-badge {
+  display: inline-block;
+  font-size: .75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 45, 149, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(255, 45, 149, 0.3);
+}
+.policy-badge-lg {
+  font-size: .82rem;
+  padding: 4px 10px;
+}
+.policy-guarantee, .policy-guarantee-pill {
+  font-size: .76rem;
+  color: var(--ok);
+  font-weight: 600;
+}
+.policy-preview-text {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.policy-processing-note {
+  margin: 0;
+  font-size: .76rem;
+  color: var(--muted);
+}
+.policy-card-section {
+  margin-top: 28px;
+}
+.policy-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.policy-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.policy-card-rules {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 14px;
+  display: grid;
+  gap: 8px;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.policy-card-rules li {
+  position: relative;
+  padding-left: 20px;
+}
+.policy-card-rules li::before {
+  content: "•";
+  position: absolute;
+  left: 4px;
+  color: var(--accent);
+  font-weight: bold;
+}
+.policy-custom-terms {
+  font-size: .88rem;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+.policy-faq-link {
+  margin: 12px 0 0;
+  font-size: .88rem;
+}
+
 /* Footer */
 .site-footer { background: #060810; border-top: 1px solid var(--line); color: var(--ink-2); padding: 56px 0 32px; margin-top: 0; }
 .site-footer a { color: var(--neon-cyan); text-decoration: underline; text-underline-offset: 3px; }
