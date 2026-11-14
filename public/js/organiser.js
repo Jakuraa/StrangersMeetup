@@ -1019,8 +1019,14 @@
     /* ---------- live bits (updated without a full re-render, so typing keeps focus) ---------- */
     function whenSummary() {
       var d = S.data;
-      if (!d.startLocal) return 'Pick a start date and time.';
       var tz = TZ[d.timezone || 'Asia/Kolkata'] || d.timezone || 'Asia/Kolkata';
+      if (d.schedule && (d.schedule.type === 'custom_dates' || d.schedule.type === 'recurring') && d.schedule.dates && d.schedule.dates.length) {
+        var n = d.schedule.dates.length;
+        var first = d.schedule.dates[0];
+        var last = d.schedule.dates[n - 1];
+        return n + ' sessions (' + dayLabel(first.date) + ' to ' + dayLabel(last.date) + ') · ' + tz;
+      }
+      if (!d.startLocal) return 'Pick a start date and time.';
       var s = fmtLocal(d.startLocal);
       var dur = '';
       if (d.endLocal) {
@@ -1121,6 +1127,146 @@
       return h;
     }
 
+    function syncScheduleBounds() {
+      var d = S.data;
+      var sched = d.schedule;
+      if (!sched || !sched.dates || !sched.dates.length) return;
+      sched.dates.sort(function (a, b) { return (a.startLocal || a.date).localeCompare(b.startLocal || b.date); });
+      d.startLocal = sched.dates[0].startLocal || (sched.dates[0].date + 'T19:00');
+      d.endLocal = sched.dates[sched.dates.length - 1].endLocal || (sched.dates[sched.dates.length - 1].date + 'T22:00');
+      d.multiDay = sched.dates.length > 1;
+    }
+
+    function generateRecurringOccurrencesClient() {
+      var d = S.data;
+      var sched = d.schedule;
+      if (!sched) return;
+      var rec = sched.recurring || { frequency: 'weekly', daysOfWeek: [6], occurrences: 4, startTime: '19:00', endTime: '22:00' };
+      var baseDate = d.startLocal ? d.startLocal.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      var daysOfWeek = rec.daysOfWeek && rec.daysOfWeek.length ? rec.daysOfWeek : [6];
+      var occurrences = Number(rec.occurrences) || 4;
+      var startTime = rec.startTime || '19:00';
+      var endTime = rec.endTime || '22:00';
+
+      var result = [];
+      var current = new Date(baseDate + 'T12:00:00Z');
+      var count = 0;
+      var safety = 0;
+      while (count < occurrences && safety < 120) {
+        safety++;
+        var day = current.getUTCDay();
+        if (daysOfWeek.indexOf(day) !== -1) {
+          count++;
+          var ymd = current.toISOString().slice(0, 10);
+          result.push({
+            date: ymd,
+            startLocal: ymd + 'T' + startTime,
+            endLocal: ymd + 'T' + endTime,
+            label: 'Session ' + count
+          });
+        }
+        current.setUTCDate(current.getUTCDate() + 1);
+      }
+      sched.dates = result;
+      syncScheduleBounds();
+    }
+
+    function scheduleCardHtml() {
+      var d = S.data;
+      if (!d.schedule) {
+        d.schedule = { type: d.multiDay ? 'consecutive' : 'single', dates: [] };
+      }
+      var sched = d.schedule;
+      var curType = sched.type || (d.multiDay ? 'consecutive' : 'single');
+      sched.type = curType;
+
+      var types = [
+        { key: 'single', name: 'Single-day', desc: 'One session on a single date' },
+        { key: 'consecutive', name: 'Consecutive multi-day', desc: 'Multi-day range (festivals, retreats, trips)' },
+        { key: 'custom_dates', name: 'Custom multi-date', desc: 'Specific, non-consecutive dates' },
+        { key: 'recurring', name: 'Recurring series', desc: 'Weekly, bi-weekly or custom repeating sessions' }
+      ];
+
+      var chips = '<div class="chips schedule-type-chips" style="margin-bottom:14px;">' + types.map(function (t) {
+        var active = curType === t.key;
+        return '<button type="button" class="chip schedule-type-chip' + (active ? ' is-active' : '') + '" data-act="select-schedule-type" data-schedule-type="' + esc(t.key) + '">' +
+          (active ? '✓ ' : '') + esc(t.name) + '</button>';
+      }).join('') + '</div>';
+
+      var content = select('timezone', 'Time zone', CFG.timezones, { def: 'Asia/Kolkata' });
+
+      if (curType === 'single') {
+        content += '<div class="row2">' +
+          text('startLocal', 'Starts', { type: 'datetime-local', required: true, rerender: true }) +
+          text('endLocal', 'Ends (optional)', { type: 'datetime-local', optional: true, rerender: true }) +
+          '</div>';
+      } else if (curType === 'consecutive') {
+        content += '<div class="row2">' +
+          text('startLocal', 'Event starts', { type: 'datetime-local', required: true, rerender: true }) +
+          text('endLocal', 'Event ends', { type: 'datetime-local', required: true, rerender: true }) +
+          '</div>' +
+          '<p class="help">Attendees will see the full multi-day dates on the event page. In the Tickets step, you can sell passes for all days or specific individual dates.</p>';
+      } else if (curType === 'custom_dates' || curType === 'recurring') {
+        var dates = sched.dates || [];
+        var rows = dates.map(function (item, idx) {
+          var p = 'schedule.dates.' + idx;
+          return '<li class="schedule-session-card" style="padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:10px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<strong style="font-size:0.92rem;color:var(--ink);">Session ' + (idx + 1) + (item.date ? ' · ' + esc(dayLabel(item.date)) : '') + '</strong>' +
+            (dates.length > 1 ? '<button class="btn btn-sm btn-ghost" type="button" data-act="del-schedule-date" data-i="' + idx + '" style="color:var(--party-pink);">Remove</button>' : '') +
+            '</div>' +
+            '<div class="row3">' +
+            text(p + '.date', 'Date', { type: 'date', required: true }) +
+            text(p + '.startLocal', 'Start time', { type: 'datetime-local', required: true }) +
+            text(p + '.endLocal', 'End time', { type: 'datetime-local', required: true }) +
+            '</div>' +
+            text(p + '.label', 'Session label (optional)', { optional: true, placeholder: 'e.g. Opening Night, Semi-Final, Grand Finale', max: 80 }) +
+            '</li>';
+        }).join('');
+
+        var recurringGenerator = '';
+        if (curType === 'recurring') {
+          var rec = sched.recurring || { frequency: 'weekly', daysOfWeek: [6], occurrences: 4, startTime: '19:00', endTime: '22:00' };
+          sched.recurring = rec;
+          var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          var dayChips = '<div class="chips" style="margin:8px 0 12px;">' + days.map(function (name, dayIdx) {
+            var on = (rec.daysOfWeek || []).indexOf(dayIdx) !== -1;
+            return '<button type="button" class="chip' + (on ? ' is-active' : '') + '" data-act="toggle-recurring-day" data-day="' + dayIdx + '">' + (on ? '✓ ' : '') + name + '</button>';
+          }).join('') + '</div>';
+
+          recurringGenerator = '<div class="recurring-generator-box" style="padding:14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--alt);margin-bottom:14px;">' +
+            '<h4 style="margin:0 0 8px 0;font-size:0.95rem;color:var(--ink);">Recurring Series Generator</h4>' +
+            '<p class="help">Automatically generate session dates. You can review and edit each occurrence individually below before saving.</p>' +
+            '<div class="row2">' +
+            select('schedule.recurring.frequency', 'Frequency', [['weekly', 'Weekly'], ['biweekly', 'Every 2 weeks'], ['daily', 'Daily']], { def: 'weekly' }) +
+            text('schedule.recurring.occurrences', 'Number of sessions', { type: 'number', min: 1, max: 20, def: 4 }) +
+            '</div>' +
+            '<p class="lbl" style="margin-top:8px;">Repeat on days:</p>' +
+            dayChips +
+            '<div class="row2">' +
+            text('schedule.recurring.startTime', 'Session start time (HH:MM)', { placeholder: '19:00' }) +
+            text('schedule.recurring.endTime', 'Session end time (HH:MM)', { placeholder: '22:00' }) +
+            '</div>' +
+            '<button class="btn btn-primary btn-sm" type="button" data-act="generate-recurring" style="margin-top:10px;">⚡ Generate sessions preview</button>' +
+            '</div>';
+        }
+
+        content += recurringGenerator +
+          '<p class="lbl" style="margin-bottom:8px;">Scheduled sessions (' + dates.length + '):</p>' +
+          (rows ? '<ul style="list-style:none;padding:0;margin:0 0 12px;">' + rows + '</ul>' : '<p class="muted">No sessions configured yet.</p>') +
+          '<button class="btn btn-ghost btn-sm" type="button" data-act="add-schedule-date">+ Add another date / session</button>' +
+          errSlot('schedule');
+      }
+
+      content += '<p class="when" data-live="when" aria-live="polite" style="margin-top:12px;"></p>';
+
+      return card('Date & time',
+        '<p class="help">Choose how your event takes place:</p>' +
+        chips +
+        content
+      );
+    }
+
     function stepBasics() {
       var d = S.data;
       var tpl = CFG.templates.filter(function (t) { return t.key === d.template; })[0];
@@ -1139,12 +1285,7 @@
         card('What kind of event?', '<p class="help">Template: <strong>' + esc(tpl ? tpl.label : 'Something else') + '</strong> <button class="linkish" type="button" data-act="change-template">Change</button></p>' +
           select('category', 'Category', CFG.categories), {}) +
         card('Event name', text('title', 'Event name', { required: true, max: 140, placeholder: 'e.g. Sunday Founders Breakfast' }) + '<p class="help counter" data-count-for="title" data-max="140"></p>' + '<p class="help small">The first 220 characters of your description will serve as the summary snippet on discovery cards.</p>') +
-        card('Date & time',
-          select('timezone', 'Time zone', CFG.timezones, { def: 'Asia/Kolkata' }) +
-          '<div class="row2">' + text('startLocal', 'Starts', { type: 'datetime-local', required: true }) +
-          text('endLocal', d.multiDay ? 'Ends' : 'Ends', { type: 'datetime-local', optional: !d.multiDay }) + '</div>' +
-          toggle('multiDay', 'Multi-day event', 'For trips, festivals and retreats. You can then sell tickets for one day or all days.') +
-          '<p class="when" data-live="when" aria-live="polite"></p>') +
+        scheduleCardHtml() +
         card('Location',
           text('venue', 'Venue or meeting point', { help: venueHelp, max: 300, optional: true }) +
           '<div class="row2">' + text('city', 'City', { max: 60, list: 'wz-cities' }) + text('area', 'Area or neighbourhood', { max: 120, optional: true, help: 'Shown publicly.' }) + '</div>' +
@@ -1240,11 +1381,34 @@
 
     function stepTickets() {
       var d = S.data;
-      var dates = d.multiDay ? datesBetween(d.startLocal, d.endLocal, CFG.limits.days) : [];
+      var co = CFG.checkout;
+      var schedDates = (d.schedule && d.schedule.dates && d.schedule.dates.length) ? d.schedule.dates : null;
+      var isMulti = Boolean(d.multiDay) || Boolean(schedDates && schedDates.length > 1);
+      var validOptions = [['all', 'All event dates']];
+      if (schedDates) {
+        schedDates.forEach(function (s) {
+          var lbl = dayLabel(s.date) + (s.label ? ' (' + s.label + ')' : '');
+          validOptions.push([s.date, lbl]);
+        });
+      } else if (d.multiDay) {
+        var dlist = datesBetween(d.startLocal, d.endLocal, CFG.limits.days);
+        dlist.forEach(function (x) { validOptions.push([x, dayLabel(x)]); });
+      }
       var balance = d.features && d.features.balance && d.features.balance.enabled;
       var tiers = (d.tickets || []).map(function (t, i) {
         var p = 'tickets.' + i;
-        return '<li class="tier-card"><div class="tier-card-head"><h4>' + esc(t.name || 'Untitled ticket') + '</h4><span class="pill pill-' + esc(t.kind) + '">' + (t.kind === 'free' ? 'Free' : 'Paid') + '</span></div>' +
+        var statusPill = t.kind === 'free'
+          ? '<span class="pill pill-free">Free</span>'
+          : (co.available
+            ? '<span class="pill pill-paid">Paid</span>'
+            : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Draft — External Checkout Pending)</span>');
+
+        var checkoutWarning = (t.kind === 'paid' && !co.available)
+          ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is not configured yet. This ticket will be saved as a draft and displayed to attendees with the badge <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable by attendees.</p>'
+          : '';
+
+        return '<li class="tier-card"><div class="tier-card-head"><h4>' + esc(t.name || 'Untitled ticket') + '</h4>' + statusPill + '</div>' +
+          checkoutWarning +
           '<div class="row2">' + text(p + '.name', 'Ticket name', { max: 60 }) +
           '<fieldset class="fld seg"><legend>Type</legend>' +
           '<label><input type="radio" name="kind-' + esc(t.id) + '" value="free"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'free' ? ' checked' : '') + '> Free</label>' +
@@ -1252,15 +1416,15 @@
           '<div class="row3">' + (t.kind === 'paid' ? text(p + '.pricePaise', 'Price (₹)', { type: 'number', min: 0, inputmode: 'decimal', kind: 'rupees', display: function (v) { return Number.isInteger(v) ? v / 100 : ''; } }) : '<div class="fld"><p class="lbl">Price</p><p class="free-note">Free — no payment is ever collected.</p></div>') +
           text(p + '.quantity', 'Quantity available', { type: 'number', min: 0, inputmode: 'numeric', kind: 'int' }) +
           text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, inputmode: 'numeric', kind: 'int' }) + '</div>' +
-          (d.multiDay ? select(p + '.validOn', 'Valid for', [['all', 'All event days']].concat(dates.map(function (x) { return [x, dayLabel(x)]; })), { def: 'all' }) : '') +
+          (isMulti ? select(p + '.validOn', 'Valid for', validOptions, { def: 'all' }) : '') +
           (balance ? text(p + '.eligibility', 'Who is this ticket for?', { max: 120, optional: true, placeholder: 'e.g. Women, Men, Couples', help: 'Guests confirm they meet this when booking.' }) : '') +
           '<div class="org-item-actions"><button class="btn btn-sm btn-ghost" type="button" data-act="dup-tier" data-i="' + i + '">Duplicate</button>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-act="del-tier" data-i="' + i + '">Delete</button></div></li>';
       }).join('');
-      var co = CFG.checkout;
       var payCard = co.available
         ? '<p class="notice">Paid tickets use a hosted checkout' + (co.testMode ? ' in <strong>test mode</strong> (no real money)' : '') + '. A booking is confirmed only after the payment provider confirms payment.</p>'
-        : '<p class="notice notice-warn"><strong>Online payment isn’t available yet.</strong> ' + esc(co.message) + '</p>';
+        : '<div class="notice notice-warn" role="status"><p><strong>Online payment is not configured yet.</strong> ' + esc(co.message) + '</p>' +
+          '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets will be created as <strong>Drafts</strong> and shown to attendees as <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable/bookable by attendees.</p></div>';
       return card('Payment', payCard) +
         card('Ticket types', '<p class="help">Quick add:</p><div class="chips">' + Object.keys(CFG.ticketPresets).map(function (k) {
           return '<button type="button" class="chip" data-act="add-tier" data-preset="' + esc(k) + '">+ ' + esc(CFG.ticketPresets[k].name) + '</button>';
@@ -1319,20 +1483,28 @@
     function attendeePreview() {
       var d = S.data, f = d.features || {};
       var co = CFG.checkout;
+      var schedDates = (d.schedule && d.schedule.dates && d.schedule.dates.length) ? d.schedule.dates : null;
+      var isMulti = Boolean(d.multiDay) || Boolean(schedDates && schedDates.length > 1);
       var where = d.privateVenue ? [d.area, d.city].filter(Boolean).join(', ') + ' — exact address shared with confirmed guests' : [d.venue, d.area, d.city].filter(Boolean).join(', ');
       var tix = (d.tickets || []).map(function (t) {
-        var note = t.kind === 'paid' && !co.available ? ' — not bookable until online payment is available' : '';
-        var valid = d.multiDay ? (t.validOn && t.validOn !== 'all' ? ' · ' + dayLabel(t.validOn) : ' · all days') : '';
+        var note = t.kind === 'paid' && !co.available ? ' — Paid ticket — external checkout not configured' : '';
+        var valid = isMulti ? (t.validOn && t.validOn !== 'all' ? ' · Valid on ' + dayLabel(t.validOn) : ' · Valid for all dates') : '';
         return '<li><strong>' + esc(t.name || 'Untitled') + '</strong> · ' + (t.kind === 'free' ? 'Free' : Number.isInteger(t.pricePaise) ? esc(money(t.pricePaise)) : 'price missing') +
           ' · ' + esc(Number.isInteger(t.quantity) ? t.quantity : '?') + ' available' + esc(valid) + (f.balance && f.balance.enabled && t.eligibility ? ' · for ' + esc(t.eligibility) : '') + esc(note) + '</li>';
       }).join('');
       var qs = f.questions && f.questions.enabled ? (f.questions.items || []) : [];
       var pts = f.pickup && f.pickup.enabled ? (f.pickup.points || []) : [];
+      var schedHtml = (schedDates && schedDates.length > 1)
+        ? ('<h4>Schedule & sessions</h4><ul>' + schedDates.map(function (s) {
+            return '<li><strong>' + esc(dayLabel(s.date)) + '</strong> · ' + esc(s.startLocal.slice(11, 16)) + '–' + esc(s.endLocal.slice(11, 16)) + (s.label ? ' (' + esc(s.label) + ')' : '') + '</li>';
+          }).join('') + '</ul>')
+        : '';
       return '<article class="att-prev" aria-label="What guests will see">' +
         (d.coverImageId ? '<img src="/media/event-images/' + esc(d.coverImageId) + '" alt="" width="800" height="450">' : '<div class="att-art" aria-hidden="true"></div>') +
         '<div class="att-body"><p class="card-meta"><span>' + esc(CAT[d.category] || '') + '</span><span>' + esc(d.city || '') + '</span></p>' +
         '<h3>' + esc(d.title || 'Untitled event') + '</h3><p class="muted">' + esc(whenSummary()) + '</p><p>' + esc(where || 'Location to be added') + '</p>' +
         (d.description ? '<p class="att-desc">' + esc(d.description.slice(0, 700)) + (d.description.length > 700 ? '…' : '') + '</p>' : '') +
+        schedHtml +
         '<h4>Tickets</h4>' + (tix ? '<ul>' + tix + '</ul>' : '<p class="muted">No tickets yet.</p>') +
         '<h4>Entry</h4><ul><li>Adults 21+ only. Guests carry a photo ID.</li>' + (f.approval && f.approval.enabled ? '<li>The host approves each guest.</li>' : '') + '</ul>' +
         (qs.length ? '<h4>Questions at booking</h4><ul>' + qs.map(function (x) { return '<li>' + esc(x.label || 'Untitled question') + (x.required ? ' <span class="muted">(required)</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
@@ -1414,7 +1586,21 @@
       var v = readValue(input);
       if (typeof v === 'number' && isNaN(v)) v = null; // non-numeric text: treated as empty, flagged on publish
       setPath(S.data, input.getAttribute('data-path'), v);
-      if (input.getAttribute('data-path') === 'multiDay' || input.getAttribute('data-path') === 'privateVenue') input.setAttribute('data-rerender', '');
+      var p = input.getAttribute('data-path');
+      if (p === 'multiDay' || p === 'privateVenue') input.setAttribute('data-rerender', '');
+      if (p.indexOf('schedule.dates.') === 0) {
+        syncScheduleBounds();
+      }
+      if (p === 'startLocal' || p === 'endLocal') {
+        if (S.data.schedule && S.data.schedule.type === 'single' && S.data.startLocal) {
+          S.data.schedule.dates = [{
+            date: S.data.startLocal.slice(0, 10),
+            startLocal: S.data.startLocal,
+            endLocal: S.data.endLocal || S.data.startLocal,
+            label: ''
+          }];
+        }
+      }
       touch();
       if (input.hasAttribute('data-rerender') && ev.type === 'change') render('[data-path="' + input.getAttribute('data-path') + '"]');
       else updateLive();
@@ -1569,6 +1755,72 @@
             if (!S.data.cancellationPolicy.primaryRefundPercent) S.data.cancellationPolicy.primaryRefundPercent = 100;
             S.data.refundPolicy = 'Custom cancellation policy configured by host.';
           }
+          touch(); return render();
+        case 'select-schedule-type':
+          var stype = b.getAttribute('data-schedule-type');
+          if (!S.data.schedule) S.data.schedule = { type: stype, dates: [] };
+          S.data.schedule.type = stype;
+          if (stype === 'single') {
+            S.data.multiDay = false;
+            if (S.data.schedule.dates && S.data.schedule.dates.length) {
+              S.data.startLocal = S.data.schedule.dates[0].startLocal;
+              S.data.endLocal = S.data.schedule.dates[0].endLocal;
+            }
+          } else if (stype === 'consecutive') {
+            S.data.multiDay = true;
+          } else if (stype === 'custom_dates') {
+            S.data.multiDay = true;
+            if (!S.data.schedule.dates || !S.data.schedule.dates.length) {
+              var sDate = S.data.startLocal ? S.data.startLocal.slice(0, 10) : new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+              var nextD = new Date(new Date(sDate + 'T12:00:00Z').getTime() + 86400000 * 2).toISOString().slice(0, 10);
+              S.data.schedule.dates = [
+                { date: sDate, startLocal: sDate + 'T19:00', endLocal: sDate + 'T22:00', label: 'Opening Session' },
+                { date: nextD, startLocal: nextD + 'T19:00', endLocal: nextD + 'T22:00', label: 'Finale Session' }
+              ];
+              syncScheduleBounds();
+            }
+          } else if (stype === 'recurring') {
+            S.data.multiDay = true;
+            if (!S.data.schedule.dates || !S.data.schedule.dates.length) {
+              generateRecurringOccurrencesClient();
+            }
+          }
+          touch(); return render();
+        case 'add-schedule-date':
+          if (!S.data.schedule) S.data.schedule = { type: 'custom_dates', dates: [] };
+          var sarr = S.data.schedule.dates = S.data.schedule.dates || [];
+          var lastItem = sarr[sarr.length - 1];
+          var baseD = lastItem ? lastItem.date : (S.data.startLocal ? S.data.startLocal.slice(0, 10) : new Date().toISOString().slice(0, 10));
+          var nextDate = new Date(new Date(baseD + 'T12:00:00Z').getTime() + 86400000 * (lastItem ? 2 : 1)).toISOString().slice(0, 10);
+          var st = lastItem ? lastItem.startLocal.slice(11, 16) : '19:00';
+          var et = lastItem ? lastItem.endLocal.slice(11, 16) : '22:00';
+          sarr.push({
+            date: nextDate,
+            startLocal: nextDate + 'T' + st,
+            endLocal: nextDate + 'T' + et,
+            label: 'Session ' + (sarr.length + 1)
+          });
+          syncScheduleBounds();
+          touch(); return render();
+        case 'del-schedule-date':
+          var didx = Number(b.getAttribute('data-i'));
+          if (S.data.schedule && S.data.schedule.dates) {
+            S.data.schedule.dates.splice(didx, 1);
+            syncScheduleBounds();
+          }
+          touch(); return render();
+        case 'generate-recurring':
+          generateRecurringOccurrencesClient();
+          touch(); return render();
+        case 'toggle-recurring-day':
+          var tday = Number(b.getAttribute('data-day'));
+          if (!S.data.schedule) S.data.schedule = {};
+          if (!S.data.schedule.recurring) S.data.schedule.recurring = { frequency: 'weekly', daysOfWeek: [6], occurrences: 4, startTime: '19:00', endTime: '22:00' };
+          var daylist = S.data.schedule.recurring.daysOfWeek || [];
+          var daypos = daylist.indexOf(tday);
+          if (daypos === -1) daylist.push(tday);
+          else if (daylist.length > 1) daylist.splice(daypos, 1);
+          S.data.schedule.recurring.daysOfWeek = daylist;
           touch(); return render();
         case 'add-tier':
           S.data.tickets = (t || []).concat(presetTier(b.getAttribute('data-preset'))); touch(); return render('.tier-card:last-child input');

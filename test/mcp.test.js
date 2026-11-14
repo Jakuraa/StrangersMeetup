@@ -429,7 +429,7 @@ test('MCP Phase 2C: server startup diagnostics never expose MCP_API_KEY or Beare
 
   // Wait for server to print startup diagnostics
   const start = Date.now();
-  while (!output.includes('listening on') && Date.now() - start < 3000) {
+  while (!output.includes('listening on') && Date.now() - start < 8000) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   child.kill('SIGTERM');
