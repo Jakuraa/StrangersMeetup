@@ -125,6 +125,7 @@ test('rendered HTML contains no secret values', async () => {
 test('legacy routes redirect via vercel.json and old API endpoints are gone', async () => {
   const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
   assert.ok(cfg.redirects.some((r) => r.source === '/venue.html' && r.destination === '/list-your-venue'));
+  assert.equal(cfg.redirects.some((r) => r.source === '/venue'), false, '/venue must NOT be redirected by vercel.json');
   for (const p of ['/api/entitlements?telegramUserId=1', '/api/tma', '/api/tiers', '/api/cancel']) {
     assert.equal((await new Client().get(p)).status, 404, p);
   }

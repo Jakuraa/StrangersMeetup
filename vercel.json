@@ -10,7 +10,6 @@
   },
   "redirects": [
     { "source": "/venue.html", "destination": "/list-your-venue", "permanent": true },
-    { "source": "/venue", "destination": "/list-your-venue", "permanent": true },
     { "source": "/partner.html", "destination": "/partner-with-us", "permanent": true },
     { "source": "/partner", "destination": "/partner-with-us", "permanent": true },
     { "source": "/host.html", "destination": "/become-a-host", "permanent": true },

@@ -111,6 +111,24 @@ test('GET /venue: venue operator owner renders Venue Command Centre shell and as
   assert.ok(res.text.includes('Event Schedule'));
 });
 
+test('routing: vercel.json preserves /venue for command centre and retains /list-your-venue', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const cfg = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+
+  // /venue must NOT be redirected so Vercel forwards it to api/index.js
+  const venueRedirect = cfg.redirects.find((r) => r.source === '/venue');
+  assert.equal(venueRedirect, undefined, 'vercel.json must not redirect /venue');
+
+  // /list-your-venue continues to serve the onboarding form page
+  const c = new Client();
+  const res = await c.get('/list-your-venue');
+  assert.equal(res.status, 200);
+  assert.ok(res.text.includes('List Your Venue'));
+});
+
 // ---------- 2. Context & Profile API ----------
 
 test('GET /api/venue/context: unauthenticated returns 401', async () => {
