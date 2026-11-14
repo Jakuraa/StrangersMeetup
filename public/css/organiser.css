@@ -117,9 +117,52 @@
 .tpl-label { font-weight: 700; }
 .tpl-hint { font-size: .85rem; color: var(--muted); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
-.chip { min-height: 40px; padding: 6px 14px; border-radius: 999px; border: 1px dashed var(--line); background: var(--surface); font: inherit; font-size: .88rem; font-weight: 600; cursor: pointer; }
-.chip:hover { border-color: var(--accent); color: var(--accent); }
-.chip:disabled { opacity: .5; cursor: default; }
+.chip {
+  min-height: 40px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong, #6169A3);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.chip:hover {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  background: rgba(0, 217, 255, 0.08);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 2px;
+}
+.chip.is-active {
+  background: rgba(0, 217, 255, 0.16);
+  border-color: var(--neon-cyan);
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(0, 217, 255, 0.25);
+}
+.chip:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.schedule-type-chip {
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+}
+.schedule-session-card {
+  border: 1px solid var(--line-strong, #6169A3);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--bg);
+}
 
 /* Tickets, questions, pickups */
 .tier-list, .q-edit { list-style: none; padding: 0; margin: 0 0 12px; display: grid; gap: 12px; }
