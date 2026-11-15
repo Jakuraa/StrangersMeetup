@@ -243,6 +243,26 @@
   var waPhoneForm = $('[data-wa-phone-form]');
   var waOtpCard = $('[data-wa-otp-card]');
   if (waPhoneForm && waOtpCard) {
+    // Defense-in-depth: scrub any legacy sensitive query parameters from browser address bar
+    try {
+      if (window.history && window.history.replaceState && location.search) {
+        var currentParams = new URLSearchParams(location.search);
+        var sensitiveKeys = ['phone', 'ageConfirmed', 'promotionalOptIn', 'otp', 'code'];
+        var hasSensitive = false;
+        sensitiveKeys.forEach(function (k) {
+          if (currentParams.has(k)) {
+            currentParams.delete(k);
+            hasSensitive = true;
+          }
+        });
+        if (hasSensitive) {
+          var cleanSearch = currentParams.toString();
+          var cleanUrl = location.pathname + (cleanSearch ? '?' + cleanSearch : '') + location.hash;
+          window.history.replaceState(null, document.title, cleanUrl);
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     var signinMsg = $('[data-signin-msg]');
     var currentChallengeId = null;
     var currentPhone = null;
