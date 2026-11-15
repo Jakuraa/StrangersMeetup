@@ -1,0 +1,573 @@
+// test/promotional-campaigns.test.js - Tests for WhatsApp opt-in event marketing campaigns, audience targeting, approval, and safe dispatch simulation.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { db, resetDb, startServer, stopServer, Client, signedInClient } from './helpers.js';
+import { recordConsent, getConsents, hasConsent, addSuppression, isSuppressed } from '../lib/services/communication-consent.js';
+import {
+  queryEligibleAudience,
+  previewCampaignAudience,
+  createCampaign,
+  getCampaign,
+  listCampaigns,
+  approveCampaign,
+  cancelCampaign,
+  dispatchCampaign,
+  getCampaignLogs,
+  ESTIMATED_MARKETING_COST_PAISE
+} from '../lib/services/promotional-campaign.js';
+import {
+  evaluateOutreachDecision,
+  buildCampaignTrackingUrl,
+  RELATIONSHIP_TYPES,
+  CONTACT_SOURCES,
+  PERSONAL_OUTREACH_GUIDES
+} from '../lib/services/outreach-strategy.js';
+import { createSession, createSessionToken, csrfTokenFor } from '../lib/session.js';
+
+let organiserUser;
+let attendeeUserA; // opted in
+let attendeeUserB; // opted out
+let attendeeUserC; // suppressed
+let otherOrganiser;
+let testEventA;
+let testEventB;
+
+before(async () => {
+  await resetDb();
+  await startServer();
+
+  // Create organiser user
+  const { rows: orgRows } = await db.query(
+    `INSERT INTO users (alias, phone, status, age_confirmed_21, age_confirmed_at, organiser_enabled)
+     VALUES ('Host Arvind', '+919876500001', 'active', true, now(), true)
+     RETURNING *`
+  );
+  organiserUser = orgRows[0];
+
+  // Create another organiser
+  const { rows: otherOrgRows } = await db.query(
+    `INSERT INTO users (alias, phone, status, age_confirmed_21, age_confirmed_at, organiser_enabled)
+     VALUES ('Host Maya', '+919876500002', 'active', true, now(), true)
+     RETURNING *`
+  );
+  otherOrganiser = otherOrgRows[0];
+
+  // Create Attendee A (Chennai, Nightlife interest, Opted into promotional WhatsApp)
+  const { rows: userARows } = await db.query(
+    `INSERT INTO users (alias, phone, city, interests, status, age_confirmed_21, age_confirmed_at)
+     VALUES ('Karthik', '+919876500010', 'Chennai', ARRAY['nightlife', 'music'], 'active', true, now())
+     RETURNING *`
+  );
+  attendeeUserA = userARows[0];
+
+  await recordConsent({
+    userId: attendeeUserA.id,
+    channel: 'whatsapp',
+    purpose: 'transactional',
+    status: 'opted_in',
+    source: 'registration'
+  });
+
+  await recordConsent({
+    userId: attendeeUserA.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_in',
+    source: 'registration'
+  });
+
+  // Create Attendee B (Chennai, Opted OUT of promotional WhatsApp)
+  const { rows: userBRows } = await db.query(
+    `INSERT INTO users (alias, phone, city, interests, status, age_confirmed_21, age_confirmed_at)
+     VALUES ('Deepa', '+919876500020', 'Chennai', ARRAY['nightlife'], 'active', true, now())
+     RETURNING *`
+  );
+  attendeeUserB = userBRows[0];
+
+  await recordConsent({
+    userId: attendeeUserB.id,
+    channel: 'whatsapp',
+    purpose: 'transactional',
+    status: 'opted_in',
+    source: 'registration'
+  });
+
+  await recordConsent({
+    userId: attendeeUserB.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_out', // Explicitly opted out
+    source: 'registration'
+  });
+
+  // Create Attendee C (Bengaluru, Opted IN but number SUPPRESSED)
+  const { rows: userCRows } = await db.query(
+    `INSERT INTO users (alias, phone, city, interests, status, age_confirmed_21, age_confirmed_at)
+     VALUES ('Rahul', '+919876500030', 'Bengaluru', ARRAY['nightlife', 'meetup'], 'active', true, now())
+     RETURNING *`
+  );
+  attendeeUserC = userCRows[0];
+
+  await recordConsent({
+    userId: attendeeUserC.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_in',
+    source: 'profile_settings'
+  });
+
+  await addSuppression({
+    channel: 'whatsapp',
+    destination: attendeeUserC.phone,
+    reason: 'keyword_opt_out'
+  });
+
+  // Create test events
+  const { rows: eventARows } = await db.query(
+    `INSERT INTO events (
+      title, slug, city, category, capacity, start_at, end_at, status, organiser_user_id
+    ) VALUES (
+      'Neon Rooftop Mixer', 'neon-rooftop-mixer-chn', 'Chennai', 'nightlife', 50,
+      now() + interval '3 days', now() + interval '3 days 4 hours', 'published', $1
+    ) RETURNING *`,
+    [organiserUser.id]
+  );
+  testEventA = eventARows[0];
+
+  const { rows: eventBRows } = await db.query(
+    `INSERT INTO events (
+      title, slug, city, category, capacity, start_at, end_at, status, organiser_user_id
+    ) VALUES (
+      'Secret Jazz Supper Club', 'secret-jazz-supper-blr', 'Bengaluru', 'dinner_club', 30,
+      now() + interval '5 days', now() + interval '5 days 3 hours', 'published', $1
+    ) RETURNING *`,
+    [otherOrganiser.id]
+  );
+  testEventB = eventBRows[0];
+});
+
+after(stopServer);
+
+test('1. Marketing consent separation and defaults: transactional defaults to true, promotional defaults to false', async () => {
+  // New user with no records in communication_consents
+  const { rows: freshUserRows } = await db.query(
+    `INSERT INTO users (alias, phone, status, age_confirmed_21)
+     VALUES ('Sneha', '+919876500099', 'active', true) RETURNING *`
+  );
+  const freshUser = freshUserRows[0];
+
+  // Transactional essential notifications: true
+  const transactionalConsent = await hasConsent({ userId: freshUser.id, channel: 'whatsapp', purpose: 'transactional' });
+  assert.equal(transactionalConsent, true, 'transactional notifications should default to true for booking confirmations');
+
+  // Promotional marketing messages: FAIL-CLOSED FALSE
+  const promotionalConsent = await hasConsent({ userId: freshUser.id, channel: 'whatsapp', purpose: 'promotional' });
+  assert.equal(promotionalConsent, false, 'promotional marketing must be fail-closed false when no consent record exists');
+
+  // getConsents returns explicit matrix
+  const matrix = await getConsents(freshUser.id);
+  assert.equal(matrix.whatsapp.transactional, true);
+  assert.equal(matrix.whatsapp.promotional, false);
+});
+
+test('2. Audience targeting: strictly queries opted-in users and excludes opted-out, suppressed, or non-consenting users', async () => {
+  // All eligible users across platform
+  const allAudience = await queryEligibleAudience();
+  const audienceIds = allAudience.map((u) => u.id);
+
+  // Must include attendeeUserA (opted in, not suppressed)
+  assert.ok(audienceIds.includes(attendeeUserA.id), 'attendeeUserA must be included');
+
+  // Must EXCLUDE attendeeUserB (opted out)
+  assert.ok(!audienceIds.includes(attendeeUserB.id), 'attendeeUserB must be excluded because opted out');
+
+  // Must EXCLUDE attendeeUserC (suppressed)
+  assert.ok(!audienceIds.includes(attendeeUserC.id), 'attendeeUserC must be excluded because phone is suppressed');
+
+  // Filter by City: Chennai
+  const chennaiAudience = await queryEligibleAudience({ targetCity: 'Chennai' });
+  assert.ok(chennaiAudience.some((u) => u.id === attendeeUserA.id));
+
+  // Filter by City: Hyderabad (zero opted-in users in Hyderabad in our seed)
+  const hydAudience = await queryEligibleAudience({ targetCity: 'Hyderabad' });
+  assert.equal(hydAudience.length, 0);
+
+  // Filter by Category: nightlife
+  const nightlifeAudience = await queryEligibleAudience({ targetCategory: 'nightlife' });
+  assert.ok(nightlifeAudience.some((u) => u.id === attendeeUserA.id));
+
+  // Filter by Category: weekend_trip (attendeeUserA has nightlife/music, not weekend_trip)
+  const tripAudience = await queryEligibleAudience({ targetCategory: 'weekend_trip' });
+  assert.equal(tripAudience.length, 0);
+});
+
+test('3. Audience preview: calculates count, estimated cost (80 paise), and official template preview', async () => {
+  const preview = await previewCampaignAudience({
+    eventId: testEventA.id,
+    targetCity: 'Chennai',
+    targetCategory: 'nightlife'
+  });
+
+  assert.equal(preview.ok, true);
+  assert.equal(preview.eventId, testEventA.id);
+  assert.equal(preview.eventTitle, testEventA.title);
+  assert.equal(preview.appliedFilters.targetCity, 'Chennai');
+  assert.equal(preview.appliedFilters.targetCategory, 'nightlife');
+  assert.equal(preview.eligibleRecipientsCount, 1);
+  assert.equal(preview.estimatedCostPaise, 80);
+  assert.equal(preview.estimatedCostRupees, '0.80');
+
+  // PII masking check
+  assert.equal(preview.sampleRecipientsMasked.length, 1);
+  assert.equal(preview.sampleRecipientsMasked[0].phoneMasked, '+91 98****0010');
+  assert.ok(!preview.sampleRecipientsMasked[0].phoneMasked.includes('500010'), 'phone must be masked in preview');
+
+  // Template components check
+  assert.equal(preview.templatePreview.templateName, 'nightlifez_promotional_event_v1');
+  assert.equal(preview.templatePreview.category, 'MARKETING');
+  assert.equal(preview.templatePreview.header, 'NIGHTLIFEZ EXCLUSIVE');
+  assert.ok(preview.templatePreview.body.includes('Neon Rooftop Mixer'));
+  assert.ok(preview.templatePreview.body.includes('Chennai'));
+  assert.equal(preview.templatePreview.buttons.length, 2);
+  assert.equal(preview.templatePreview.buttons[1].label, 'Text STOP to opt out');
+});
+
+test('4. Campaign lifecycle: create draft, approve, and prevent illegal transitions', async () => {
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Neon Rooftop Chennai Launch Promotion',
+    targetCity: 'Chennai',
+    targetCategory: 'nightlife'
+  });
+
+  assert.equal(campaign.title, 'Neon Rooftop Chennai Launch Promotion');
+  assert.equal(campaign.status, 'draft');
+  assert.equal(campaign.channel, 'whatsapp');
+  assert.equal(campaign.estimated_recipients, 1);
+  assert.equal(campaign.estimated_cost_paise, 80);
+
+  // Approve campaign
+  const approved = await approveCampaign({
+    campaignId: campaign.id,
+    approvedByUserId: organiserUser.id
+  });
+  assert.equal(approved.status, 'approved');
+  assert.equal(approved.approved_by_user_id, organiserUser.id);
+  assert.ok(approved.approved_at);
+
+  // Listing campaigns for event
+  const list = await listCampaigns({ eventId: testEventA.id, userId: organiserUser.id });
+  assert.ok(list.length >= 1);
+  assert.equal(list[0].id, campaign.id);
+});
+
+test('5. Safe Simulated Dispatch Gate: when live sending is false, campaign runs in dry-run simulation mode', async () => {
+  // Ensure ENABLE_LIVE_PROMOTIONAL_CAMPAIGNS is not 'true'
+  const prevEnv = process.env.ENABLE_LIVE_PROMOTIONAL_CAMPAIGNS;
+  delete process.env.ENABLE_LIVE_PROMOTIONAL_CAMPAIGNS;
+
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Dry Run Simulation Campaign',
+    targetCity: 'Chennai',
+    targetCategory: 'nightlife'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // Dispatch campaign
+  const dispatchRes = await dispatchCampaign({
+    campaignId: campaign.id,
+    triggeredByUserId: organiserUser.id
+  });
+
+  assert.equal(dispatchRes.ok, true);
+  assert.equal(dispatchRes.simulated, true);
+  assert.equal(dispatchRes.recipientsCount, 1);
+  assert.equal(dispatchRes.costPaise, 80);
+  assert.equal(dispatchRes.costRupees, '0.80');
+  assert.ok(dispatchRes.message.includes('disabled by platform policy'));
+
+  // Verify campaign row
+  const updatedCampaign = await getCampaign({ campaignId: campaign.id });
+  assert.equal(updatedCampaign.status, 'completed');
+  assert.equal(updatedCampaign.actual_recipients, 1);
+  assert.equal(updatedCampaign.actual_cost_paise, 80);
+  assert.equal(updatedCampaign.audit_metadata.simulated, true);
+
+  // Verify recipient delivery log
+  const logs = await getCampaignLogs({ campaignId: campaign.id });
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].phoneMasked, '+91 98****0010');
+  assert.equal(logs[0].status, 'dispatched');
+  assert.equal(logs[0].deliveryCostPaise, 80);
+
+  // Restore env
+  if (prevEnv !== undefined) process.env.ENABLE_LIVE_PROMOTIONAL_CAMPAIGNS = prevEnv;
+});
+
+test('6. Unsubscribe and suppression handling: STOP or unsubscribe endpoint withdraws consent and suppresses number', async () => {
+  // Create user who initially opts in
+  const { rows } = await db.query(
+    `INSERT INTO users (alias, phone, status, age_confirmed_21)
+     VALUES ('Vikas', '+919876500077', 'active', true) RETURNING *`
+  );
+  const vikas = rows[0];
+
+  await recordConsent({
+    userId: vikas.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_in',
+    source: 'registration'
+  });
+
+  assert.equal(await hasConsent({ userId: vikas.id, channel: 'whatsapp', purpose: 'promotional' }), true);
+
+  // Simulate user calling unsubscribe endpoint
+  const unsubClient = new Client();
+  const unsubRes = await unsubClient.post('/api/notifications/unsubscribe', {
+    phone: '+919876500077',
+    channel: 'whatsapp',
+    reason: 'user_opt_out'
+  });
+
+  assert.equal(unsubRes.status, 200);
+  assert.equal(unsubRes.json.ok, true);
+
+  // Check consent is now false
+  const hasPromoAfter = await hasConsent({ userId: vikas.id, channel: 'whatsapp', purpose: 'promotional' });
+  assert.equal(hasPromoAfter, false, 'user must no longer have promotional consent after unsubscribe');
+
+  // Check number is suppressed
+  const suppressed = await isSuppressed({ destination: '+919876500077', channel: 'whatsapp' });
+  assert.equal(suppressed, true, 'phone number must be on the suppression list');
+
+  // Essential transactional consent must remain intact
+  const hasTrans = await hasConsent({ userId: vikas.id, channel: 'whatsapp', purpose: 'transactional' });
+  assert.equal(hasTrans, true, 'transactional consent must remain active');
+});
+
+test('7. Multi-tenant RBAC: Organiser B cannot view, create, or dispatch campaigns for Organiser A event', async () => {
+  // Organiser B signs in
+  const clientB = await signedInClient();
+  await db.query(`UPDATE users SET organiser_enabled = true WHERE id = $1`, [clientB.userId]);
+
+  // Organiser B attempts to preview event A
+  const previewRes = await clientB.post('/api/campaigns/preview', {
+    eventId: testEventA.id,
+    targetCity: 'Chennai'
+  });
+  assert.equal(previewRes.status, 404, 'cross-organiser access should return 404 Not Found');
+
+  // Organiser B attempts to create campaign on event A
+  const createRes = await clientB.post('/api/campaigns', {
+    eventId: testEventA.id,
+    title: 'Hacked Campaign'
+  });
+  assert.equal(createRes.status, 404, 'cross-organiser campaign creation must be blocked with 404');
+});
+
+test('8. Personal vs automated outreach decision framework: strictly enforces partner, influencer, and consent boundaries', async () => {
+  // Scenario A: Rafiky / Community Owner -> Must be routed to PERSONAL OUTREACH, never automated broadcast
+  const rafikyDecision = evaluateOutreachDecision({
+    name: 'Rafiky',
+    relationshipType: RELATIONSHIP_TYPES.COMMUNITY_OWNER,
+    source: CONTACT_SOURCES.DIRECT_INQUIRY,
+    hasExplicitMarketingConsent: false
+  });
+  assert.equal(rafikyDecision.decision, 'PERSONAL_OUTREACH');
+  assert.equal(rafikyDecision.channel, 'manual_direct');
+  assert.equal(rafikyDecision.eligibleForAutomatedCampaign, false, 'Partners must never be put into automated bulk broadcasts');
+  assert.equal(rafikyDecision.eligibleForPersonalOutreach, true);
+  assert.ok(rafikyDecision.reason.includes('Rafiky'));
+  assert.ok(PERSONAL_OUTREACH_GUIDES.community_owner.sampleTemplate('Rafiky').includes('Rafiky'));
+
+  // Scenario B: Brand Sponsor / Venue Partner -> Personal Outreach
+  const sponsorDecision = evaluateOutreachDecision({
+    name: 'Red Bull India',
+    relationshipType: RELATIONSHIP_TYPES.SPONSOR,
+    source: CONTACT_SOURCES.PARTNER_APPLICATION
+  });
+  assert.equal(sponsorDecision.decision, 'PERSONAL_OUTREACH');
+  assert.equal(sponsorDecision.eligibleForAutomatedCampaign, false);
+
+  // Scenario C: Instagram Follower / Scraped Contact -> STRICTLY PROHIBITED
+  const instagramDecision = evaluateOutreachDecision({
+    name: 'IG Follower',
+    relationshipType: RELATIONSHIP_TYPES.ATTENDEE,
+    source: CONTACT_SOURCES.INSTAGRAM_FOLLOW,
+    hasExplicitMarketingConsent: false
+  });
+  assert.equal(instagramDecision.decision, 'PROHIBITED');
+  assert.equal(instagramDecision.eligibleForAutomatedCampaign, false);
+  assert.equal(instagramDecision.eligibleForPersonalOutreach, false);
+  assert.equal(instagramDecision.action, 'DROP_CONTACT');
+
+  // Scenario D: Previous Ticket Buyer or OTP recipient without explicit promotional consent -> NO PROMOTIONAL MESSAGE (No inferred consent)
+  const inferredBuyerDecision = evaluateOutreachDecision({
+    name: 'Past Attendee',
+    relationshipType: RELATIONSHIP_TYPES.ATTENDEE,
+    source: CONTACT_SOURCES.PURCHASE_HISTORY,
+    hasExplicitMarketingConsent: false
+  });
+  assert.equal(inferredBuyerDecision.decision, 'NO_PROMOTIONAL_MESSAGE');
+  assert.equal(inferredBuyerDecision.eligibleForAutomatedCampaign, false);
+
+  // Scenario E: Existing NIGHTLIFEZ member with verified marketing consent -> AUTOMATED OUTREACH
+  const consentedUserDecision = evaluateOutreachDecision({
+    name: 'Consenting Member',
+    relationshipType: RELATIONSHIP_TYPES.REGISTERED_USER,
+    source: CONTACT_SOURCES.SIGNUP_OPTIN,
+    hasExplicitMarketingConsent: true,
+    isRegisteredUser: true
+  });
+  assert.equal(consentedUserDecision.decision, 'AUTOMATED_OUTREACH');
+  assert.equal(consentedUserDecision.eligibleForAutomatedCampaign, true);
+  assert.equal(consentedUserDecision.channel, 'whatsapp_campaign');
+
+  // Scenario F: Ambiguous / Unclear Consent -> FAIL-CLOSED EXCLUDE
+  const unclearDecision = evaluateOutreachDecision({
+    name: 'Ambiguous Contact',
+    relationshipType: RELATIONSHIP_TYPES.REGISTERED_USER,
+    hasExplicitMarketingConsent: null, // unclear
+    isRegisteredUser: true
+  });
+  assert.equal(unclearDecision.decision, 'UNCLEAR_ELIGIBILITY_EXCLUDE');
+  assert.equal(unclearDecision.eligibleForAutomatedCampaign, false);
+  assert.equal(unclearDecision.action, 'EXCLUDE');
+});
+
+test('9. Campaign referral link generation and UTM parameter tracking', async () => {
+  const trackingUrl = buildCampaignTrackingUrl({
+    baseUrl: 'https://nightlifez.com',
+    eventSlug: 'secret-rooftop-rave',
+    campaignId: '99999999-9999-9999-9999-999999999999',
+    channel: 'whatsapp',
+    medium: 'campaign',
+    refCode: 'wa_promo'
+  });
+
+  const parsed = new URL(trackingUrl);
+  assert.equal(parsed.origin, 'https://nightlifez.com');
+  assert.equal(parsed.pathname, '/events/secret-rooftop-rave');
+  assert.equal(parsed.searchParams.get('utm_source'), 'whatsapp');
+  assert.equal(parsed.searchParams.get('utm_medium'), 'campaign');
+  assert.equal(parsed.searchParams.get('utm_campaign'), '99999999-9999-9999-9999-999999999999');
+  assert.equal(parsed.searchParams.get('ref'), 'wa_promo');
+});
+
+test('10. Idempotency & duplicate dispatch safety: re-dispatching campaign does not duplicate recipient logs', async () => {
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Idempotency Test Campaign',
+    targetCity: 'Chennai'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // First dispatch
+  const res1 = await dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id });
+  assert.equal(res1.ok, true);
+
+  const logs1 = await getCampaignLogs({ campaignId: campaign.id });
+  assert.equal(logs1.length, 1);
+
+  // Subsequent dispatch attempt on already completed campaign must be rejected
+  await assert.rejects(
+    async () => {
+      await dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id });
+    },
+    (err) => err.status === 400 && err.code === 'invalid_status'
+  );
+});
+
+test('11. Dynamic and configurable marketing pricing via WHATSAPP_MARKETING_RATE_PAISE', async () => {
+  const prevRate = process.env.WHATSAPP_MARKETING_RATE_PAISE;
+  try {
+    // Set custom Meta marketing rate to 92 paise
+    process.env.WHATSAPP_MARKETING_RATE_PAISE = '92';
+
+    const preview = await previewCampaignAudience({
+      eventId: testEventA.id,
+      targetCity: 'Chennai',
+      targetCategory: 'nightlife'
+    });
+
+    assert.equal(preview.ratePerRecipientPaise, 92);
+    assert.equal(preview.ratePerRecipientRupees, '0.92');
+    assert.equal(preview.estimatedCostPaise, 92 * preview.eligibleRecipientsCount);
+    assert.equal(preview.isEstimate, true);
+    assert.ok(preview.pricingDisclaimer.includes('Meta Cloud API marketing conversation pricing'));
+  } finally {
+    if (prevRate !== undefined) process.env.WHATSAPP_MARKETING_RATE_PAISE = prevRate;
+    else delete process.env.WHATSAPP_MARKETING_RATE_PAISE;
+  }
+});
+
+test('12. Concurrent dispatch race protection: atomic check-and-set blocks second caller with 400 invalid_status', async () => {
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Race Condition Test Campaign',
+    targetCity: 'Chennai'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // Simulate two simultaneous dispatch attempts
+  const [attemptA, attemptB] = await Promise.allSettled([
+    dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id }),
+    dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id })
+  ]);
+
+  // Exactly one must succeed, and one must fail
+  const fulfilled = [attemptA, attemptB].filter((r) => r.status === 'fulfilled');
+  const rejected = [attemptA, attemptB].filter((r) => r.status === 'rejected');
+
+  assert.equal(fulfilled.length, 1, 'exactly one dispatch must succeed');
+  assert.equal(rejected.length, 1, 'concurrent second dispatch must be rejected');
+  assert.equal(rejected[0].reason.status, 400);
+});
+
+test('13. Unsubscribe race guard: mid-dispatch suppression or revoked consent excludes recipient', async () => {
+  // Create user who opts in
+  const { rows } = await db.query(
+    `INSERT INTO users (alias, phone, city, status, age_confirmed_21)
+     VALUES ('RaceUser', '+919876599999', 'Chennai', 'active', true) RETURNING *`
+  );
+  const raceUser = rows[0];
+
+  await recordConsent({
+    userId: raceUser.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_in',
+    source: 'registration'
+  });
+
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Mid-Dispatch Race Test Campaign',
+    targetCity: 'Chennai'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // Simulate user revoking consent right before dispatch loop processes them
+  await recordConsent({
+    userId: raceUser.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_out',
+    source: 'profile_settings'
+  });
+
+  const dispatchRes = await dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id });
+  assert.equal(dispatchRes.ok, true);
+
+  // Recipient logs must not contain raceUser
+  const logs = await getCampaignLogs({ campaignId: campaign.id });
+  const recipientDestinations = logs.map((l) => l.phoneMasked);
+  assert.ok(!recipientDestinations.includes('+91 98****9999'), 'raceUser must not receive dispatch after revoking consent');
+});

@@ -69,3 +69,33 @@ test('WCAG 2.2 AA - Non-text UI boundaries and focus rings meet 3:1 ratio', () =
   const ratioBorder = contrastRatio(lineStrong, surface);
   assert.ok(ratioBorder >= 3.0, `UI boundary line on surface must meet 3:1 (got ${ratioBorder.toFixed(2)})`);
 });
+
+test('WCAG 2.1 AA - Policy badge text contrast meets 4.5:1 ratio', () => {
+  // Policy badge uses #FFFFFF text on rgba(49, 91, 255, 0.22)
+  // Tested against dark background #090B16 and card surface #121424
+  const bg = '#090B16';
+  const surface = '#121424';
+  const badgeText = '#FFFFFF';
+
+  function blend(foregroundRgba, backgroundHex) {
+    const clean = backgroundHex.replace('#', '').trim();
+    const bgR = parseInt(clean.slice(0, 2), 16);
+    const bgG = parseInt(clean.slice(2, 4), 16);
+    const bgB = parseInt(clean.slice(4, 6), 16);
+    const { r, g, b, a } = foregroundRgba;
+    const resR = Math.round(bgR * (1 - a) + r * a);
+    const resG = Math.round(bgG * (1 - a) + g * a);
+    const resB = Math.round(bgB * (1 - a) + b * a);
+    return '#' + [resR, resG, resB].map((x) => x.toString(16).padStart(2, '0')).join('');
+  }
+
+  const badgeBg = { r: 49, g: 91, b: 255, a: 0.22 };
+  const effectiveOnSurface = blend(badgeBg, surface);
+  const effectiveOnBg = blend(badgeBg, bg);
+
+  const ratioSurface = contrastRatio(badgeText, effectiveOnSurface);
+  const ratioBg = contrastRatio(badgeText, effectiveOnBg);
+
+  assert.ok(ratioSurface >= 4.5, `Policy badge on surface must meet 4.5:1 (got ${ratioSurface.toFixed(2)})`);
+  assert.ok(ratioBg >= 4.5, `Policy badge on bg must meet 4.5:1 (got ${ratioBg.toFixed(2)})`);
+});
