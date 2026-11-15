@@ -577,6 +577,34 @@
               '</div>' +
             '</div>' +
 
+            '<div class="campaign-tracking-box" style="margin-top: 14px; background: rgba(0, 229, 255, 0.05); border: 1px solid rgba(0, 229, 255, 0.2); border-radius: var(--radius-sm); padding: 12px 14px;">' +
+              '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">' +
+                '<strong style="font-size: 0.88rem; color: var(--ink);">🔗 Campaign Referral Link &amp; UTM Tracking</strong>' +
+                '<span class="badge" style="background: rgba(0, 229, 255, 0.15); color: #00e5ff; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px;">UTM Attributed</span>' +
+              '</div>' +
+              '<p class="muted" style="margin: 0 0 8px; font-size: 0.8rem;">Every WhatsApp campaign button embeds full UTM tracking parameters to measure registrations and ticket passes.</p>' +
+              '<div style="display: flex; gap: 8px; align-items: center;">' +
+                '<input type="text" readonly value="' + esc(preview.campaignTrackingUrl || (absolute(e.path) + '?utm_source=whatsapp&utm_medium=campaign&ref=wa_promo')) + '" id="campaign-ref-url" style="flex: 1; padding: 6px 10px; font-size: 0.82rem; border-radius: 4px; border: 1px solid var(--line-light); background: var(--surface-2); color: var(--ink);" aria-label="Campaign Referral Link">' +
+                '<button type="button" class="btn btn-sm btn-ghost" data-copy="' + esc(preview.campaignTrackingUrl || (absolute(e.path) + '?utm_source=whatsapp&utm_medium=campaign&ref=wa_promo')) + '">Copy Link</button>' +
+              '</div>' +
+            '</div>' +
+
+            '<details class="campaign-decision-box" style="margin-top: 14px; background: var(--surface-2); border: 1px solid var(--line-light); border-radius: var(--radius-sm); padding: 12px 14px;">' +
+              '<summary style="cursor: pointer; font-weight: 600; font-size: 0.92rem; color: var(--ink);">🤝 Personal vs Automated Outreach Strategy &amp; Partner Guidelines</summary>' +
+              '<div style="margin-top: 10px; font-size: 0.85rem; line-height: 1.5; color: var(--ink-light);">' +
+                '<p style="margin: 0 0 8px;"><strong>Core Decision Rules:</strong></p>' +
+                '<ul style="margin: 0 0 12px; padding-left: 20px;">' +
+                  '<li><strong>Personal Outreach (1:1 Manual):</strong> Use for community owners (e.g. Rafiky), influencers, event organisers, and brand partners. Must be genuine, individually written, and relevant. Never scrape followers or send bulk automated DMs/WhatsApp blasts.</li>' +
+                  '<li><strong>Automated Outreach:</strong> Strictly for existing NIGHTLIFEZ members with verified marketing consent.</li>' +
+                  '<li><strong>No Consent / Unclear:</strong> Excluded from campaigns. Never infer consent from Instagram follows or OTP requests.</li>' +
+                '</ul>' +
+                '<div style="background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 10px; margin-top: 6px;">' +
+                  '<strong>Sample 1:1 Partner Pitch (e.g. Rafiky / Community Leader):</strong>' +
+                  '<p style="margin: 4px 0 0; font-style: italic; color: var(--muted); font-size: 0.82rem;">“Hey Rafiky! Love what you’ve built with your community in Chennai. We’re hosting ' + esc(e.title) + ' on NIGHTLIFEZ and would love to explore co-hosting or curating an exclusive table for your crew. Happy to share full details if you’re open to collaborating!”</p>' +
+                '</div>' +
+              '</div>' +
+            '</details>' +
+
             '<div style="border-top: 1px solid var(--line-light); padding-top: 16px; margin-top: 8px;">' +
               '<h3 style="font-size: 1rem; margin-bottom: 8px;">Prepare Campaign for this Event</h3>' +
               '<form data-create-campaign-form style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">' +

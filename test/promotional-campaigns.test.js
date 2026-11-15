@@ -15,6 +15,13 @@ import {
   getCampaignLogs,
   ESTIMATED_MARKETING_COST_PAISE
 } from '../lib/services/promotional-campaign.js';
+import {
+  evaluateOutreachDecision,
+  buildCampaignTrackingUrl,
+  RELATIONSHIP_TYPES,
+  CONTACT_SOURCES,
+  PERSONAL_OUTREACH_GUIDES
+} from '../lib/services/outreach-strategy.js';
 import { createSession, createSessionToken, csrfTokenFor } from '../lib/session.js';
 
 let organiserUser;
@@ -360,4 +367,118 @@ test('7. Multi-tenant RBAC: Organiser B cannot view, create, or dispatch campaig
     title: 'Hacked Campaign'
   });
   assert.equal(createRes.status, 404, 'cross-organiser campaign creation must be blocked with 404');
+});
+
+test('8. Personal vs automated outreach decision framework: strictly enforces partner, influencer, and consent boundaries', async () => {
+  // Scenario A: Rafiky / Community Owner -> Must be routed to PERSONAL OUTREACH, never automated broadcast
+  const rafikyDecision = evaluateOutreachDecision({
+    name: 'Rafiky',
+    relationshipType: RELATIONSHIP_TYPES.COMMUNITY_OWNER,
+    source: CONTACT_SOURCES.DIRECT_INQUIRY,
+    hasExplicitMarketingConsent: false
+  });
+  assert.equal(rafikyDecision.decision, 'PERSONAL_OUTREACH');
+  assert.equal(rafikyDecision.channel, 'manual_direct');
+  assert.equal(rafikyDecision.eligibleForAutomatedCampaign, false, 'Partners must never be put into automated bulk broadcasts');
+  assert.equal(rafikyDecision.eligibleForPersonalOutreach, true);
+  assert.ok(rafikyDecision.reason.includes('Rafiky'));
+  assert.ok(PERSONAL_OUTREACH_GUIDES.community_owner.sampleTemplate('Rafiky').includes('Rafiky'));
+
+  // Scenario B: Brand Sponsor / Venue Partner -> Personal Outreach
+  const sponsorDecision = evaluateOutreachDecision({
+    name: 'Red Bull India',
+    relationshipType: RELATIONSHIP_TYPES.SPONSOR,
+    source: CONTACT_SOURCES.PARTNER_APPLICATION
+  });
+  assert.equal(sponsorDecision.decision, 'PERSONAL_OUTREACH');
+  assert.equal(sponsorDecision.eligibleForAutomatedCampaign, false);
+
+  // Scenario C: Instagram Follower / Scraped Contact -> STRICTLY PROHIBITED
+  const instagramDecision = evaluateOutreachDecision({
+    name: 'IG Follower',
+    relationshipType: RELATIONSHIP_TYPES.ATTENDEE,
+    source: CONTACT_SOURCES.INSTAGRAM_FOLLOW,
+    hasExplicitMarketingConsent: false
+  });
+  assert.equal(instagramDecision.decision, 'PROHIBITED');
+  assert.equal(instagramDecision.eligibleForAutomatedCampaign, false);
+  assert.equal(instagramDecision.eligibleForPersonalOutreach, false);
+  assert.equal(instagramDecision.action, 'DROP_CONTACT');
+
+  // Scenario D: Previous Ticket Buyer or OTP recipient without explicit promotional consent -> NO PROMOTIONAL MESSAGE (No inferred consent)
+  const inferredBuyerDecision = evaluateOutreachDecision({
+    name: 'Past Attendee',
+    relationshipType: RELATIONSHIP_TYPES.ATTENDEE,
+    source: CONTACT_SOURCES.PURCHASE_HISTORY,
+    hasExplicitMarketingConsent: false
+  });
+  assert.equal(inferredBuyerDecision.decision, 'NO_PROMOTIONAL_MESSAGE');
+  assert.equal(inferredBuyerDecision.eligibleForAutomatedCampaign, false);
+
+  // Scenario E: Existing NIGHTLIFEZ member with verified marketing consent -> AUTOMATED OUTREACH
+  const consentedUserDecision = evaluateOutreachDecision({
+    name: 'Consenting Member',
+    relationshipType: RELATIONSHIP_TYPES.REGISTERED_USER,
+    source: CONTACT_SOURCES.SIGNUP_OPTIN,
+    hasExplicitMarketingConsent: true,
+    isRegisteredUser: true
+  });
+  assert.equal(consentedUserDecision.decision, 'AUTOMATED_OUTREACH');
+  assert.equal(consentedUserDecision.eligibleForAutomatedCampaign, true);
+  assert.equal(consentedUserDecision.channel, 'whatsapp_campaign');
+
+  // Scenario F: Ambiguous / Unclear Consent -> FAIL-CLOSED EXCLUDE
+  const unclearDecision = evaluateOutreachDecision({
+    name: 'Ambiguous Contact',
+    relationshipType: RELATIONSHIP_TYPES.REGISTERED_USER,
+    hasExplicitMarketingConsent: null, // unclear
+    isRegisteredUser: true
+  });
+  assert.equal(unclearDecision.decision, 'UNCLEAR_ELIGIBILITY_EXCLUDE');
+  assert.equal(unclearDecision.eligibleForAutomatedCampaign, false);
+  assert.equal(unclearDecision.action, 'EXCLUDE');
+});
+
+test('9. Campaign referral link generation and UTM parameter tracking', async () => {
+  const trackingUrl = buildCampaignTrackingUrl({
+    baseUrl: 'https://nightlifez.com',
+    eventSlug: 'secret-rooftop-rave',
+    campaignId: '99999999-9999-9999-9999-999999999999',
+    channel: 'whatsapp',
+    medium: 'campaign',
+    refCode: 'wa_promo'
+  });
+
+  const parsed = new URL(trackingUrl);
+  assert.equal(parsed.origin, 'https://nightlifez.com');
+  assert.equal(parsed.pathname, '/events/secret-rooftop-rave');
+  assert.equal(parsed.searchParams.get('utm_source'), 'whatsapp');
+  assert.equal(parsed.searchParams.get('utm_medium'), 'campaign');
+  assert.equal(parsed.searchParams.get('utm_campaign'), '99999999-9999-9999-9999-999999999999');
+  assert.equal(parsed.searchParams.get('ref'), 'wa_promo');
+});
+
+test('10. Idempotency & duplicate dispatch safety: re-dispatching campaign does not duplicate recipient logs', async () => {
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Idempotency Test Campaign',
+    targetCity: 'Chennai'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // First dispatch
+  const res1 = await dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id });
+  assert.equal(res1.ok, true);
+
+  const logs1 = await getCampaignLogs({ campaignId: campaign.id });
+  assert.equal(logs1.length, 1);
+
+  // Subsequent dispatch attempt on already completed campaign must be rejected
+  await assert.rejects(
+    async () => {
+      await dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id });
+    },
+    (err) => err.status === 400 && err.code === 'invalid_status'
+  );
 });
