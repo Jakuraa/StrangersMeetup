@@ -4,9 +4,8 @@ import { signInAs, expectNoHorizontalOverflow } from './helpers.js';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const ARTIFACT_DIR = '/Users/pradeepjakuraa/.gemini/antigravity-cli/brain/6f313897-14aa-4f3b-8320-52b8ec01c32f';
-const SHOT_DIR = path.join(ARTIFACT_DIR, 'evidence');
-fs.mkdirSync(SHOT_DIR, { recursive: true });
+const ARTIFACT_DIR = process.env.ARTIFACT_DIR || path.join(process.cwd(), 'test-results', 'evidence');
+fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 function formatLocalYMD(daysAhead) {
   const d = new Date(Date.now() + daysAhead * 86_400_000);
@@ -78,7 +77,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     await page.locator('input[data-path="schedule.dates.3.label"]').fill('Grand Finale');
 
     // Capture Step 1 evidence
-    await page.screenshot({ path: path.join(SHOT_DIR, 'multi-date-wizard-creator.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-wizard-creator.png'), fullPage: true });
 
     // Proceed to Step 2: Tickets
     await page.getByRole('button', { name: /Next: Tickets/ }).click();
@@ -105,7 +104,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     await expect(draftPill).toContainText('Draft — External Checkout Pending');
 
     // Capture Step 2 evidence
-    await page.screenshot({ path: path.join(SHOT_DIR, 'multi-date-tickets-draft-state.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-tickets-draft-state.png'), fullPage: true });
 
     // Proceed to Step 3: Features then Step 4: Preview
     await page.getByRole('button', { name: /Next: Features/ }).click();
@@ -125,7 +124,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     await expect(attPrev).toContainText('Paid ticket — external checkout not configured');
 
     // Capture Step 4 evidence
-    await page.screenshot({ path: path.join(SHOT_DIR, 'multi-date-attendee-preview.png'), fullPage: true });
+    await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-attendee-preview.png'), fullPage: true });
   });
 
   test('Responsive viewports audit: 375px mobile and 768px tablet', async ({ page }) => {

@@ -4,7 +4,8 @@ import { expectAccessible, expectNoHorizontalOverflow, screenshot, signInAs } fr
 import fs from 'node:fs';
 import path from 'node:path';
 
-const EVIDENCE_DIR = '/Users/pradeepjakuraa/.gemini/antigravity-cli/brain/6f313897-14aa-4f3b-8320-52b8ec01c32f/evidence';
+const ARTIFACT_DIR = process.env.ARTIFACT_DIR || path.join(process.cwd(), 'test-results', 'evidence');
+fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 test.describe('WhatsApp Promotional Marketing & Organiser Campaigns E2E', () => {
   test('Desktop (1280px): marketing consent on signup, account preferences, and organiser campaign workflow', async ({ page }, testInfo) => {
@@ -26,7 +27,7 @@ test.describe('WhatsApp Promotional Marketing & Organiser Campaigns E2E', () => 
     await expectAccessible(page);
     await expectNoHorizontalOverflow(page);
 
-    const signinShotPath = path.join(EVIDENCE_DIR, 'whatsapp-marketing-consent-signup.png');
+    const signinShotPath = path.join(ARTIFACT_DIR, 'whatsapp-marketing-consent-signup.png');
     await page.screenshot({ path: signinShotPath, fullPage: true });
 
     // 2. Sign in as organiser persona
@@ -52,7 +53,7 @@ test.describe('WhatsApp Promotional Marketing & Organiser Campaigns E2E', () => 
     await expectAccessible(page);
     await expectNoHorizontalOverflow(page);
 
-    const promoTabShotPath = path.join(EVIDENCE_DIR, 'organiser-whatsapp-promotion-tab.png');
+    const promoTabShotPath = path.join(ARTIFACT_DIR, 'organiser-whatsapp-promotion-tab.png');
     await page.screenshot({ path: promoTabShotPath, fullPage: true });
 
     // 5. Create a campaign draft
@@ -89,7 +90,7 @@ test.describe('WhatsApp Promotional Marketing & Organiser Campaigns E2E', () => 
       await page.waitForTimeout(500);
     }
 
-    const campaignLogsShotPath = path.join(EVIDENCE_DIR, 'organiser-whatsapp-campaign-logs.png');
+    const campaignLogsShotPath = path.join(ARTIFACT_DIR, 'organiser-whatsapp-campaign-logs.png');
     await page.screenshot({ path: campaignLogsShotPath, fullPage: true });
 
     // 6. Navigate to /me and verify communication preferences
@@ -101,7 +102,7 @@ test.describe('WhatsApp Promotional Marketing & Organiser Campaigns E2E', () => 
     await expect(page.locator('[data-toggle-promo-wa]')).toBeVisible();
     await expectAccessible(page);
 
-    const accountShotPath = path.join(EVIDENCE_DIR, 'whatsapp-marketing-preferences-me.png');
+    const accountShotPath = path.join(ARTIFACT_DIR, 'whatsapp-marketing-preferences-me.png');
     await page.screenshot({ path: accountShotPath, fullPage: true });
   });
 

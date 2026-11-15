@@ -4,9 +4,8 @@ import { signInAs, expectNoHorizontalOverflow } from './helpers.js';
 import path from 'node:path';
 import fs from 'node:fs';
 
-const ARTIFACT_DIR = '/Users/pradeepjakuraa/.gemini/antigravity-cli/brain/6f313897-14aa-4f3b-8320-52b8ec01c32f';
-const SHOT_DIR = path.join(ARTIFACT_DIR, 'evidence');
-fs.mkdirSync(SHOT_DIR, { recursive: true });
+const ARTIFACT_DIR = process.env.ARTIFACT_DIR || path.join(process.cwd(), 'test-results', 'evidence');
+fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 function localInput(daysAhead, hour) {
   const d = new Date(Date.now() + daysAhead * 86_400_000);
@@ -89,7 +88,7 @@ test.describe('Event Creator Cancellation & Refund Templates', () => {
     // Capture visual screenshot of the wizard cancellation policy selection
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.screenshot({
-      path: path.join(SHOT_DIR, 'creator-cancellation-policy-wizard.png'),
+      path: path.join(ARTIFACT_DIR, 'creator-cancellation-policy-wizard.png'),
       fullPage: true
     });
 
@@ -108,7 +107,7 @@ test.describe('Event Creator Cancellation & Refund Templates', () => {
 
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.screenshot({
-        path: path.join(SHOT_DIR, 'attendee-cancellation-policy-preview.png'),
+        path: path.join(ARTIFACT_DIR, 'attendee-cancellation-policy-preview.png'),
         fullPage: true
       });
     }
