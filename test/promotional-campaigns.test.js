@@ -482,3 +482,92 @@ test('10. Idempotency & duplicate dispatch safety: re-dispatching campaign does 
     (err) => err.status === 400 && err.code === 'invalid_status'
   );
 });
+
+test('11. Dynamic and configurable marketing pricing via WHATSAPP_MARKETING_RATE_PAISE', async () => {
+  const prevRate = process.env.WHATSAPP_MARKETING_RATE_PAISE;
+  try {
+    // Set custom Meta marketing rate to 92 paise
+    process.env.WHATSAPP_MARKETING_RATE_PAISE = '92';
+
+    const preview = await previewCampaignAudience({
+      eventId: testEventA.id,
+      targetCity: 'Chennai',
+      targetCategory: 'nightlife'
+    });
+
+    assert.equal(preview.ratePerRecipientPaise, 92);
+    assert.equal(preview.ratePerRecipientRupees, '0.92');
+    assert.equal(preview.estimatedCostPaise, 92 * preview.eligibleRecipientsCount);
+    assert.equal(preview.isEstimate, true);
+    assert.ok(preview.pricingDisclaimer.includes('Meta Cloud API marketing conversation pricing'));
+  } finally {
+    if (prevRate !== undefined) process.env.WHATSAPP_MARKETING_RATE_PAISE = prevRate;
+    else delete process.env.WHATSAPP_MARKETING_RATE_PAISE;
+  }
+});
+
+test('12. Concurrent dispatch race protection: atomic check-and-set blocks second caller with 400 invalid_status', async () => {
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Race Condition Test Campaign',
+    targetCity: 'Chennai'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // Simulate two simultaneous dispatch attempts
+  const [attemptA, attemptB] = await Promise.allSettled([
+    dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id }),
+    dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id })
+  ]);
+
+  // Exactly one must succeed, and one must fail
+  const fulfilled = [attemptA, attemptB].filter((r) => r.status === 'fulfilled');
+  const rejected = [attemptA, attemptB].filter((r) => r.status === 'rejected');
+
+  assert.equal(fulfilled.length, 1, 'exactly one dispatch must succeed');
+  assert.equal(rejected.length, 1, 'concurrent second dispatch must be rejected');
+  assert.equal(rejected[0].reason.status, 400);
+});
+
+test('13. Unsubscribe race guard: mid-dispatch suppression or revoked consent excludes recipient', async () => {
+  // Create user who opts in
+  const { rows } = await db.query(
+    `INSERT INTO users (alias, phone, city, status, age_confirmed_21)
+     VALUES ('RaceUser', '+919876599999', 'Chennai', 'active', true) RETURNING *`
+  );
+  const raceUser = rows[0];
+
+  await recordConsent({
+    userId: raceUser.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_in',
+    source: 'registration'
+  });
+
+  const campaign = await createCampaign({
+    eventId: testEventA.id,
+    createdByUserId: organiserUser.id,
+    title: 'Mid-Dispatch Race Test Campaign',
+    targetCity: 'Chennai'
+  });
+  await approveCampaign({ campaignId: campaign.id, approvedByUserId: organiserUser.id });
+
+  // Simulate user revoking consent right before dispatch loop processes them
+  await recordConsent({
+    userId: raceUser.id,
+    channel: 'whatsapp',
+    purpose: 'promotional',
+    status: 'opted_out',
+    source: 'profile_settings'
+  });
+
+  const dispatchRes = await dispatchCampaign({ campaignId: campaign.id, triggeredByUserId: organiserUser.id });
+  assert.equal(dispatchRes.ok, true);
+
+  // Recipient logs must not contain raceUser
+  const logs = await getCampaignLogs({ campaignId: campaign.id });
+  const recipientDestinations = logs.map((l) => l.phoneMasked);
+  assert.ok(!recipientDestinations.includes('+91 98****9999'), 'raceUser must not receive dispatch after revoking consent');
+});

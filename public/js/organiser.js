@@ -556,7 +556,7 @@
               '<div class="campaign-stat-item">' +
                 '<span class="campaign-stat-label">Estimated Delivery Cost</span>' +
                 '<span class="campaign-stat-val">₹' + preview.estimatedCostRupees + '</span>' +
-                '<span class="muted" style="font-size: 0.75rem;">(80 paise / ₹0.80 per conversation)</span>' +
+                '<span class="muted" style="font-size: 0.75rem;">(Est. ₹' + (preview.ratePerRecipientRupees || '0.80') + ' / conversation)</span>' +
               '</div>' +
               '<div class="campaign-stat-item">' +
                 '<span class="campaign-stat-label">Meta Approval Status</span>' +
