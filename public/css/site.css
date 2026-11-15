@@ -431,15 +431,16 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .05em;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 4px;
-  background: rgba(255, 45, 149, 0.15);
-  color: var(--accent);
-  border: 1px solid rgba(255, 45, 149, 0.3);
+  background: rgba(49, 91, 255, 0.22);
+  color: #FFFFFF;
+  border: 1px solid rgba(49, 91, 255, 0.5);
+  line-height: 1.4;
 }
 .policy-badge-lg {
   font-size: .82rem;
-  padding: 4px 10px;
+  padding: 5px 12px;
 }
 .policy-guarantee, .policy-guarantee-pill {
   font-size: .76rem;
