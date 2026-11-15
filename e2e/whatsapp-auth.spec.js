@@ -20,8 +20,11 @@ test.describe('WhatsApp OTP Authentication E2E', () => {
     await screenshot(page, testInfo, 'desktop-signin-whatsapp-tab');
 
     // 2. Fill mobile number, confirm age, request OTP
+    // Use unique phone with 98 prefix and 3210 suffix so masking matches +91 98****3210 without cooldown collision
+    const middle = String(Math.floor(1000 + Math.random() * 9000));
+    const testPhone = `98${middle}3210`;
     const phoneInput = page.locator('#wa-phone');
-    await phoneInput.fill('9876543210');
+    await phoneInput.fill(testPhone);
     await page.locator('[data-wa-age]').check();
     await page.locator('[data-wa-promo]').check();
 
@@ -91,5 +94,36 @@ test.describe('WhatsApp OTP Authentication E2E', () => {
     await expect(page.locator('[data-auth-panel="telegram"]')).toBeHidden();
 
     await screenshot(page, testInfo, 'mobile-signin-whatsapp');
+  });
+
+  test('Native HTML form submission with JavaScript disabled: verifies explicit POST semantics and zero URL leakage', async ({ browser }, testInfo) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    getWhatsAppProvider().clearSentMessages();
+
+    await page.goto('/signin');
+    const form = page.locator('[data-wa-phone-form]');
+    await expect(form).toHaveAttribute('method', 'POST');
+    await expect(form).toHaveAttribute('action', '/api/auth/whatsapp/otp');
+
+    const testPhone = `97${String(Math.floor(10000000 + Math.random() * 90000000))}`;
+    await page.locator('#wa-phone').fill(testPhone);
+    await page.locator('[data-wa-age]').check();
+
+    // Submit form natively
+    await page.locator('[data-wa-submit-phone]').click();
+    await page.waitForLoadState('networkidle');
+
+    // Invariant: Phone number MUST NOT be in current page URL
+    const currentUrl = page.url();
+    expect(currentUrl).not.toContain(testPhone);
+    expect(currentUrl).not.toContain('phone=');
+    expect(currentUrl).not.toContain('ageConfirmed=');
+    expect(currentUrl).toMatch(/\/signin\?step=otp/);
+
+    // Verify OTP card is shown
+    await expect(page.locator('[data-wa-otp-card]')).toBeVisible();
+
+    await context.close();
   });
 });
