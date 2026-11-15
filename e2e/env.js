@@ -22,6 +22,7 @@ export const serverEnv = {
   PORT: String(E2E_PORT),
   DATABASE_URL: E2E_DATABASE_URL,
   DEV_LOGIN: 'true',
+  TELEGRAM_BOT_USERNAME: 'Nightlifez_bot',
   SESSION_SECRET: 'e2e-only-session-secret-0123456789abcdef',
   PUBLIC_SITE_URL: E2E_BASE,
   IS_PREVIEW: 'true',
