@@ -130,7 +130,8 @@
         ['inventory', '🎟️ Ticket Inventory'],
         ['attendees', '👥 Attendees & Guest List'],
         ['staff', '🛡️ Event Staff'],
-        ['announcements', '📢 Announcements']
+        ['announcements', '📢 Announcements'],
+        ['promotions', '📣 WhatsApp Promotion']
       ];
       return '<div class="org-tabs" role="tablist">' +
         tabs.map(function (t) {
@@ -182,6 +183,8 @@
         renderStaffTab(panel);
       } else if (activeTab === 'announcements') {
         renderAnnouncementsTab(panel);
+      } else if (activeTab === 'promotions') {
+        renderPromotionsTab(panel);
       }
     }
 
@@ -477,6 +480,281 @@
             });
           });
         }
+      });
+    }
+
+    function renderPromotionsTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading promotion campaigns and audience intelligence…</p>';
+      var e = overviewData.event;
+      var curCity = e.city || '';
+      var curCat = e.category || '';
+
+      Promise.all([
+        api('GET', '/api/campaigns?eventId=' + encodeURIComponent(id)),
+        api('POST', '/api/campaigns/preview', { eventId: id, targetCity: curCity, targetCategory: curCat })
+      ]).then(function (results) {
+        var campRes = results[0];
+        var prevRes = results[1];
+
+        if (!campRes.ok || !prevRes.ok) {
+          panel.innerHTML = '<p class="form-msg error">' + esc((campRes && campRes.message) || (prevRes && prevRes.message) || 'Could not load promotion campaigns.') + '</p>';
+          return;
+        }
+
+        var campaigns = campRes.campaigns || [];
+        var preview = prevRes;
+
+        var h = '<div class="campaign-panel">' +
+          '<div class="campaign-card">' +
+            '<div class="campaign-card-header">' +
+              '<div>' +
+                '<h2 style="margin: 0 0 4px; font-size: 1.25rem;">📣 WhatsApp Event Promotion</h2>' +
+                '<p class="muted" style="margin: 0; font-size: 0.88rem;">Target opted-in NIGHTLIFEZ members using official Meta Cloud API WhatsApp templates.</p>' +
+              '</div>' +
+              '<span class="badge" style="background: rgba(37, 211, 102, 0.15); color: #25D366; font-size: 0.8rem; padding: 4px 10px; border-radius: 999px;">Official WhatsApp Cloud API</span>' +
+            '</div>' +
+
+            '<div style="background: rgba(37, 211, 102, 0.05); border: 1px solid rgba(37, 211, 102, 0.2); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 0.85rem; line-height: 1.4;">' +
+              '🛡️ <strong>Strict Opt-In &amp; Anti-Spam Guarantee:</strong> Only members who actively opted in to WhatsApp promotional notifications are eligible. Unregistered visitors, unverified phone numbers, and non-opted-in guests are never messaged. Social followers and scraped contacts are strictly prohibited.' +
+            '</div>' +
+
+            '<form data-preview-form class="org-campaign-filters" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 8px;">' +
+              '<div class="field" style="flex: 1; min-width: 140px; margin: 0;">' +
+                '<label for="promo-city" style="font-size: 0.82rem; margin-bottom: 4px; display: block;">Target City</label>' +
+                '<select id="promo-city" name="targetCity" style="width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line-light); background: var(--surface-2); color: var(--ink);">' +
+                  '<option value="' + esc(curCity) + '">Event City (' + esc(curCity) + ')</option>' +
+                  '<option value="all">All South India Cities</option>' +
+                  '<option value="Chennai">Chennai</option>' +
+                  '<option value="Bengaluru">Bengaluru</option>' +
+                  '<option value="Hyderabad">Hyderabad</option>' +
+                  '<option value="Kochi">Kochi</option>' +
+                  '<option value="Goa">Goa</option>' +
+                  '<option value="Coimbatore">Coimbatore</option>' +
+                  '<option value="Puducherry">Puducherry</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="field" style="flex: 1; min-width: 140px; margin: 0;">' +
+                '<label for="promo-cat" style="font-size: 0.82rem; margin-bottom: 4px; display: block;">Target Interest / Category</label>' +
+                '<select id="promo-cat" name="targetCategory" style="width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--line-light); background: var(--surface-2); color: var(--ink);">' +
+                  '<option value="' + esc(curCat) + '">Event Category (' + esc(curCat) + ')</option>' +
+                  '<option value="all">All Interests</option>' +
+                  '<option value="party">Party &amp; Nightlife</option>' +
+                  '<option value="mixer">Social Mixers</option>' +
+                  '<option value="dinner">Supper Clubs &amp; Dining</option>' +
+                  '<option value="music">Live Music &amp; DJ</option>' +
+                  '<option value="trip">Weekend Getaways</option>' +
+                '</select>' +
+              '</div>' +
+              '<button type="submit" class="btn btn-outline-cyan btn-sm" style="height: 38px;">Recalculate Audience</button>' +
+            '</form>' +
+
+            '<div class="campaign-stats-grid">' +
+              '<div class="campaign-stat-item">' +
+                '<span class="campaign-stat-label">Eligible Opted-In Audience</span>' +
+                '<span class="campaign-stat-val" data-audience-count>' + preview.eligibleRecipientsCount + '</span>' +
+              '</div>' +
+              '<div class="campaign-stat-item">' +
+                '<span class="campaign-stat-label">Estimated Delivery Cost</span>' +
+                '<span class="campaign-stat-val">₹' + preview.estimatedCostRupees + '</span>' +
+                '<span class="muted" style="font-size: 0.75rem;">(80 paise / ₹0.80 per conversation)</span>' +
+              '</div>' +
+              '<div class="campaign-stat-item">' +
+                '<span class="campaign-stat-label">Meta Approval Status</span>' +
+                '<span class="campaign-stat-val" style="font-size: 0.98rem; color: #25D366;">Approved Template</span>' +
+                '<span class="muted" style="font-size: 0.75rem;">' + esc(preview.templatePreview.templateName) + '</span>' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="margin-top: 12px;">' +
+              '<h3 style="font-size: 0.95rem; margin-bottom: 8px;">Official Template Message Preview</h3>' +
+              '<div class="wa-bubble-preview">' +
+                '<div class="wa-bubble-header">' + esc(preview.templatePreview.header) + '</div>' +
+                '<div class="wa-bubble-body">' + esc(preview.templatePreview.body) + '</div>' +
+                '<div class="wa-bubble-actions">' +
+                  '<div class="wa-bubble-btn">' + esc(preview.templatePreview.buttons[0].label) + '</div>' +
+                  '<div class="wa-bubble-btn" style="color: #ffffff; font-weight: normal; font-size: 0.82rem;">' + esc(preview.templatePreview.buttons[1].label) + '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+
+            '<div style="border-top: 1px solid var(--line-light); padding-top: 16px; margin-top: 8px;">' +
+              '<h3 style="font-size: 1rem; margin-bottom: 8px;">Prepare Campaign for this Event</h3>' +
+              '<form data-create-campaign-form style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">' +
+                '<div class="field" style="flex: 2; min-width: 200px; margin: 0;">' +
+                  '<label for="campaign-title-input" style="font-size: 0.82rem; margin-bottom: 4px; display: block;">Campaign Title</label>' +
+                  '<input type="text" id="campaign-title-input" name="title" value="Promote: ' + esc(e.title) + '" required style="width: 100%;">' +
+                '</div>' +
+                '<button type="submit" class="btn btn-wa btn-sm" style="height: 38px;">Prepare Campaign Draft</button>' +
+              '</form>' +
+              '<p class="form-msg" data-campaign-msg role="status" aria-live="polite"></p>' +
+            '</div>' +
+          '</div>';
+
+        // Campaigns history section
+        h += '<div class="campaign-card">' +
+          '<h3 style="margin: 0 0 12px; font-size: 1.15rem;">Campaigns &amp; Dispatch History</h3>';
+
+        if (campaigns.length === 0) {
+          h += '<p class="muted">No promotion campaigns have been created for this event yet.</p>';
+        } else {
+          h += '<div style="display: grid; gap: 14px;">' +
+            campaigns.map(function (c) {
+              var statusColor = c.status === 'completed' ? '#25D366' : (c.status === 'approved' ? '#00d9ff' : '#ffb300');
+              var isCompleted = c.status === 'completed';
+              var isApproved = c.status === 'approved';
+              var isDraft = c.status === 'draft';
+
+              return '<div style="background: var(--surface-2); border: 1px solid var(--line-light); border-radius: var(--radius-sm); padding: 16px; display: grid; gap: 10px;">' +
+                '<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">' +
+                  '<div>' +
+                    '<strong style="font-size: 1rem;">' + esc(c.title) + '</strong>' +
+                    '<span class="muted" style="font-size: 0.8rem; margin-left: 8px;">' + esc(fmtInstant(c.created_at)) + '</span>' +
+                  '</div>' +
+                  '<span class="pill" style="border-color: ' + statusColor + '; color: ' + statusColor + ';">' + esc(c.status) + (c.audit_metadata && c.audit_metadata.simulated ? ' (Simulated)' : '') + '</span>' +
+                '</div>' +
+
+                '<div style="display: flex; gap: 16px; font-size: 0.85rem; color: var(--muted); flex-wrap: wrap;">' +
+                  '<span>Target: <strong>' + esc(c.target_city || 'All Cities') + '</strong> (' + esc(c.target_category || 'All Categories') + ')</span>' +
+                  '<span>Recipients: <strong>' + (isCompleted ? c.actual_recipients : c.estimated_recipients) + ' opted-in users</strong></span>' +
+                  '<span>Cost: <strong>₹' + ((isCompleted ? c.actual_cost_paise : c.estimated_cost_paise) / 100).toFixed(2) + '</strong></span>' +
+                '</div>' +
+
+                '<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px;">' +
+                  (isDraft ? '<button type="button" class="btn btn-outline-cyan btn-sm" data-approve-campaign="' + esc(c.id) + '">✓ Approve Campaign</button>' : '') +
+                  (isApproved || isDraft ? '<button type="button" class="btn btn-wa btn-sm" data-dispatch-campaign="' + esc(c.id) + '">🚀 Dispatch Campaign (Safe Dry-Run Simulation)</button>' : '') +
+                  '<button type="button" class="btn btn-ghost btn-sm" data-view-logs="' + esc(c.id) + '">📋 Delivery Logs</button>' +
+                  (c.status !== 'completed' && c.status !== 'cancelled' ? '<button type="button" class="btn btn-ghost btn-sm" data-cancel-campaign="' + esc(c.id) + '" style="color: var(--accent);">Cancel</button>' : '') +
+                '</div>' +
+
+                (isApproved || isDraft ? '<div class="campaign-gate-warning">🔒 <strong>Live Dispatch Gate Active:</strong> Live promotional sending is safely disabled until Meta Business verification and template approval are complete. Dispatching will run in <strong>Safe Simulated Mode</strong> with delivery log generation and zero external messages.</div>' : '') +
+
+                '<div id="logs-box-' + esc(c.id) + '" hidden style="margin-top: 10px; border-top: 1px solid var(--line-light); padding-top: 10px;">' +
+                  '<p class="muted">Loading delivery logs…</p>' +
+                '</div>' +
+              '</div>';
+            }).join('') +
+          '</div>';
+        }
+
+        h += '</div></div>';
+        panel.innerHTML = h;
+
+        // Hook up recalculate audience preview form
+        var prevForm = $('[data-preview-form]', panel);
+        if (prevForm) {
+          prevForm.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var cityVal = prevForm.targetCity.value;
+            var catVal = prevForm.targetCategory.value;
+            api('POST', '/api/campaigns/preview', { eventId: id, targetCity: cityVal, targetCategory: catVal }).then(function (pr) {
+              if (pr.ok) {
+                var cntEl = $('[data-audience-count]', panel);
+                if (cntEl) cntEl.textContent = pr.eligibleRecipientsCount;
+              }
+            });
+          });
+        }
+
+        // Hook up campaign draft creation form
+        var createForm = $('[data-create-campaign-form]', panel);
+        if (createForm) {
+          createForm.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            var titleVal = createForm.title.value;
+            var cMsg = $('[data-campaign-msg]', panel);
+            cMsg.textContent = 'Creating campaign draft…';
+            api('POST', '/api/campaigns', {
+              eventId: id,
+              title: titleVal,
+              targetCity: prevForm ? prevForm.targetCity.value : curCity,
+              targetCategory: prevForm ? prevForm.targetCategory.value : curCat
+            }).then(function (cr) {
+              if (cr.ok) {
+                renderPromotionsTab(panel);
+              } else {
+                cMsg.className = 'form-msg error';
+                cMsg.textContent = cr.message || 'Could not create campaign.';
+              }
+            });
+          });
+        }
+
+        // Hook up Approve buttons
+        $$('[data-approve-campaign]', panel).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var cid = btn.getAttribute('data-approve-campaign');
+            btn.disabled = true;
+            api('POST', '/api/campaigns/' + encodeURIComponent(cid) + '/approve', {}).then(function (ar) {
+              if (ar.ok) renderPromotionsTab(panel);
+              else alert(ar.message || 'Approval failed');
+            });
+          });
+        });
+
+        // Hook up Dispatch buttons
+        $$('[data-dispatch-campaign]', panel).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var cid = btn.getAttribute('data-dispatch-campaign');
+            if (!confirm('Run promotional campaign dispatch? (Will execute in Safe Simulation Mode)')) return;
+            btn.disabled = true;
+            api('POST', '/api/campaigns/' + encodeURIComponent(cid) + '/dispatch', {}).then(function (dr) {
+              if (dr.ok) {
+                alert(dr.message || 'Campaign dispatch simulated successfully.');
+                renderPromotionsTab(panel);
+              } else {
+                alert(dr.message || 'Dispatch failed');
+                btn.disabled = false;
+              }
+            });
+          });
+        });
+
+        // Hook up Cancel buttons
+        $$('[data-cancel-campaign]', panel).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var cid = btn.getAttribute('data-cancel-campaign');
+            if (!confirm('Cancel this campaign?')) return;
+            api('POST', '/api/campaigns/' + encodeURIComponent(cid) + '/cancel', {}).then(function (cr) {
+              if (cr.ok) renderPromotionsTab(panel);
+              else alert(cr.message || 'Cancel failed');
+            });
+          });
+        });
+
+        // Hook up View Logs buttons
+        $$('[data-view-logs]', panel).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var cid = btn.getAttribute('data-view-logs');
+            var box = $('#logs-box-' + cid, panel);
+            if (!box) return;
+            if (!box.hidden) {
+              box.hidden = true;
+              return;
+            }
+            box.hidden = false;
+            box.innerHTML = '<p class="muted">Loading delivery logs…</p>';
+            api('GET', '/api/campaigns/' + encodeURIComponent(cid) + '/logs').then(function (lr) {
+              if (!lr.ok || !lr.logs || lr.logs.length === 0) {
+                box.innerHTML = '<p class="muted">No recipient delivery logs recorded yet.</p>';
+                return;
+              }
+              var tableHtml = '<div style="overflow-x: auto;"><table class="campaign-log-table">' +
+                '<thead><tr><th>Recipient</th><th>City</th><th>Status</th><th>Provider Msg ID</th><th>Cost</th><th>Dispatched</th></tr></thead><tbody>' +
+                lr.logs.map(function (log) {
+                  return '<tr>' +
+                    '<td><strong>' + esc(log.alias) + '</strong> (' + esc(log.phoneMasked) + ')</td>' +
+                    '<td>' + esc(log.city) + '</td>' +
+                    '<td><span class="pill pill-' + esc(log.status) + '">' + esc(log.status) + '</span></td>' +
+                    '<td><code>' + esc(log.providerMessageId || 'mock_outbox') + '</code></td>' +
+                    '<td>₹' + (log.deliveryCostPaise / 100).toFixed(2) + '</td>' +
+                    '<td>' + esc(fmtInstant(log.dispatchedAt)) + '</td>' +
+                  '</tr>';
+                }).join('') +
+                '</tbody></table></div>';
+              box.innerHTML = tableHtml;
+            });
+          });
+        });
       });
     }
 

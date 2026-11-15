@@ -842,8 +842,8 @@
           '</div>' +
           '<div class="identity-row">' +
             '<div class="identity-meta">' +
-              '<span class="identity-label">WhatsApp Event Recommendations</span>' +
-              '<span class="muted" style="font-size: .82rem;">Curated weekend parties, secret meetups, and nightlife invitations.</span>' +
+              '<span class="identity-label">WhatsApp Event Announcements &amp; Promotional Offers</span>' +
+              '<span class="muted" style="font-size: .82rem;">Curated weekend parties, secret meetups, and exclusive nightlife invites. Optional &amp; separate from transactional passes.</span>' +
             '</div>' +
             '<div class="identity-action">' +
               '<button type="button" class="btn btn-ghost btn-sm" data-toggle-promo-wa>' +
