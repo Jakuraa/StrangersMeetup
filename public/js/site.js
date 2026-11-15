@@ -239,6 +239,14 @@
     });
   }
 
+  /* Shortcut to switch to Telegram tab from unavailable card */
+  $$('[data-switch-to-telegram]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var tgTab = $('[data-auth-tab="telegram"]');
+      if (tgTab) tgTab.click();
+    });
+  });
+
   /* WhatsApp OTP Authentication on /signin */
   var waPhoneForm = $('[data-wa-phone-form]');
   var waOtpCard = $('[data-wa-otp-card]');
@@ -440,11 +448,26 @@
       changePhoneBtn.addEventListener('click', function () {
         stopSmsOtpListener();
         if (countdownTimer) clearInterval(countdownTimer);
+        currentChallengeId = null;
+        currentPhone = null;
+        try {
+          var isHttps = location.protocol === 'https:';
+          document.cookie = 'sm_wa_step=; path=/; max-age=0; samesite=lax' + (isHttps ? '; secure' : '');
+        } catch (e) { /* ignore */ }
         waOtpCard.hidden = true;
         var phoneStep = $('[data-wa-step="phone"]');
         if (phoneStep) phoneStep.hidden = false;
         var phoneInput = $('#wa-phone');
-        if (phoneInput) phoneInput.focus();
+        if (phoneInput) {
+          phoneInput.value = '';
+          phoneInput.focus();
+        }
+        var maskedEl = $('[data-wa-masked-phone]');
+        if (maskedEl) maskedEl.textContent = '';
+        var otpInput = $('#otp-input');
+        if (otpInput) otpInput.value = '';
+        signinMsg.className = 'form-msg';
+        signinMsg.textContent = '';
       });
     }
 
@@ -528,6 +551,16 @@
     s.setAttribute('data-request-access', 'write');
     s.setAttribute('data-auth-url', callbackUrl);
     widget.appendChild(s);
+
+    try {
+      var obs = new MutationObserver(function () {
+        var ifr = widget.querySelector('iframe');
+        if (ifr && !ifr.getAttribute('title')) {
+          ifr.setAttribute('title', 'Log in with Telegram');
+        }
+      });
+      obs.observe(widget, { childList: true, subtree: true });
+    } catch (e) { /* ignore */ }
   }
 
   /* Local test personas (the server returns 404 unless persona sign-in is enabled on this machine). */

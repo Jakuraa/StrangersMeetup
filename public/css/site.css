@@ -356,6 +356,24 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .country-code-pill { display: flex; align-items: center; justify-content: center; background: var(--surface-2); border: 1px solid var(--line-light); border-radius: var(--radius-sm); padding: 0 14px; font-weight: 600; font-size: .95rem; color: var(--ink); }
 .phone-input { flex: 1; font-size: 1.05rem; }
 
+/* Ensure HTML hidden attribute is strictly respected regardless of author display properties */
+[hidden] { display: none !important; }
+.otp-box[hidden], .auth-panel[hidden], [data-wa-step][hidden] { display: none !important; }
+
+.wa-unavailable-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 32px 24px;
+  text-align: center;
+  display: grid;
+  gap: 16px;
+  box-shadow: var(--shadow);
+}
+.wa-unavailable-icon { font-size: 2.2rem; margin: 0 auto 4px; }
+.wa-unavailable-title { font-size: 1.15rem; font-weight: 700; color: var(--ink); margin: 0; }
+.wa-unavailable-desc { font-size: .92rem; color: var(--ink-2); line-height: 1.5; margin: 0; max-width: 42ch; margin-inline: auto; }
+
 .otp-box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; display: grid; gap: 16px; }
 .otp-hint { font-size: .88rem; color: var(--muted); margin: 0 0 8px; line-height: 1.4; }
 #otp-input {
@@ -396,6 +414,28 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 
 .tg-widget { min-height: 48px; }
 .tg-widget[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+.tg-switch-tip {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 217, 255, 0.05);
+  border: 1px solid rgba(0, 217, 255, 0.25);
+  font-size: .88rem;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.tg-switch-tip-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: .92rem;
+  margin-bottom: 6px;
+}
+.tg-switch-desc { margin: 0 0 8px; font-size: .88rem; }
+.tg-switch-steps { margin: 0 0 0 18px; padding: 0; }
+.tg-switch-steps li { margin-bottom: 6px; }
+.tg-switch-steps a { color: var(--neon-cyan); text-decoration: underline; }
 .signin-why { margin-top: 28px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .signin-why-title { font-size: 1.02rem; margin: 0 0 12px; color: var(--ink); }
 .signin-why-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; font-size: .88rem; color: var(--ink-2); }
