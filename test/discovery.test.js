@@ -79,7 +79,7 @@ test('robots.txt evaluation', () => {
   assert.equal(robotsAllows('', '/feed'), true);
   assert.equal(robotsAllows('User-agent: *\nDisallow: /', '/feed'), false);
   assert.equal(robotsAllows('User-agent: *\nDisallow: /\nAllow: /feed', '/feed'), true);
-  assert.equal(robotsAllows('User-agent: StrangersMeetupBot\nDisallow: /events\n\nUser-agent: *\nAllow: /', '/events.xml'), false);
+  assert.equal(robotsAllows('User-agent: NightlifezBot\nDisallow: /events\n\nUser-agent: *\nAllow: /', '/events.xml'), false);
   assert.equal(robotsAllows('User-agent: *\nDisallow:', '/anything'), true);
 });
 
@@ -222,7 +222,7 @@ test('fetch: items land in the queue (never published), conditional GET, guid de
   assert.equal(r.json.result.status, 'ok');
   assert.equal(r.json.result.new, 2);
   const ua = calls.find((c) => c.path === FEED_URL)?.headers?.['User-Agent'] || '';
-  assert.match(ua, /StrangersMeetupBot/);
+  assert.match(ua, /NightlifezBot/);
   const pending = (await owner.get('/api/admin/candidates?status=pending')).json.candidates;
   assert.equal(pending.length, 2);
   assert.ok(pending.every((c) => c.start_at === null && c.city === 'Chennai'));

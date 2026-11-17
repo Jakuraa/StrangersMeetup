@@ -6,6 +6,7 @@ export const BOT_TOKEN = '123456789:TEST_ONLY_token_abcdefghijklmnopqrstuvwxyz';
 Object.assign(process.env, {
   TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgres://localhost:5432/sm_test',
   SKIP_DOTENV: 'true',
+  TEST_DATABASE_URL: process.env.TEST_DATABASE_URL || 'postgres://localhost:5432/sm_test',
   DATABASE_URL: process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgres://localhost:5432/sm_test',
   SESSION_SECRET: 'test-session-secret-0123456789-abcdefghij',
   CRON_SECRET: 'test-cron-secret-0123456789',

@@ -110,7 +110,7 @@ export async function seedDemo({ e = process.env } = {}) {
            start_at, end_at, capacity, price_status, inclusions, exclusions, refund_policy, gender_policy,
            food_available, stay_available, organizer, status, is_demo, ticketing, published_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'disclosed_after_booking',$9,$10,$11,'tbd',$12,$13,$14,$15,$16,$17,
-           'StrangersMeetup','published',true,'tiers',now())
+           'NIGHTLIFEZ','published',true,'tiers',now())
          ON CONFLICT (slug) DO UPDATE SET
            start_at = EXCLUDED.start_at,
            end_at = EXCLUDED.end_at,

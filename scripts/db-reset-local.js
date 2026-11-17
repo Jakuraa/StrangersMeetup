@@ -1,7 +1,7 @@
-// scripts/db-reset-local.js - Drop and rebuild a LOCAL StrangersMeetup database, then migrate.
+// scripts/db-reset-local.js - Drop and rebuild a LOCAL NIGHTLIFEZ database, then migrate.
 // Usage: npm run db:reset:local -- --yes=<database name> [--seed-demo]
 // Refuses unless: not on Vercel, not production, DATABASE_URL is on this machine, --yes names the
-// exact database, and that database is empty or already a StrangersMeetup schema. A shared local
+// exact database, and that database is empty or already a NIGHTLIFEZ schema. A shared local
 // Postgres often holds other projects' databases, so every check is required.
 import { fileURLToPath } from 'node:url';
 import '../lib/config.js'; // loads a local .env (never on Vercel)
@@ -26,9 +26,9 @@ export async function assertResettable(q = db) {
   if (!rows[0].tables) return 'empty';
   if (rows[0].has_migrations) {
     const m = await q.query('SELECT 1 FROM schema_migrations WHERE name = $1', [MARKER_MIGRATION]);
-    if (m.rowCount) return 'strangersmeetup';
+    if (m.rowCount) return 'nightlifez';
   }
-  throw new SeedRefused('refusing to reset: this database has tables but no StrangersMeetup migration history');
+  throw new SeedRefused('refusing to reset: this database has tables but no NIGHTLIFEZ migration history');
 }
 
 async function main() {

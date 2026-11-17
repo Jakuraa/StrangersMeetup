@@ -1,4 +1,4 @@
-// mcp/config.js - Configuration and environment isolation for the StrangersMeetup Control MCP.
+// mcp/config.js - Configuration and environment isolation for the NIGHTLIFEZ Control MCP.
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';

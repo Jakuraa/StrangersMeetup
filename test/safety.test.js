@@ -132,8 +132,8 @@ test('preview site url: uses VERCEL_URL or PREVIEW_PUBLIC_SITE_URL instead of sh
 
     assert.equal(siteUrl(), 'https://strangersmeetup-preview-xyz.vercel.app', 'prefers VERCEL_URL in preview');
 
-    process.env.PREVIEW_PUBLIC_SITE_URL = 'https://preview.strangersmeetup.com';
-    assert.equal(siteUrl(), 'https://preview.strangersmeetup.com', 'prefers explicit preview url');
+    process.env.PREVIEW_PUBLIC_SITE_URL = 'https://preview.nightlifez.com';
+    assert.equal(siteUrl(), 'https://preview.nightlifez.com', 'prefers explicit preview url');
   } finally {
     process.env = origEnv;
   }
@@ -168,12 +168,12 @@ test('reset guard: local only, never on Vercel, and --yes must name the exact da
   assert.deepEqual(planReset({ argv: ['--yes=sm_local', '--seed-demo'], e: { DATABASE_URL: LOCAL } }), { database: 'sm_local', seedDemo: true });
 });
 
-test('reset guard: only an empty or StrangersMeetup database can be wiped', async () => {
-  assert.equal(await assertResettable(db), 'strangersmeetup');
+test('reset guard: only an empty or NIGHTLIFEZ database can be wiped', async () => {
+  assert.equal(await assertResettable(db), 'nightlifez');
   const fake = (rows, marker = 0) => ({ query: async (sql) => (sql.includes('information_schema') ? { rows } : { rowCount: marker }) });
   assert.equal(await assertResettable(fake([{ tables: 0, has_migrations: null }])), 'empty');
-  await assert.rejects(assertResettable(fake([{ tables: 12, has_migrations: false }])), /no StrangersMeetup migration history/);
-  await assert.rejects(assertResettable(fake([{ tables: 12, has_migrations: true }], 0)), /no StrangersMeetup migration history/,
+  await assert.rejects(assertResettable(fake([{ tables: 12, has_migrations: false }])), /no NIGHTLIFEZ migration history/);
+  await assert.rejects(assertResettable(fake([{ tables: 12, has_migrations: true }], 0)), /no NIGHTLIFEZ migration history/,
     'another project that also uses a schema_migrations table');
 });
 

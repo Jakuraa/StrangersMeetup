@@ -41,5 +41,5 @@ export function createServer() {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  createServer().listen(PORT, () => console.log(`StrangersMeetup dev server on http://localhost:${PORT}`));
+  createServer().listen(PORT, () => console.log(`NIGHTLIFEZ dev server on http://localhost:${PORT}`));
 }
