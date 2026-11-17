@@ -289,5 +289,134 @@ test('OTP Generation & Hash Security - cryptographic 6-digit entropy and HMAC-SH
   assert.notEqual(hash1, hash2); // Salting prevents rainbow tables
 });
 
+test('WhatsApp Access Token Precedence - WHATSAPP_ACCESS_TOKEN takes precedence over nightlifezapiadmin fallback alias', () => {
+  const origWaToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const origAdmin = process.env.nightlifezapiadmin;
+
+  try {
+    // Both set: WHATSAPP_ACCESS_TOKEN wins
+    process.env.WHATSAPP_ACCESS_TOKEN = 'primary_wa_access_token_123';
+    process.env.nightlifezapiadmin = 'fallback_admin_token_456';
+    assert.equal(getWhatsAppConfig().accessToken, 'primary_wa_access_token_123');
+
+    // Only WHATSAPP_ACCESS_TOKEN set
+    delete process.env.nightlifezapiadmin;
+    assert.equal(getWhatsAppConfig().accessToken, 'primary_wa_access_token_123');
+
+    // Only nightlifezapiadmin set: fallback alias works
+    delete process.env.WHATSAPP_ACCESS_TOKEN;
+    process.env.nightlifezapiadmin = 'fallback_admin_token_456';
+    assert.equal(getWhatsAppConfig().accessToken, 'fallback_admin_token_456');
+
+    // Neither set: empty string
+    delete process.env.nightlifezapiadmin;
+    assert.equal(getWhatsAppConfig().accessToken, '');
+  } finally {
+    if (origWaToken !== undefined) process.env.WHATSAPP_ACCESS_TOKEN = origWaToken;
+    else delete process.env.WHATSAPP_ACCESS_TOKEN;
+    if (origAdmin !== undefined) process.env.nightlifezapiadmin = origAdmin;
+    else delete process.env.nightlifezapiadmin;
+  }
+});
+
+test('WhatsApp Webhook POST Guard - fails closed in production when WHATSAPP_WEBHOOK_SECRET is unconfigured', async () => {
+  const origVercel = process.env.VERCEL;
+  const origSecret = process.env.WHATSAPP_WEBHOOK_SECRET;
+
+  process.env.VERCEL = '1';
+  delete process.env.WHATSAPP_WEBHOOK_SECRET;
+
+  const mockReq = {
+    headers: {},
+    on: (evt, cb) => {
+      if (evt === 'data') cb(Buffer.from('{"object":"whatsapp_business_account","entry":[]}'));
+      if (evt === 'end') cb();
+    }
+  };
+  const mockRes = { writeHead: () => {}, end: () => {} };
+
+  try {
+    await assert.rejects(
+      async () => {
+        await handleWebhook({ req: mockReq, res: mockRes });
+      },
+      (err) => {
+        assert.equal(err.status, 503);
+        assert.equal(err.code, 'webhook_unconfigured');
+        return true;
+      }
+    );
+  } finally {
+    if (origVercel !== undefined) process.env.VERCEL = origVercel;
+    else delete process.env.VERCEL;
+    if (origSecret !== undefined) process.env.WHATSAPP_WEBHOOK_SECRET = origSecret;
+    else delete process.env.WHATSAPP_WEBHOOK_SECRET;
+  }
+});
+
+test('WhatsApp Webhook POST - strictly validates HMAC-SHA256 signature and rejects tampering', async () => {
+  const origSecret = process.env.WHATSAPP_WEBHOOK_SECRET;
+  const secret = 'valid_test_signing_secret_987';
+  process.env.WHATSAPP_WEBHOOK_SECRET = secret;
+
+  const payload = JSON.stringify({ object: 'whatsapp_business_account', entry: [] });
+  const validSig = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const invalidSig = 'sha256=invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinva';
+
+  const mockRes = {
+    statusCode: null,
+    headers: {},
+    body: null,
+    setHeader: function(k, v) { this.headers[k.toLowerCase()] = v; },
+    getHeader: function(k) { return this.headers[k.toLowerCase()]; },
+    writeHead: function(status, headers = {}) {
+      this.statusCode = status;
+      for (const [k, v] of Object.entries(headers)) this.headers[k.toLowerCase()] = v;
+    },
+    end: function(chunk) { this.body = chunk; }
+  };
+
+  const createReq = (sig, bodyStr) => ({
+    headers: sig ? { 'x-hub-signature-256': sig } : {},
+    on: (evt, cb) => {
+      if (evt === 'data') cb(Buffer.from(bodyStr));
+      if (evt === 'end') cb();
+    }
+  });
+
+  try {
+    // 1. Missing signature rejects with 401
+    await assert.rejects(
+      async () => {
+        await handleWebhook({ req: createReq(null, payload), res: mockRes });
+      },
+      (err) => {
+        assert.equal(err.status, 401);
+        assert.equal(err.code, 'invalid_signature');
+        return true;
+      }
+    );
+
+    // 2. Invalid signature rejects with 401
+    await assert.rejects(
+      async () => {
+        await handleWebhook({ req: createReq(invalidSig, payload), res: mockRes });
+      },
+      (err) => {
+        assert.equal(err.status, 401);
+        assert.equal(err.code, 'invalid_signature');
+        return true;
+      }
+    );
+
+    // 3. Valid signature succeeds with 200
+    await handleWebhook({ req: createReq(validSig, payload), res: mockRes });
+    assert.equal(mockRes.statusCode, 200);
+  } finally {
+    if (origSecret !== undefined) process.env.WHATSAPP_WEBHOOK_SECRET = origSecret;
+    else delete process.env.WHATSAPP_WEBHOOK_SECRET;
+  }
+});
+
 
 
