@@ -131,7 +131,7 @@ export async function inspectPage({ path: targetPath, persona = 'anonymous' }) {
 
   let headers = {
     'Accept': 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
-    'User-Agent': 'StrangersMeetup-MCP-Auditor/1.0'
+    'User-Agent': 'NIGHTLIFEZ-MCP-Auditor/1.0'
   };
 
   // If testing with a seeded persona, retrieve session cookie first
@@ -355,7 +355,7 @@ export async function auditAuthFlow() {
     { name: 'Public Sign-in Screen', path: '/signin', expectedStatus: 200 },
     { name: 'Signed-Out Member Portal', path: '/me', expectedStatus: 302, redirectPattern: /^\/signin\?next=%2Fme|\/signin\?next=\/me/ },
     { name: 'Signed-Out Organiser Portal', path: '/organiser', expectedStatus: 200, checksContent: 'Sign in with Telegram' },
-    { name: 'Signed-Out Admin Portal', path: '/admin', expectedStatus: 401, checksContent: 'The admin area is for the StrangersMeetup team' }
+    { name: 'Signed-Out Admin Portal', path: '/admin', expectedStatus: 401, checksContent: 'The admin area is for the NIGHTLIFEZ team' }
   ];
 
   const results = [];

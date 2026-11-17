@@ -1,4 +1,4 @@
-// test/mcp.test.js - Comprehensive test suite for StrangersMeetup Control MCP server.
+// test/mcp.test.js - Comprehensive test suite for NIGHTLIFEZ Control MCP server.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -78,7 +78,7 @@ test('MCP Security: Path traversal guard strictly denies .env, .git, .claude, an
 });
 
 test('MCP Security: Secret redactor scrubs tokens and credentials', () => {
-  const secretString = 'Connected to postgres://user:super_secret_pw@db.neon.tech/strangers with bot 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_12345678 and token ghp_123456789012345678901234567890123456';
+  const secretString = 'Connected to postgres://user:super_secret_pw@db.neon.tech/nightlifez with bot 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_12345678 and token ghp_123456789012345678901234567890123456';
   const redacted = redactSecrets(secretString);
 
   assert.ok(!redacted.includes('super_secret_pw'));
@@ -126,7 +126,7 @@ test('MCP Tools: sm_inspect_page inspects public routes and classifies correctly
     const homeInspect = await inspectPage({ path: '/' });
     assert.equal(homeInspect.status_code, 200);
     assert.equal(homeInspect.classification, 'EXISTS_AND_LOADED_200');
-    assert.ok(homeInspect.title.includes('NIGHTLIFEZ') || homeInspect.title.includes('StrangersMeetup'));
+    assert.ok(homeInspect.title.includes('NIGHTLIFEZ'));
 
     const meInspect = await inspectPage({ path: '/me' });
     assert.equal(meInspect.status_code, 302);
@@ -434,7 +434,7 @@ test('MCP Phase 2C: server startup diagnostics never expose MCP_API_KEY or Beare
   }
   child.kill('SIGTERM');
 
-  assert.ok(output.includes('StrangersMeetup Control MCP listening on http://127.0.0.1:3339'));
+  assert.ok(output.includes('NIGHTLIFEZ Control MCP listening on http://127.0.0.1:3339'));
   assert.ok(output.includes('MCP Authentication: Bearer token required'));
   assert.ok(!output.includes(testSecretKey), 'Secret MCP_API_KEY was leaked into startup stdout/stderr logs!');
   assert.ok(!output.includes('MCP Auth Key:'), 'Deprecated "MCP Auth Key:" label should be removed');

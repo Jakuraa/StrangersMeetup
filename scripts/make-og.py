@@ -1,15 +1,26 @@
-# scripts/make-og.py - Regenerates public/img/og.png (1200x630) from brand tokens. Needs Pillow.
+# scripts/make-og.py - Regenerates public/img/og.png (1200x630) from NIGHTLIFEZ brand tokens. Needs Pillow.
 from PIL import Image, ImageDraw, ImageFont
 import os
 
 W, H = 1200, 630
-BG, INK, ACCENT, SOFT, MUTED = (251, 248, 244), (35, 32, 29), (163, 71, 58), (245, 230, 225), (110, 101, 93)
-S = 2  # supersample for smooth circles
+# NIGHTLIFEZ brand tokens: Midnight obsidian, pure white, electric cyan, luminous magenta, muted text
+BG = (9, 11, 22)           # #090B16 Obsidian
+INK = (255, 255, 255)      # #FFFFFF White
+CYAN = (0, 217, 255)       # #00D9FF Neon Cyan
+MAGENTA = (255, 42, 133)   # #FF2A85 Neon Magenta
+MUTED = (184, 184, 192)    # Muted secondary text
+
+S = 2  # supersample for smooth graphics
 img = Image.new('RGB', (W * S, H * S), BG)
 d = ImageDraw.Draw(img)
+
+# Geometric neon ambient curves in top-right
 cx, cy, r = 940 * S, 315 * S, 150 * S
-d.ellipse([cx - 65 * S - r, cy - r, cx - 65 * S + r, cy + r], outline=INK, width=3 * S)
-d.ellipse([cx + 65 * S - r, cy - r, cx + 65 * S + r, cy + r], outline=ACCENT, width=3 * S)
+d.ellipse([cx - 70 * S - r, cy - r, cx - 70 * S + r, cy + r], outline=CYAN, width=4 * S)
+d.ellipse([cx + 70 * S - r, cy - r, cx + 70 * S + r, cy + r], outline=MAGENTA, width=4 * S)
+# Accent glowing core
+d.ellipse([cx - 20 * S, cy - 20 * S, cx + 20 * S, cy + 20 * S], fill=CYAN)
+
 img = img.resize((W, H), Image.LANCZOS)
 d = ImageDraw.Draw(img)
 
@@ -22,12 +33,18 @@ def font(size, bold=False):
     return ImageFont.load_default()
 
 
-d.text((80, 150), 'StrangersMeetup', font=font(30, True), fill=ACCENT)
-y = 210
-for line in ['Your next favourite', 'people are still', 'strangers.']:
-    d.text((80, y), line, font=font(62, True), fill=INK)
-    y += 76
-d.text((80, 470), 'Meetups · Dinners · Trips · South India · 21+', font=font(26), fill=MUTED)
+# Brand badge / name
+d.text((80, 130), 'NIGHTLIFEZ', font=font(34, True), fill=CYAN)
+
+# Tagline / Headline
+y = 200
+for line in ['Discover. Connect.', 'Experience.']:
+    d.text((80, y), line, font=font(64, True), fill=INK)
+    y += 82
+
+# Description / Subtitle
+d.text((80, 480), 'Social Discovery & Experiences · South India · Adults 21+', font=font(26), fill=MUTED)
+
 out = os.path.join(os.path.dirname(__file__), '..', 'public', 'img', 'og.png')
 img.save(out, optimize=True)
 print('wrote', os.path.normpath(out))

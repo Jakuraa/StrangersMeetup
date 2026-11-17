@@ -1,4 +1,4 @@
-// mcp/server.js - Local-only Model Context Protocol server for StrangersMeetup Control.
+// mcp/server.js - Local-only Model Context Protocol server for NIGHTLIFEZ Control.
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -12,7 +12,7 @@ import { registerAllTools, REGISTERED_TOOL_NAMES } from './tools/index.js';
 
 export function createMcpServerInstance() {
   const server = new McpServer({
-    name: 'strangersmeetup-control-mcp',
+    name: 'nightlifez-control-mcp',
     version: '1.0.0'
   });
 
@@ -86,7 +86,7 @@ export async function startHttpServer(port = MCP_PORT) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           status: 'ok',
-          mcp: 'StrangersMeetup Control MCP',
+          mcp: 'NIGHTLIFEZ Control MCP',
           version: '1.0.0',
           tools_count: REGISTERED_TOOL_NAMES.length,
           tools: REGISTERED_TOOL_NAMES
@@ -229,7 +229,7 @@ if (process.argv[1] && process.argv[1].endsWith('server.js')) {
     });
   } else {
     startHttpServer(MCP_PORT).then((server) => {
-      console.log(`StrangersMeetup Control MCP listening on http://${MCP_HOST}:${MCP_PORT}`);
+      console.log(`NIGHTLIFEZ Control MCP listening on http://${MCP_HOST}:${MCP_PORT}`);
       console.log('MCP Authentication: Bearer token required on all operational endpoints');
       console.log(`Streamable HTTP endpoint: http://${MCP_HOST}:${MCP_PORT}/mcp`);
       console.log(`SSE endpoint: http://${MCP_HOST}:${MCP_PORT}/sse`);

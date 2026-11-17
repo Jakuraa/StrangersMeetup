@@ -1,4 +1,4 @@
-// mcp/tools/index.js - Tool registration and schema definitions for StrangersMeetup Control MCP.
+// mcp/tools/index.js - Tool registration and schema definitions for NIGHTLIFEZ Control MCP.
 import { z } from 'zod';
 import {
   getProjectStatus,

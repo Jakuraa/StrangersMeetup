@@ -1,11 +1,11 @@
-# Render deployment blueprint for StrangersMeetup Control MCP service
+# Render deployment blueprint for NIGHTLIFEZ Control MCP service
 # Documentation: https://render.com/docs/blueprint-spec
 #
 # Option B (Active): Full Playwright Chromium container for live screenshots & responsive audits
 # Option A (Inactive alternative below): Native Node.js service
 services:
   - type: web
-    name: strangersmeetup-control-mcp
+    name: nightlifez-control-mcp
     runtime: docker
     dockerfilePath: ./Dockerfile.mcp
     plan: starter
@@ -27,7 +27,7 @@ services:
 #
 # services:
 #   - type: web
-#     name: strangersmeetup-control-mcp-node
+#     name: nightlifez-control-mcp-node
 #     runtime: node
 #     plan: starter
 #     region: oregon
