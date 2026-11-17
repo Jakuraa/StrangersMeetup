@@ -1,0 +1,159 @@
+{
+  "info": {
+    "_postman_id": "nightlifez-whatsapp-collection-v1",
+    "name": "NIGHTLIFEZ — Meta WhatsApp Cloud API Suite",
+    "description": "Production integration and verification suite for Meta WhatsApp Cloud API, WABA inspection, template validation, and secure webhook verification.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. WABA & Account Inspection",
+      "item": [
+        {
+          "name": "Inspect WABA Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whatsapp_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{meta_graph_base_url}}/{{waba_id}}?fields=id,name,timezone_id,message_template_namespace",
+              "host": ["{{meta_graph_base_url}}"],
+              "path": ["{{waba_id}}"],
+              "query": [
+                {
+                  "key": "fields",
+                  "value": "id,name,timezone_id,message_template_namespace"
+                }
+              ]
+            },
+            "description": "Verifies WABA 1601706958388338 exists, is accessible by the System User, and returns valid business metadata."
+          }
+        },
+        {
+          "name": "Inspect WABA Phone Numbers & Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whatsapp_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{meta_graph_base_url}}/{{waba_id}}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status,status",
+              "host": ["{{meta_graph_base_url}}"],
+              "path": ["{{waba_id}}", "phone_numbers"],
+              "query": [
+                {
+                  "key": "fields",
+                  "value": "id,display_phone_number,verified_name,quality_rating,code_verification_status,status"
+                }
+              ]
+            },
+            "description": "Retrieves the exact numeric Phone Number ID (id field) for the registered business number and verifies that status is CONNECTED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02. Template Verification",
+      "item": [
+        {
+          "name": "Inspect OTP Authentication Template (nightlifez_auth_otp)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whatsapp_access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{meta_graph_base_url}}/{{waba_id}}/message_templates?name={{otp_template_name}}",
+              "host": ["{{meta_graph_base_url}}"],
+              "path": ["{{waba_id}}", "message_templates"],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "{{otp_template_name}}"
+                }
+              ]
+            },
+            "description": "Checks whether the authentication template 'nightlifez_auth_otp' is APPROVED, category is AUTHENTICATION, and components match body + URL button code parameters."
+          }
+        }
+      ]
+    },
+    {
+      "name": "03. Webhook Testing",
+      "item": [
+        {
+          "name": "Test Application Webhook Verification Challenge (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{app_base_url}}/api/webhooks/whatsapp?hub.mode=subscribe&hub.challenge=test_challenge_verification_token_challenge&hub.verify_token={{whatsapp_webhook_verify_token}}",
+              "host": ["{{app_base_url}}"],
+              "path": ["api", "webhooks", "whatsapp"],
+              "query": [
+                {
+                  "key": "hub.mode",
+                  "value": "subscribe"
+                },
+                {
+                  "key": "hub.challenge",
+                  "value": "test_challenge_verification_token_challenge"
+                },
+                {
+                  "key": "hub.verify_token",
+                  "value": "{{whatsapp_webhook_verify_token}}"
+                }
+              ]
+            },
+            "description": "Simulates Meta's Webhook verification GET challenge. Expects HTTP 200 with raw body echoing hub.challenge."
+          }
+        }
+      ]
+    },
+    {
+      "name": "04. Live OTP Dispatch (Explicit Approval Required)",
+      "item": [
+        {
+          "name": "Dispatch Test OTP via Meta Cloud API (GATED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{whatsapp_access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"recipient_type\": \"individual\",\n  \"to\": \"{{owner_test_phone_e164}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{otp_template_name}}\",\n    \"language\": {\n      \"code\": \"{{otp_template_language}}\"\n    },\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"123456\"\n          }\n        ]\n      },\n      {\n        \"type\": \"button\",\n        \"sub_type\": \"url\",\n        \"index\": \"0\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"123456\"\n          }\n        ]\n      }\n    ]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{meta_graph_base_url}}/{{whatsapp_phone_number_id}}/messages",
+              "host": ["{{meta_graph_base_url}}"],
+              "path": ["{{whatsapp_phone_number_id}}", "messages"]
+            },
+            "description": "WARNING: DO NOT EXECUTE WITHOUT EXPLICIT USER APPROVAL. Dispatches exactly one real OTP authentication template to the owner's test number."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -77,7 +77,7 @@ test('Book Tickets redirects to SuperProfile with a ref, signed in or not; one i
   const a = await clickBook(ev, guest);
   assert.equal(a.loc.origin + a.loc.pathname, SP_URL);
   assert.match(a.ref, /^[0-9A-HJKMNP-TV-Z]{8}$/);
-  assert.equal(a.loc.searchParams.get('utm_source'), 'strangersmeetup');
+  assert.equal(a.loc.searchParams.get('utm_source'), 'nightlifez');
   const intent = await db.one('SELECT * FROM checkout_intents WHERE ref = $1', [a.ref]);
   assert.equal(intent.user_id, guest.userId);
   assert.equal(intent.event_id, ev.id);
