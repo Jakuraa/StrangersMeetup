@@ -22,6 +22,7 @@ import {
   PhonePeAdapter,
   MockUpiAdapter,
   mockInstance,
+  phonePeInstance,
   buildAppIntents
 } from '../lib/upi/adapter.js';
 import {
@@ -32,7 +33,8 @@ import {
   activePaymentHolds,
   processUpiWebhook,
   refundUpiOrder,
-  isLegalTransition
+  isLegalTransition,
+  getAdapter
 } from '../lib/services/upi-payments.js';
 import { renderUpiCheckout } from '../lib/views/checkout-upi.js';
 
@@ -47,6 +49,7 @@ before(async () => {
   process.env.UPI_CHECKOUT_ENABLED = 'true';
   process.env.ENABLE_LIVE_PAYMENTS = 'false';
   process.env.ALLOW_PREVIEW_PAID_CHECKOUT = 'true';
+  process.env.FORCE_PHONEPE = 'true';
   stubUrl('https://api-preprod.phonepe.com', (url, init) => {
     if (url.includes('/pg/v1/refund')) {
       return {
@@ -79,6 +82,7 @@ after(async () => {
   process.env.UPI_CHECKOUT_ENABLED = 'false';
   process.env.ENABLE_LIVE_PAYMENTS = 'false';
   delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
+  delete process.env.FORCE_PHONEPE;
   await stopServer();
 });
 
@@ -3144,4 +3148,82 @@ test('M4.3.4: Final provider verification contract decision & regression suite',
     );
     assert.equal(invRow.n, 0, `Unverified order ${ord} must have 0 invite links`);
   }
+});
+
+// ---------------- 10. Regression Tests ----------------
+
+test('REGRESSION: getAdapter isolates PhonePe under test and preserves mock adapter behavior', () => {
+  // 1. With FORCE_PHONEPE=true, getAdapter returns PhonePeAdapter
+  assert.ok(getAdapter() instanceof PhonePeAdapter);
+
+  // 2. Explicit provider argument returns requested adapter
+  assert.ok(getAdapter('phonepe') instanceof PhonePeAdapter);
+  assert.ok(getAdapter('mock') instanceof MockUpiAdapter);
+  assert.ok(getAdapter('upi_mock') instanceof MockUpiAdapter);
+
+  // 3. With UPI_ADAPTER='mock', mock adapter takes precedence even if FORCE_PHONEPE is true
+  process.env.UPI_ADAPTER = 'mock';
+  try {
+    assert.ok(getAdapter() instanceof MockUpiAdapter);
+    // Explicit phonepe provider override still allows selecting PhonePeAdapter
+    assert.ok(getAdapter('phonepe') instanceof PhonePeAdapter);
+  } finally {
+    delete process.env.UPI_ADAPTER;
+  }
+
+  // 4. In test environment without FORCE_PHONEPE, defaults to MockUpiAdapter
+  const origForce = process.env.FORCE_PHONEPE;
+  delete process.env.FORCE_PHONEPE;
+  try {
+    assert.ok(getAdapter() instanceof MockUpiAdapter);
+    // Explicit phonepe provider still returns PhonePeAdapter even when FORCE_PHONEPE is unset
+    assert.ok(getAdapter('phonepe') instanceof PhonePeAdapter);
+  } finally {
+    process.env.FORCE_PHONEPE = origForce;
+  }
+});
+
+test('REGRESSION: processUpiWebhook supports explicit adapter injection', async () => {
+  const { event, tier } = await createPaidEvent({ price: 35000, capacity: 5 });
+  const intent = await createUpiPaymentIntent({
+    slug: event.slug,
+    user: guest1,
+    ticketTypeId: tier.id,
+    quantity: 1,
+    deviceType: 'desktop'
+  });
+
+  const adapter = new PhonePeAdapter({
+    merchantId: 'PGTESTPAYUAT',
+    saltKey: '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1',
+    saltIndex: '1'
+  });
+
+  const responseJson = {
+    code: 'PAYMENT_SUCCESS',
+    data: {
+      merchantId: 'PGTESTPAYUAT',
+      merchantTransactionId: intent.orderId,
+      transactionId: `TXN-${intent.orderId}`,
+      amount: 35000,
+      currency: 'INR',
+      state: 'COMPLETED',
+      paymentInstrument: { type: 'UPI', utr: 'UTR-INJECT-001' }
+    }
+  };
+
+  const rawBody = JSON.stringify({
+    response: Buffer.from(JSON.stringify(responseJson)).toString('base64')
+  });
+  const validHash = crypto.createHash('sha256').update(`${rawBody}099eb0cd-0252-4e2a-8aca-eb3c6bd470f1`).digest('hex');
+  const headers = { 'x-verify': `${validHash}###1` };
+
+  // Pass adapter explicitly to processUpiWebhook
+  const hookRes = await processUpiWebhook({ headers, rawBody, clientIp: '127.0.0.1', adapter });
+  assert.equal(hookRes.ok, true);
+  assert.equal(hookRes.result, 'confirmed');
+
+  const payment = await db.one('SELECT status, provider_payment_id FROM payments WHERE order_id = $1', [intent.orderId]);
+  assert.equal(payment.status, 'succeeded');
+  assert.equal(payment.provider_payment_id, 'UTR-INJECT-001');
 });
