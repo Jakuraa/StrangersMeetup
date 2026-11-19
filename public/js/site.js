@@ -459,8 +459,8 @@
         if (phoneStep) phoneStep.hidden = false;
         var phoneInput = $('#wa-phone');
         if (phoneInput) {
-          phoneInput.value = '';
           phoneInput.focus();
+          if (phoneInput.select) phoneInput.select();
         }
         var maskedEl = $('[data-wa-masked-phone]');
         if (maskedEl) maskedEl.textContent = '';

@@ -158,3 +158,94 @@ test('WhatsApp Auth - unlinking identity respects sole-provider guard', async ()
   assert.equal(linked.whatsapp.linked, false);
   assert.equal(linked.telegram.linked, true);
 });
+
+test('WhatsApp Auth - notification audit logging records configuration-driven template name', async () => {
+  const origTemplateName = process.env.WHATSAPP_OTP_TEMPLATE_NAME;
+  try {
+    process.env.WHATSAPP_OTP_TEMPLATE_NAME = 'custom_nightlifez_auth_v3';
+    const phone = '+919876543250';
+
+    const req = await requestWhatsAppOtp({ phone });
+    assert.equal(req.ok, true);
+
+    // Verify outbox record has the configured template name, NOT the hardcoded default
+    const { rows } = await db.query(
+      `SELECT template_name, recipient, purpose, provider, status 
+         FROM notification_messages 
+        WHERE recipient = $1 
+        ORDER BY created_at DESC LIMIT 1`,
+      [phone]
+    );
+
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].template_name, 'custom_nightlifez_auth_v3');
+    assert.equal(rows[0].purpose, 'auth_otp');
+    assert.equal(rows[0].recipient, phone);
+  } finally {
+    if (origTemplateName !== undefined) process.env.WHATSAPP_OTP_TEMPLATE_NAME = origTemplateName;
+    else delete process.env.WHATSAPP_OTP_TEMPLATE_NAME;
+  }
+});
+
+test('WhatsApp Auth - phone number normalization handles +910, spaces, and brackets', async () => {
+  // Test variations of valid phone numbers
+  const variations = [
+    { raw: '+91 98765 43261', expected: '+919876543261', masked: '+91 98****3261' },
+    { raw: '+91 (0) 98765 43262', expected: '+919876543262', masked: '+91 98****3262' },
+    { raw: '9876543263', expected: '+919876543263', masked: '+91 98****3263' },
+    { raw: '+9109876543264', expected: '+919876543264', masked: '+91 98****3264' }
+  ];
+
+  for (const item of variations) {
+    getWhatsAppProvider().clearSentMessages();
+    const req = await requestWhatsAppOtp({ phone: item.raw, ip: '127.0.0.1' });
+    assert.equal(req.ok, true);
+    assert.equal(req.phoneMasked, item.masked);
+
+    const sent = getWhatsAppProvider().getSentMessages();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, item.expected);
+  }
+});
+
+test('WhatsApp Auth - replay protection and single-use enforcement', async () => {
+  const phone = '+919876543270';
+  const req = await requestWhatsAppOtp({ phone });
+  const otp = getWhatsAppProvider().getSentMessages()[0].otp;
+
+  // 1. First verification succeeds
+  const firstVerify = await verifyWhatsAppOtpAndResolveUser({
+    challengeId: req.challengeId,
+    phone,
+    code: otp
+  });
+  assert.equal(firstVerify.ok, true);
+
+  // 2. Replay with the same code & challengeId fails
+  await assert.rejects(
+    () => verifyWhatsAppOtpAndResolveUser({
+      challengeId: req.challengeId,
+      phone,
+      code: otp
+    }),
+    /already been used/i
+  );
+});
+
+test('WhatsApp Auth - resend cooldown enforcement', async () => {
+  const phone = '+919876543280';
+  // 1. Initial request succeeds
+  const req1 = await requestWhatsAppOtp({ phone });
+  assert.equal(req1.ok, true);
+
+  // 2. Immediate second request within cooldown is rejected with 429
+  await assert.rejects(
+    () => requestWhatsAppOtp({ phone }),
+    (err) => {
+      assert.equal(err.status, 429);
+      assert.equal(err.code, 'cooldown');
+      assert.ok(typeof err.retryAfter === 'number');
+      return true;
+    }
+  );
+});

@@ -82,7 +82,7 @@ test('Meta WhatsApp Webhook Signature Verification - HMAC-SHA256 signature valid
     object: 'whatsapp_business_account',
     entry: [
       {
-        id: '1601706958388338',
+        id: '1155371310259355',
         changes: [
           {
             value: {
@@ -416,6 +416,38 @@ test('WhatsApp Webhook POST - strictly validates HMAC-SHA256 signature and rejec
     if (origSecret !== undefined) process.env.WHATSAPP_WEBHOOK_SECRET = origSecret;
     else delete process.env.WHATSAPP_WEBHOOK_SECRET;
   }
+});
+
+test('Sign-in UI Rendering - retains user entered phone number across render', () => {
+  const htmlWithPhone = renderSignin({
+    whatsappAvailable: true,
+    phone: '+919876543210'
+  });
+  assert.ok(htmlWithPhone.includes('value="9876543210"'));
+});
+
+test('Sign-in UI Rendering - does not silently switch authentication methods when WhatsApp tab is requested while unavailable', () => {
+  const htmlExplicitWa = renderSignin({
+    whatsappAvailable: false,
+    activeTab: 'whatsapp'
+  });
+
+  // WhatsApp tab remains active (not silently switched to Telegram tab)
+  assert.ok(htmlExplicitWa.includes('data-auth-tab="whatsapp" aria-selected="true"'));
+  // WhatsApp panel is visible and displays the clear explanation
+  assert.ok(htmlExplicitWa.includes('data-auth-panel="whatsapp"'));
+  assert.ok(!htmlExplicitWa.includes('data-auth-panel="whatsapp" hidden'));
+  assert.ok(htmlExplicitWa.includes('WhatsApp sign-in is temporarily unavailable'));
+  // Does NOT render broken form inputs when unavailable
+  assert.ok(!htmlExplicitWa.includes('data-wa-phone-form'));
+});
+
+test('Sign-in UI Rendering - does not render broken WhatsApp phone form when WhatsApp is offline', () => {
+  const htmlOffline = renderSignin({ whatsappAvailable: false });
+  assert.ok(htmlOffline.includes('data-wa-unavailable'));
+  assert.ok(!htmlOffline.includes('data-wa-phone-form'));
+  assert.ok(!htmlOffline.includes('name="phone"'));
+  assert.ok(htmlOffline.includes('Continue with Telegram'));
 });
 
 

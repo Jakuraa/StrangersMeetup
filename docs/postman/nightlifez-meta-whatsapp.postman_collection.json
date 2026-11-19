@@ -31,7 +31,7 @@
                 }
               ]
             },
-            "description": "Verifies WABA 1601706958388338 exists, is accessible by the System User, and returns valid business metadata."
+            "description": "Verifies WABA 1155371310259355 (Meta Support-confirmed) exists, is accessible by the System User, and returns valid business metadata. Historical WABA ID 1601706958388338 was disputed by Meta Support."
           }
         },
         {
