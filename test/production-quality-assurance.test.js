@@ -162,8 +162,8 @@ test('Journey 5: Existing user signs in through WhatsApp OTP', async () => {
   const phone = '+919876543202';
   // Seed user
   const u = (await db.query(
-    `INSERT INTO users (phone, alias, age_confirmed_21, age_confirmed_at, status)
-     VALUES ($1, 'kavya_m', true, now(), 'active') RETURNING *`,
+    `INSERT INTO users (phone, alias, display_name, age_confirmed_21, age_confirmed_at, status, onboarding_completed, onboarding_step)
+     VALUES ($1, 'kavya_m', 'kavya_m', true, now(), 'active', true, 6) RETURNING *`,
     [phone]
   )).rows[0];
 

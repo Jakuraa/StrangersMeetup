@@ -178,7 +178,7 @@ export function makeWidgetData(user, { authDate = Math.floor(Date.now() / 1000),
 }
 
 let tgIdSeq = 700000000;
-export async function signedInClient({ ageConfirmed = true, tgId } = {}) {
+export async function signedInClient({ ageConfirmed = true, tgId, onboarded = true } = {}) {
   const c = new Client();
   const id = tgId ?? ++tgIdSeq;
   const r = await c.post('/api/auth/telegram', { initData: makeInitData({ id, first_name: `User${id}` }) });
@@ -187,6 +187,12 @@ export async function signedInClient({ ageConfirmed = true, tgId } = {}) {
   c.tgId = id;
   if (ageConfirmed) await c.post('/api/auth/confirm-age', {});
   c.userId = (await db.one('SELECT id FROM users WHERE telegram_user_id = $1', [id])).id;
+  if (onboarded) {
+    await db.query(
+      `UPDATE users SET onboarding_completed = TRUE, onboarding_step = 6, onboarding_completed_at = NOW() WHERE id = $1`,
+      [c.userId]
+    );
+  }
   return c;
 }
 

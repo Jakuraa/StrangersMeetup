@@ -148,10 +148,11 @@ async function insertPersonas(c) {
   for (const key of PERSONA_KEYS) {
     const p = PERSONAS[key];
     const u = (await c.query(
-      `INSERT INTO users (telegram_user_id, alias, age_confirmed_21, age_confirmed_at, organiser_enabled, status, city)
-       VALUES ($1, $2, true, now(), $3, 'active', 'Chennai')
-       ON CONFLICT (telegram_user_id) DO UPDATE SET alias = EXCLUDED.alias, age_confirmed_21 = true,
-         age_confirmed_at = COALESCE(users.age_confirmed_at, now()), organiser_enabled = EXCLUDED.organiser_enabled, status = 'active'
+      `INSERT INTO users (telegram_user_id, alias, display_name, age_confirmed_21, age_confirmed_at, organiser_enabled, status, city, onboarding_completed, onboarding_step, onboarding_completed_at)
+       VALUES ($1, $2, $2, true, now(), $3, 'active', 'Chennai', true, 6, now())
+       ON CONFLICT (telegram_user_id) DO UPDATE SET alias = EXCLUDED.alias, display_name = EXCLUDED.display_name, age_confirmed_21 = true,
+         age_confirmed_at = COALESCE(users.age_confirmed_at, now()), organiser_enabled = EXCLUDED.organiser_enabled, status = 'active',
+         onboarding_completed = true, onboarding_step = 6, onboarding_completed_at = COALESCE(users.onboarding_completed_at, now())
        RETURNING id`, [p.tg, p.alias, Boolean(p.organiser)])).rows[0];
     ids[key] = u.id;
     for (const cap of p.capabilities || []) {

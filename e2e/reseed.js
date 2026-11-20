@@ -21,6 +21,18 @@ export async function reseed() {
   await db.query('DELETE FROM rate_limits');
 }
 
+export async function makeUserUnonboarded(alias = 'Test Guest Bala') {
+  const { db } = await load();
+  await db.query(
+    `UPDATE users SET onboarding_completed = FALSE, onboarding_step = 0, age_confirmed_21 = FALSE, gender = NULL WHERE alias = $1`,
+    [alias]
+  );
+  await db.query(
+    `DELETE FROM member_interests WHERE user_id = (SELECT id FROM users WHERE alias = $1)`,
+    [alias]
+  );
+}
+
 export async function closeDb() {
   if (handle) { await handle.db.close(); handle = null; }
 }
