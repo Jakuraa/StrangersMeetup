@@ -559,3 +559,96 @@ test('REGRESSION: Direct API bypass to /api/onboarding/complete is rejected with
   assert.equal(compSuccess.status, 200);
   assert.equal(compSuccess.json.completed, true);
 });
+
+test('REGRESSION: Existing member WITHOUT historical age confirmation accesses /me, requires explicit minimal age gate for restricted actions', async () => {
+  const tgUser = nextTgUser('LegacyNoAgeConsent');
+  const past = new Date(Date.now() - 60 * 24 * 3600 * 1000); // 60 days ago
+
+  // Legacy user: onboarding completed in past, but age_confirmed_21 = false (no manufactured consent!)
+  const u = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, display_name, city, gender, created_at, status, age_confirmed_21, onboarding_completed, onboarding_step)
+     VALUES ($1, $2, $2, 'Bengaluru', 'female', $3, 'active', false, true, 6)
+     RETURNING id, telegram_user_id, onboarding_completed, age_confirmed_21`,
+    [tgUser.id, tgUser.first_name, past]
+  )).rows[0];
+
+  assert.equal(u.age_confirmed_21, false);
+  assert.equal(u.onboarding_completed, true);
+
+  // Verify NO consent record exists
+  const consents = await db.query('SELECT * FROM onboarding_consents WHERE user_id = $1', [u.id]);
+  assert.equal(consents.rows.length, 0, 'No manufactured consent in onboarding_consents');
+
+  // Sign in as this legacy user
+  const client = new Client();
+  const authRes = await client.post('/api/auth/telegram', {
+    widget: makeWidgetData(tgUser),
+    ageConfirmed: false
+  });
+  assert.equal(authRes.status, 200);
+  assert.equal(authRes.json.ok, true);
+  // Redirection is to /me (never forced through profile onboarding)
+  assert.equal(authRes.json.redirect, '/me');
+  assert.equal(authRes.json.user.onboardingCompleted, true);
+  client.csrf = authRes.json.csrf;
+
+  // 1. Can view member hub (/me) directly
+  const mePage = await client.get('/me');
+  assert.equal(mePage.status, 200);
+  assert.match(mePage.text, /data-age-gate-banner/, 'Renders explicit 21+ banner for unconfirmed member');
+
+  // 2. Restricted operational action: booking an event is gated by age eligibility
+  const ev = (await db.query(
+    `INSERT INTO events (title, slug, category, city, start_at, capacity, status, ticketing)
+     VALUES ('Test 21+ Event', $1, 'nightlife', 'Bengaluru', now() + interval '1 day', 50, 'published', 'tiers')
+     RETURNING id`,
+    [`event-21-${Date.now()}`]
+  )).rows[0];
+  const tt = (await db.query(
+    `INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking, active)
+     VALUES ($1, 'Free Pass', 'free', 0, 10, 1, true)
+     RETURNING id`,
+    [ev.id]
+  )).rows[0];
+
+  const bookAttempt = await client.post(`/api/events/${encodeURIComponent(ev.id)}/book`, {
+    ticketTypeId: tt.id,
+    quantity: 1,
+    answers: {}
+  });
+  assert.equal(bookAttempt.status, 403);
+  assert.equal(bookAttempt.json.error, 'age_required');
+
+  // 3. User passes the minimal explicit age gate: POST /api/auth/confirm-age
+  const confirmRes = await client.post('/api/auth/confirm-age', {});
+  assert.equal(confirmRes.status, 200);
+  assert.equal(confirmRes.json.ok, true);
+
+  // 4. Verification: genuine consent is now recorded
+  const updatedUser = await db.one('SELECT age_confirmed_21, age_confirmed_at FROM users WHERE id = $1', [u.id]);
+  assert.equal(updatedUser.age_confirmed_21, true);
+  assert.ok(updatedUser.age_confirmed_at);
+
+  const consentRecord = await db.one(
+    `SELECT confirmed, policy_version, consented_at FROM onboarding_consents
+     WHERE user_id = $1 AND consent_type = 'age_21_plus'`,
+    [u.id]
+  );
+  assert.equal(consentRecord.confirmed, true);
+  assert.equal(consentRecord.policy_version, '1.0');
+  assert.ok(consentRecord.consented_at);
+
+  // 5. Booking now succeeds after explicit age confirmation
+  const bookSuccess = await client.post(`/api/events/${encodeURIComponent(ev.id)}/book`, {
+    ticketTypeId: tt.id,
+    quantity: 1,
+    answers: {}
+  });
+  assert.equal(bookSuccess.status, 200);
+  assert.ok(bookSuccess.json.bookingId);
+
+  // 6. Member page no longer shows the age gate banner
+  const mePageAfter = await client.get('/me');
+  assert.equal(mePageAfter.status, 200);
+  assert.doesNotMatch(mePageAfter.text, /data-age-gate-banner/);
+});

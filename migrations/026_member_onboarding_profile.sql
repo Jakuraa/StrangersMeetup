@@ -59,45 +59,44 @@ BEGIN
   END IF;
 
   -- 4a. Grandfather existing pre-migration users:
-  -- Any user created on or before v_cutoff that has a valid account identity
-  -- (telegram_user_id, phone, alias, or linked in admin_users or user_identities or bookings).
-  -- This includes:
-  -- - Members with bookings
-  -- - Members WITHOUT bookings
-  -- - Inactive or active accounts
-  -- - WhatsApp accounts
-  -- - Telegram accounts
-  -- - Admin / bootstrap operator accounts
+  -- Any user created on or before v_cutoff that has a verified account identity
+  -- (telegram_user_id, phone, linked in user_identities, active admin_users, or bookings).
+  -- CRITICAL CONSENT INTEGRITY RULES:
+  -- 1. An alias alone does NOT prove identity, age, or consent; accounts with alias only are NOT grandfathered.
+  -- 2. Existing members are marked onboarding_completed = true so they do NOT repeat profile onboarding.
+  -- 3. NEVER set age_confirmed_21 = true unless an actual historical age-confirmation record exists.
+  -- 4. NEVER manufacture confirmed age-consent records in onboarding_consents.
   UPDATE users SET
     onboarding_completed = true,
     onboarding_completed_at = COALESCE(onboarding_completed_at, age_confirmed_at, created_at, v_cutoff),
     onboarding_step = 6,
     display_name = COALESCE(display_name, alias, 'Member'),
-    age_confirmed_21 = true,
-    age_confirmed_at = COALESCE(age_confirmed_at, created_at, v_cutoff),
-    age_consent_policy_version = COALESCE(age_consent_policy_version, 'historical')
+    age_consent_policy_version = CASE
+      WHEN age_confirmed_21 = true THEN COALESCE(age_consent_policy_version, 'historical')
+      ELSE age_consent_policy_version
+    END
   WHERE created_at <= v_cutoff
     AND onboarding_completed = false
     AND (
       telegram_user_id IS NOT NULL
-      OR phone IS NOT NULL
-      OR alias IS NOT NULL
+      OR (phone IS NOT NULL AND phone <> '')
       OR EXISTS (SELECT 1 FROM user_identities ui WHERE ui.user_id = users.id)
       OR EXISTS (SELECT 1 FROM admin_users au WHERE au.telegram_user_id = users.telegram_user_id AND au.active)
       OR EXISTS (SELECT 1 FROM bookings b WHERE b.user_id = users.id)
     );
 
-  -- 4b. Record historical age consent in onboarding_consents for all grandfathered users
-  -- so their consent audit trail is consistent and they never face duplicate consent prompts
+  -- 4b. Record historical age consent ONLY for users who ACTUALLY had age_confirmed_21 = true.
+  -- We NEVER manufacture confirmed age-consent records for users without genuine evidence.
   INSERT INTO onboarding_consents (user_id, consent_type, confirmed, policy_version, consented_at)
   SELECT
     id,
     'age_21_plus',
     true,
     COALESCE(age_consent_policy_version, 'historical'),
-    COALESCE(age_confirmed_at, onboarding_completed_at, created_at, v_cutoff)
+    COALESCE(age_confirmed_at, created_at, v_cutoff)
   FROM users
-  WHERE onboarding_completed = true
+  WHERE created_at <= v_cutoff
+    AND age_confirmed_21 = true
   ON CONFLICT (user_id, consent_type) DO UPDATE SET
     confirmed = true
   WHERE onboarding_consents.confirmed IS NOT TRUE;

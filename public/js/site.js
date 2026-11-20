@@ -927,6 +927,20 @@
   function initAttendeeHub() {
     var hub = $('[data-attendee-hub]');
     if (!hub) return;
+
+    var ageGateBtn = $('[data-confirm-age-btn]', hub);
+    if (ageGateBtn) {
+      ageGateBtn.addEventListener('click', function () {
+        confirmAge().then(function (ok) {
+          if (ok) {
+            var banner = $('[data-age-gate-banner]', hub);
+            if (banner) banner.remove();
+            if (state.me) state.me.ageConfirmed = true;
+          }
+        });
+      });
+    }
+
     var tabBtns = $$('[data-hub-tab]', hub);
     tabBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
