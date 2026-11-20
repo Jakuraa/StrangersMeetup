@@ -176,7 +176,17 @@
             a.textContent = 'Sign in with Telegram';
             a.setAttribute('href', '/signin');
           }
+          if (a.hasAttribute('data-auth-button')) {
+            a.textContent = 'Continue with Telegram';
+            a.setAttribute('aria-label', 'Continue with Telegram');
+            a.setAttribute('href', '/signin');
+            a.classList.remove('btn-ghost');
+            a.classList.add('btn-tg');
+          }
         }
+      });
+      $$('[data-nav-signout-li]').forEach(function (el) {
+        el.hidden = !state.me;
       });
       return state.me;
     }).catch(function () { return null; });
@@ -498,69 +508,147 @@
     }
   }
 
-  /* Telegram Login Widget on /signin */
+  /* Telegram Login Widget on /signin — Explicit user initiation flow */
   var widget = $('[data-tg-widget]');
+  var tgStartBtn = $('[data-tg-start-btn]');
   if (widget) {
     var age = $('[data-age-confirm]');
     var msg = $('[data-signin-msg]');
+    var actionWrap = $('[data-tg-action-wrap]');
+    var widgetWrap = $('[data-tg-widget-wrap]');
+    var loadingEl = $('[data-tg-widget-loading]');
+    var widgetInjected = false;
+    var widgetLoading = false;
     var pendingUser = null;
+
     var doAuth = function (u) {
-      msg.className = 'form-msg';
-      msg.textContent = 'Verifying Telegram sign-in…';
-      api('POST', '/api/auth/telegram', { widget: u, ageConfirmed: true }).then(function (r) { afterAuth(r, msg); });
+      if (msg) {
+        msg.className = 'form-msg';
+        msg.textContent = 'Verifying Telegram sign-in…';
+      }
+      api('POST', '/api/auth/telegram', { widget: u, ageConfirmed: true }).then(function (r) {
+        afterAuth(r, msg);
+      });
     };
+
     var sync = function () {
-      widget.setAttribute('aria-disabled', age.checked ? 'false' : 'true');
-      if (age.checked && pendingUser) {
+      widget.setAttribute('aria-disabled', age && age.checked ? 'false' : 'true');
+      if (age && age.checked && pendingUser) {
         var u = pendingUser;
         pendingUser = null;
         doAuth(u);
       }
     };
-    age.addEventListener('change', sync); sync();
+    if (age) age.addEventListener('change', sync);
+
     window.smTelegramAuth = function (user) {
-      if (!age.checked) {
+      if (!age || !age.checked) {
         pendingUser = user;
-        msg.className = 'form-msg error';
-        msg.textContent = 'Please confirm you are 21 or older above to complete sign-in.';
+        if (msg) {
+          msg.className = 'form-msg error';
+          msg.textContent = 'Please confirm you are 21 or older above to complete sign-in.';
+        }
         return;
       }
       doAuth(user);
     };
 
-    var stateNonce = '';
-    if (window.crypto && window.crypto.getRandomValues) {
-      var arr = new Uint8Array(16);
-      window.crypto.getRandomValues(arr);
-      stateNonce = Array.from(arr, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
-    } else {
-      stateNonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    }
-    var isHttps = location.protocol === 'https:';
-    document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/auth/telegram; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
+    function startTelegramLogin() {
+      if (widgetInjected || widgetLoading) return;
 
-    var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
-    var callbackUrl = '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
-
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://telegram.org/js/telegram-widget.js?22';
-    s.setAttribute('data-telegram-login', widget.getAttribute('data-bot'));
-    s.setAttribute('data-size', 'large');
-    s.setAttribute('data-radius', '22');
-    s.setAttribute('data-request-access', 'write');
-    s.setAttribute('data-auth-url', callbackUrl);
-    widget.appendChild(s);
-
-    try {
-      var obs = new MutationObserver(function () {
-        var ifr = widget.querySelector('iframe');
-        if (ifr && !ifr.getAttribute('title')) {
-          ifr.setAttribute('title', 'Log in with Telegram');
+      // 1. Explicit 21+ age confirmation required before loading widget
+      if (!age || !age.checked) {
+        if (msg) {
+          msg.className = 'form-msg error';
+          msg.textContent = 'Please confirm you are 21 or older to continue with Telegram.';
+          msg.setAttribute('data-tg-error', '');
         }
-      });
-      obs.observe(widget, { childList: true, subtree: true });
-    } catch (e) { /* ignore */ }
+        if (age) age.focus();
+        return;
+      }
+
+      if (msg) {
+        msg.className = 'form-msg';
+        msg.textContent = '';
+        msg.removeAttribute('data-tg-error');
+      }
+
+      widgetLoading = true;
+      if (tgStartBtn) tgStartBtn.disabled = true;
+      if (actionWrap) actionWrap.hidden = true;
+      if (widgetWrap) widgetWrap.hidden = false;
+      if (loadingEl) loadingEl.hidden = false;
+
+      // 2. Generate secure state nonce for CSRF & replay protection
+      var stateNonce = '';
+      if (window.crypto && window.crypto.getRandomValues) {
+        var arr = new Uint8Array(16);
+        window.crypto.getRandomValues(arr);
+        stateNonce = Array.from(arr, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+      } else {
+        stateNonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      }
+      var isHttps = location.protocol === 'https:';
+      document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/auth/telegram; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
+
+      var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
+      var callbackUrl = '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
+
+      // 3. Inject Telegram widget script only upon explicit user click
+      var existingScript = widget.querySelector('script[src*="telegram-widget.js"]');
+      if (!existingScript) {
+        var s = document.createElement('script');
+        s.async = true;
+        s.src = 'https://telegram.org/js/telegram-widget.js?22';
+        s.setAttribute('data-telegram-login', widget.getAttribute('data-bot'));
+        s.setAttribute('data-size', 'large');
+        s.setAttribute('data-radius', '22');
+        s.setAttribute('data-request-access', 'write');
+        s.setAttribute('data-auth-url', callbackUrl);
+
+        s.onerror = function () {
+          widgetLoading = false;
+          widgetInjected = false;
+          if (loadingEl) loadingEl.hidden = true;
+          if (actionWrap) actionWrap.hidden = false;
+          if (tgStartBtn) tgStartBtn.disabled = false;
+          if (widgetWrap) widgetWrap.hidden = true;
+          if (msg) {
+            msg.className = 'form-msg error';
+            msg.textContent = 'Unable to connect to Telegram. Please check your internet connection and try again.';
+          }
+        };
+
+        s.onload = function () {
+          widgetInjected = true;
+          widgetLoading = false;
+          setTimeout(function () {
+            if (loadingEl) loadingEl.hidden = true;
+          }, 1500);
+        };
+
+        widget.appendChild(s);
+      }
+
+      try {
+        var obs = new MutationObserver(function () {
+          var ifr = widget.querySelector('iframe');
+          if (ifr) {
+            widgetInjected = true;
+            widgetLoading = false;
+            if (loadingEl) loadingEl.hidden = true;
+            if (!ifr.getAttribute('title')) {
+              ifr.setAttribute('title', 'Log in with Telegram');
+            }
+          }
+        });
+        obs.observe(widget, { childList: true, subtree: true });
+      } catch (e) { /* ignore */ }
+    }
+
+    if (tgStartBtn) {
+      tgStartBtn.addEventListener('click', startTelegramLogin);
+    }
   }
 
   /* Local test personas (the server returns 404 unless persona sign-in is enabled on this machine). */
@@ -1150,11 +1238,22 @@
     tick();
   }
 
-  var signout = $('[data-signout]');
-  if (signout) signout.addEventListener('click', function () {
-    api('POST', '/api/auth/logout', {}).then(function (j) {
-      if (j.ok) { location.href = '/'; return; }
-      signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+  $$('[data-signout]').forEach(function (signout) {
+    signout.addEventListener('click', function () {
+      signout.disabled = true;
+      api('POST', '/api/auth/logout', {}).then(function (j) {
+        if (j.ok) {
+          state.me = null;
+          state.csrf = null;
+          location.href = '/signin';
+          return;
+        }
+        signout.disabled = false;
+        signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+      }).catch(function () {
+        signout.disabled = false;
+        signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+      });
     });
   });
 
