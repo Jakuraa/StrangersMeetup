@@ -115,11 +115,12 @@ test.describe('New Member Onboarding Journey', () => {
     await page.getByRole('button', { name: /Test Guest Bala/ }).click();
     await page.waitForLoadState('domcontentloaded');
 
+    await page.goto('/onboarding');
+    await page.waitForLoadState('domcontentloaded');
+
     const widths = [320, 360, 375, 393, 430, 768, 1024, 1280];
     for (const width of widths) {
       await page.setViewportSize({ width, height: 800 });
-      await page.goto('/onboarding');
-      await page.waitForLoadState('domcontentloaded');
       await expectNoHorizontalOverflow(page);
     }
   });
