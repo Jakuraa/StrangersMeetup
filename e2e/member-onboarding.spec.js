@@ -21,11 +21,7 @@ test.describe('New Member Onboarding Journey', () => {
 
     // 2. Sign in as Bala (un-onboarded test user)
     await page.getByRole('button', { name: /Test Guest Bala/ }).click();
-    await page.waitForLoadState('domcontentloaded');
-
-    // Bala is routed to /onboarding because onboarding_completed is false
-    await page.goto('/onboarding');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForURL(/\/onboarding/);
 
     const container = page.locator('[data-onboarding-container]');
     await expect(container).toBeVisible();
@@ -113,10 +109,7 @@ test.describe('New Member Onboarding Journey', () => {
     // Sign in as Bala to view /onboarding
     await page.goto('/signin');
     await page.getByRole('button', { name: /Test Guest Bala/ }).click();
-    await page.waitForLoadState('domcontentloaded');
-
-    await page.goto('/onboarding');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForURL(/\/onboarding/);
 
     const widths = [320, 360, 375, 393, 430, 768, 1024, 1280];
     for (const width of widths) {
@@ -129,10 +122,7 @@ test.describe('New Member Onboarding Journey', () => {
     await page.setViewportSize({ width: 393, height: 852 });
     await page.goto('/signin');
     await page.getByRole('button', { name: /Test Guest Bala/ }).click();
-    await page.waitForLoadState('domcontentloaded');
-
-    await page.goto('/onboarding');
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForURL(/\/onboarding/);
 
     const signoutBtn = page.locator('header [data-signout]');
     await expect(signoutBtn).toBeVisible();
