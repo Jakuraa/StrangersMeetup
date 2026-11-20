@@ -433,3 +433,129 @@ test('ONBOARDING: Preserves intended next URL redirect after completion', async 
   assert.equal(directRes.status, 302);
   assert.equal(directRes.headers.get('location'), '/events/weekend-special');
 });
+
+test('REGRESSION: Existing user WITHOUT bookings bypasses onboarding and accesses member experience directly', async () => {
+  // Create an existing user who has NO bookings, but is already marked onboarded (grandfathered)
+  const tgUser = nextTgUser('Existing NoBookings');
+  const past = new Date(Date.now() - 30 * 24 * 3600 * 1000); // 30 days ago
+  const u = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, display_name, city, gender, created_at, status, age_confirmed_21, onboarding_completed, onboarding_step)
+     VALUES ($1, $2, $2, 'Bengaluru', 'female', $3, 'active', true, true, 6)
+     RETURNING id, telegram_user_id, onboarding_completed`,
+    [tgUser.id, tgUser.first_name, past]
+  )).rows[0];
+
+  // Insert historical consent
+  await db.query(
+    `INSERT INTO onboarding_consents (user_id, consent_type, confirmed, policy_version, consented_at)
+     VALUES ($1, 'age_21_plus', true, 'historical', $2)`,
+    [u.id, past]
+  );
+
+  // Confirm NO bookings exist for this user
+  const bks = await db.query('SELECT * FROM bookings WHERE user_id = $1', [u.id]);
+  assert.equal(bks.rows.length, 0, 'Must have zero bookings');
+
+  // Sign in as this existing user
+  const client = new Client();
+  const authRes = await client.post('/api/auth/telegram', {
+    widget: makeWidgetData(tgUser),
+    ageConfirmed: true
+  });
+  assert.equal(authRes.status, 200);
+  assert.equal(authRes.json.ok, true);
+  // Redirection MUST be directly to /me, NOT /onboarding!
+  assert.equal(authRes.json.redirect, '/me');
+  assert.equal(authRes.json.user.onboardingCompleted, true);
+
+  // Directly requesting /onboarding redirects immediately to /me
+  const obRes = await client.get('/onboarding');
+  assert.equal(obRes.status, 302);
+  assert.equal(obRes.headers.get('location'), '/me');
+
+  // Requesting /me succeeds without redirect
+  const mePage = await client.get('/me');
+  assert.equal(mePage.status, 200);
+});
+
+test('REGRESSION: Age eligibility rejection clears age_confirmed_21 and records confirmed=false in onboarding_consents', async () => {
+  const client = new Client();
+  const tgUser = nextTgUser('Underage Reject');
+
+  const authRes = await client.post('/api/auth/telegram', {
+    widget: makeWidgetData(tgUser),
+    ageConfirmed: true
+  });
+  client.csrf = authRes.json.csrf;
+  const user = await db.one('SELECT id FROM users WHERE telegram_user_id = $1', [tgUser.id]);
+
+  // User submits confirmed = false (under 21)
+  const ageRes = await client.post('/api/onboarding/age', { confirmed: false });
+  assert.equal(ageRes.status, 200);
+  assert.equal(ageRes.json.eligible, false);
+  assert.equal(ageRes.json.rejected, true);
+
+  // Verify users.age_confirmed_21 is now false
+  const updatedUser = await db.one('SELECT age_confirmed_21 FROM users WHERE id = $1', [user.id]);
+  assert.equal(updatedUser.age_confirmed_21, false, 'age_confirmed_21 must be false after rejection');
+
+  // Verify onboarding_consents has confirmed = false
+  const consent = await db.one(
+    `SELECT confirmed FROM onboarding_consents WHERE user_id = $1 AND consent_type = 'age_21_plus'`,
+    [user.id]
+  );
+  assert.equal(consent.confirmed, false, 'onboarding_consents must record confirmed=false');
+
+  // Direct attempt to complete onboarding must fail with 403 age_ineligible
+  await client.post('/api/onboarding/profile', {
+    displayName: 'Underage User',
+    gender: 'prefer_not_to_say',
+    city: 'Chennai'
+  });
+  await client.post('/api/onboarding/interests', {
+    interests: ['parties_nightlife']
+  });
+  const completeRes = await client.post('/api/onboarding/complete', {});
+  assert.equal(completeRes.status, 400);
+  assert.match(completeRes.json.message, /Age confirmation is required/);
+});
+
+test('REGRESSION: Direct API bypass to /api/onboarding/complete is rejected with 403 when age consent is missing', async () => {
+  const client = new Client();
+  const tgUser = nextTgUser('SkipAge Consent');
+
+  const authRes = await client.post('/api/auth/telegram', {
+    widget: makeWidgetData(tgUser),
+    ageConfirmed: true
+  });
+  client.csrf = authRes.json.csrf;
+  const user = await db.one('SELECT id FROM users WHERE telegram_user_id = $1', [tgUser.id]);
+
+  // Ensure no onboarding_consents record exists
+  await db.query('DELETE FROM onboarding_consents WHERE user_id = $1', [user.id]);
+
+  // Save profile and interests, skipping age confirmation step
+  await client.post('/api/onboarding/profile', {
+    displayName: 'Skipped Age',
+    gender: 'male',
+    city: 'Hyderabad'
+  });
+  await client.post('/api/onboarding/interests', {
+    interests: ['dining_food']
+  });
+
+  // Attempt to call complete directly
+  const compRes = await client.post('/api/onboarding/complete', {});
+  assert.equal(compRes.status, 403);
+  assert.equal(compRes.json.error, 'age_ineligible');
+
+  // Complete age confirmation properly
+  const ageRes = await client.post('/api/onboarding/age', { confirmed: true, policyVersion: '1.0' });
+  assert.equal(ageRes.status, 200);
+  assert.equal(ageRes.json.eligible, true);
+
+  // Now complete succeeds
+  const compSuccess = await client.post('/api/onboarding/complete', {});
+  assert.equal(compSuccess.status, 200);
+  assert.equal(compSuccess.json.completed, true);
+});
