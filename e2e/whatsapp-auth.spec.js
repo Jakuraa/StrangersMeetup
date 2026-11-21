@@ -56,8 +56,28 @@ test.describe('WhatsApp OTP Authentication E2E', () => {
     await page.locator('#otp-input').fill(code);
     await page.locator('[data-wa-verify-btn]').click();
 
-    // 5. User lands on /me authenticated
-    await page.waitForURL(/\/me$/);
+    // 5. User lands on /onboarding (new member) or /me (existing member)
+    await page.waitForURL(/\/onboarding|\/me$/);
+    if (page.url().includes('/onboarding')) {
+      // Step 1: Welcome
+      await page.locator('[data-onboard-action="next-step"][data-target-step="2"]').click();
+      // Step 2: 21+ Age confirmation
+      await page.locator('#onboard-age-check').check();
+      await page.locator('[data-onboard-submit="2"]').click();
+      // Step 3: Profile
+      await page.locator('#onboard-display-name').fill('WhatsApp User');
+      await page.locator('#onboard-gender').selectOption('prefer_not_to_say');
+      await page.locator('#onboard-city').selectOption('Bengaluru');
+      await page.locator('[data-onboard-submit="3"]').click();
+      // Step 4: Interests
+      await page.locator('label:has(input[value="parties_nightlife"])').click();
+      await page.locator('[data-onboard-submit="4"]').click();
+      // Step 5: Optional details
+      await page.locator('[data-onboard-submit="5"]').click();
+      // Step 6: Finish
+      await page.locator('[data-onboard-action="finish-onboarding"]').click();
+      await page.waitForURL(/\/me$/);
+    }
     await expect(page.getByRole('heading', { level: 1 })).toContainText('My bookings');
 
     // 6. Navigate to Account & Logins tab

@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 23 migrations currently exist: 003 through 025
-  assert.equal(files.length, 23, `expected 23 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 24 migrations currently exist: 003 through 026
+  assert.equal(files.length, 24, `expected 24 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 23 migrations in correct order', async () => {
+test('schema_migrations table records all 24 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 23);
+  assert.equal(rows.length, 24);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 23
+  // Total count in schema_migrations must remain exactly 24
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 23);
+  assert.equal(countRes.n, 24);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -215,4 +215,141 @@ test('REV-07: ticket-tier active hold index (idx_payments_active_tier_holds) and
   } finally {
     await db.query(`SET enable_seqscan = ON;`);
   }
+});
+
+test('migration 026: safe grandfathering of pre-existing accounts without bookings, consent integrity, and isolation from new registrations', async () => {
+  // 1. Insert pre-existing accounts created before migration cutoff
+  const past = new Date(Date.now() - 48 * 3600 * 1000); // 2 days ago
+
+  // Existing WhatsApp member WITH historical age confirmation
+  const uWhatsAppWithAge = (await db.query(
+    `INSERT INTO users (phone, alias, created_at, status, age_confirmed_21, age_confirmed_at, onboarding_completed, onboarding_step)
+     VALUES ('+919811111111', 'PreWaWithAge', $1, 'active', true, $1, false, 0)
+     RETURNING id, phone, alias, onboarding_completed, age_confirmed_21`,
+    [past]
+  )).rows[0];
+
+  // Existing Telegram member WITH historical age confirmation
+  const uTelegramWithAge = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, created_at, status, age_confirmed_21, age_confirmed_at, onboarding_completed, onboarding_step)
+     VALUES (770001, 'PreTgWithAge', $1, 'active', true, $1, false, 0)
+     RETURNING id, telegram_user_id, alias, onboarding_completed, age_confirmed_21`,
+    [past]
+  )).rows[0];
+
+  // Existing member WITHOUT historical age confirmation (age_confirmed_21 = false)
+  const uExistingWithoutAge = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, created_at, status, age_confirmed_21, age_confirmed_at, onboarding_completed, onboarding_step)
+     VALUES (770002, 'PreTgNoAgeConsent', $1, 'active', false, null, false, 0)
+     RETURNING id, telegram_user_id, alias, onboarding_completed, age_confirmed_21`,
+    [past]
+  )).rows[0];
+
+  // Existing member without bookings (phone identity)
+  const uWithoutBookings = (await db.query(
+    `INSERT INTO users (phone, alias, created_at, status, age_confirmed_21, age_confirmed_at, onboarding_completed, onboarding_step)
+     VALUES ('+919822222222', 'PreWaNoBookings', $1, 'active', true, $1, false, 0)
+     RETURNING id, phone, alias, onboarding_completed`,
+    [past]
+  )).rows[0];
+
+  // Existing admin account
+  const uAdmin = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, created_at, status, age_confirmed_21, age_confirmed_at, onboarding_completed, onboarding_step)
+     VALUES (770003, 'PreAdminUser', $1, 'active', true, $1, false, 0)
+     RETURNING id, telegram_user_id, alias, onboarding_completed`,
+    [past]
+  )).rows[0];
+  await db.query(
+    `INSERT INTO admin_users (telegram_user_id, role, active) VALUES (770003, 'event_manager', true)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET active = true`
+  );
+
+  // Ghost user with alias ONLY (NO phone, NO telegram_user_id, NO user_identities, NO admin, NO bookings)
+  const uAliasOnly = (await db.query(
+    `INSERT INTO users (alias, created_at, status, age_confirmed_21, onboarding_completed, onboarding_step)
+     VALUES ('AliasOnlyGhost', $1, 'active', false, false, 0)
+     RETURNING id, alias, onboarding_completed`,
+    [past]
+  )).rows[0];
+
+  // 2. Execute migration 026 SQL logic
+  const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, '026_member_onboarding_profile.sql'), 'utf8');
+  await db.tx(async (c) => {
+    await c.query(sql);
+  });
+
+  // 3. Verify grandfathering and consent integrity:
+  // - WhatsApp member with age confirmation: grandfathered, age preserved, historical consent recorded
+  const checkWa = (await db.query('SELECT * FROM users WHERE id = $1', [uWhatsAppWithAge.id])).rows[0];
+  assert.equal(checkWa.onboarding_completed, true);
+  assert.equal(checkWa.onboarding_step, 6);
+  assert.equal(checkWa.age_confirmed_21, true, 'genuine historical age confirmation preserved');
+
+  // - Telegram member with age confirmation: grandfathered, age preserved, historical consent recorded
+  const checkTg = (await db.query('SELECT * FROM users WHERE id = $1', [uTelegramWithAge.id])).rows[0];
+  assert.equal(checkTg.onboarding_completed, true);
+  assert.equal(checkTg.onboarding_step, 6);
+  assert.equal(checkTg.age_confirmed_21, true, 'genuine historical age confirmation preserved');
+
+  // - Existing member WITHOUT historical age confirmation:
+  // Must be marked onboarding_completed = true so they don't repeat profile onboarding,
+  // BUT age_confirmed_21 MUST REMAIN false! Never manufacture consent!
+  const checkNoAge = (await db.query('SELECT * FROM users WHERE id = $1', [uExistingWithoutAge.id])).rows[0];
+  assert.equal(checkNoAge.onboarding_completed, true, 'does not repeat full profile onboarding');
+  assert.equal(checkNoAge.onboarding_step, 6);
+  assert.equal(checkNoAge.age_confirmed_21, false, 'NEVER set age_confirmed_21 = true without genuine evidence');
+
+  // Verify onboarding_consents has NO confirmed record for user without historical confirmation!
+  const noAgeConsent = (await db.query(
+    `SELECT * FROM onboarding_consents WHERE user_id = $1 AND confirmed = true`,
+    [uExistingWithoutAge.id]
+  )).rows;
+  assert.equal(noAgeConsent.length, 0, 'NEVER manufacture confirmed age-consent records');
+
+  // - Member without bookings: grandfathered
+  const checkNoBk = (await db.query('SELECT * FROM users WHERE id = $1', [uWithoutBookings.id])).rows[0];
+  assert.equal(checkNoBk.onboarding_completed, true);
+  assert.equal(checkNoBk.onboarding_step, 6);
+
+  // - Admin user: grandfathered
+  const checkAdm = (await db.query('SELECT * FROM users WHERE id = $1', [uAdmin.id])).rows[0];
+  assert.equal(checkAdm.onboarding_completed, true);
+  assert.equal(checkAdm.onboarding_step, 6);
+
+  // - Ghost user with alias only: NOT grandfathered (an alias alone does not prove identity, age, or consent)
+  const checkAliasOnly = (await db.query('SELECT * FROM users WHERE id = $1', [uAliasOnly.id])).rows[0];
+  assert.equal(checkAliasOnly.onboarding_completed, false, 'alias alone must NOT be treated as verified identity');
+  assert.equal(checkAliasOnly.onboarding_step, 0);
+
+  // 4. Test genuinely new WhatsApp & Telegram registrations created AFTER migration cutoff
+  const uNewWa = (await db.query(
+    `INSERT INTO users (phone, alias, created_at, status, onboarding_completed, onboarding_step)
+     VALUES ('+919833333333', 'NewWaUserPostMig', now() + interval '10 seconds', 'active', false, 0)
+     RETURNING id, onboarding_completed, onboarding_step`
+  )).rows[0];
+
+  const uNewTg = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, created_at, status, onboarding_completed, onboarding_step)
+     VALUES (880001, 'NewTgUserPostMig', now() + interval '10 seconds', 'active', false, 0)
+     RETURNING id, onboarding_completed, onboarding_step`
+  )).rows[0];
+
+  // 5. Re-run migration 026 (idempotency test)
+  await db.tx(async (c) => {
+    await c.query(sql);
+  });
+
+  // Verify new registrations remain subject to onboarding
+  const checkNewWa = (await db.query('SELECT * FROM users WHERE id = $1', [uNewWa.id])).rows[0];
+  assert.equal(checkNewWa.onboarding_completed, false, 'new WhatsApp user must NOT be grandfathered on rerun');
+  assert.equal(checkNewWa.onboarding_step, 0);
+
+  const checkNewTg = (await db.query('SELECT * FROM users WHERE id = $1', [uNewTg.id])).rows[0];
+  assert.equal(checkNewTg.onboarding_completed, false, 'new Telegram user must NOT be grandfathered on rerun');
+  assert.equal(checkNewTg.onboarding_step, 0);
+
+  // Verify uExistingWithoutAge still has age_confirmed_21 = false after migration rerun
+  const checkNoAgeRerun = (await db.query('SELECT age_confirmed_21 FROM users WHERE id = $1', [uExistingWithoutAge.id])).rows[0];
+  assert.equal(checkNoAgeRerun.age_confirmed_21, false, 'rerun must never manufacture age confirmation');
 });

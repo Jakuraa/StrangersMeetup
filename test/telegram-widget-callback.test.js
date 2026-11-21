@@ -20,11 +20,21 @@ function buildCallbackQuery(widgetData, state, next) {
   return params.toString();
 }
 
+async function seedOnboardedUser(id, alias = 'User') {
+  await db.query(
+    `INSERT INTO users (telegram_user_id, alias, display_name, age_confirmed_21, status, onboarding_completed, onboarding_step)
+     VALUES ($1, $2, $2, true, 'active', true, 6)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET onboarding_completed = true, onboarding_step = 6`,
+    [id, alias]
+  );
+}
+
 test('valid Telegram widget callback establishes session, clears state cookie, and redirects to next', async () => {
   const c = new Client();
   const state = crypto.randomBytes(16).toString('hex');
   c.cookies.sm_tg_state = state;
 
+  await seedOnboardedUser(5001, 'Aditi');
   const widget = makeWidgetData({ id: 5001, first_name: 'Aditi', username: 'aditi_dev' });
   const qs = buildCallbackQuery(widget, state, '/admin');
 
@@ -147,6 +157,7 @@ test('expired auth_date (> 86400s old) is rejected', async () => {
 });
 
 test('anti-replay protection rejects duplicate callback hash', async () => {
+  await seedOnboardedUser(5008, 'Grace');
   const widget = makeWidgetData({ id: 5008, first_name: 'Grace' });
 
   // First attempt: succeeds
@@ -184,6 +195,7 @@ test('unsafe redirect destinations are sanitized to /me', async () => {
     const state = crypto.randomBytes(16).toString('hex');
     c.cookies.sm_tg_state = state;
 
+    await seedOnboardedUser(5010 + i, `Target${i}`);
     const widget = makeWidgetData({ id: 5010 + i, first_name: `Target${i}` });
     const qs = buildCallbackQuery(widget, state, unsafeTargets[i]);
 
@@ -198,6 +210,7 @@ test('payload containing is_premium is verified and establishes session', async 
   const state = crypto.randomBytes(16).toString('hex');
   c.cookies.sm_tg_state = state;
 
+  await seedOnboardedUser(5020, 'PremiumUser');
   const widget = makeWidgetData({ id: 5020, first_name: 'PremiumUser', username: 'vip_user', is_premium: 'true' });
   const qs = buildCallbackQuery(widget, state, '/me');
 
@@ -216,6 +229,7 @@ test('payload containing language_code is verified and establishes session', asy
   const state = crypto.randomBytes(16).toString('hex');
   c.cookies.sm_tg_state = state;
 
+  await seedOnboardedUser(5021, 'LangUser');
   const widget = makeWidgetData({ id: 5021, first_name: 'LangUser', username: 'lang_user', language_code: 'en' });
   const qs = buildCallbackQuery(widget, state, '/me');
 
@@ -230,6 +244,7 @@ test('payload containing multiple extra Telegram fields is verified', async () =
   const state = crypto.randomBytes(16).toString('hex');
   c.cookies.sm_tg_state = state;
 
+  await seedOnboardedUser(5022, 'FullMeta');
   const widget = makeWidgetData({
     id: 5022,
     first_name: 'FullMeta',
@@ -338,6 +353,7 @@ test('unauthorized user cannot access /admin and cannot bootstrap administrator 
   const state = crypto.randomBytes(16).toString('hex');
   c.cookies.sm_tg_state = state;
 
+  await seedOnboardedUser(888888888, 'NormalUser');
   // ID 888888888 !== ADMIN_BOOTSTRAP_TELEGRAM_ID (which is 900000001)
   const widget = makeWidgetData({ id: 888888888, first_name: 'NormalUser' });
   const qs = buildCallbackQuery(widget, state, '/admin');

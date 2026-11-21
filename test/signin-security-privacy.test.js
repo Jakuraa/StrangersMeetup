@@ -80,6 +80,11 @@ test('3. Enter-key submission cannot leak a phone number into URL query string',
 test('4. JavaScript-disabled submission does not expose PII and completes verification', async () => {
   const c = new Client();
   const phone = '9876543211';
+  await db.query(
+    `INSERT INTO users (phone, alias, display_name, age_confirmed_21, status, onboarding_completed, onboarding_step)
+     VALUES ('+919876543211', 'User9876543211', 'User9876543211', true, 'active', true, 6)
+     ON CONFLICT (phone) DO UPDATE SET onboarding_completed = true`
+  );
 
   // Step A: Submit phone number with JS disabled (HTML POST)
   const formBody = new URLSearchParams({

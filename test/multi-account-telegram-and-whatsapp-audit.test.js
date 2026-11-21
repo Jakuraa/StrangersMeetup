@@ -25,6 +25,13 @@ function buildCallbackQuery(widgetData, state, next) {
 /* ========================================================================== */
 
 test('Telegram multi-account: accepts authentication from any valid Telegram account', async () => {
+  await db.query(
+    `INSERT INTO users (telegram_user_id, alias, display_name, age_confirmed_21, status, onboarding_completed, onboarding_step)
+     VALUES (70001, 'Alice', 'Alice', true, 'active', true, 6),
+            (70002, 'Bob', 'Bob', true, 'active', true, 6)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET onboarding_completed = true, onboarding_step = 6`
+  );
+
   // Test Account 1: User 70001 (Alice)
   const client1 = new Client();
   const state1 = crypto.randomBytes(16).toString('hex');

@@ -330,6 +330,8 @@ test('UI Rendering - /signin and /me pages conform to modern web standards', asy
     code: otp
   });
 
+  await db.query(`UPDATE users SET onboarding_completed = TRUE, onboarding_step = 6 WHERE phone = '+919999988888'`);
+
   const mePage = await c.get('/me');
   assert.equal(mePage.status, 200);
   assert.match(mePage.text, /data-hub-tab="account"/);

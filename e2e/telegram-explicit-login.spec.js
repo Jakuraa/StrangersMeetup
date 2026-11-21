@@ -119,15 +119,15 @@ test.describe('Telegram Explicit Initiation & Session Logout', () => {
 
     await page.locator('#otp-input').fill(devOtp);
     await page.locator('[data-wa-verify-btn]').click();
-    await page.waitForURL(/\/me$/);
+    await page.waitForURL(/\/onboarding|\/me$/);
 
     // Verify session exists
     let cookies = await page.context().cookies();
     let sessionCookie = cookies.find((c) => c.name === 'sm_session');
     expect(sessionCookie).toBeTruthy();
 
-    // Click sign out in attendee hub
-    const signoutBtn = page.locator('[data-attendee-hub] [data-signout]');
+    // Click sign out (works in focused onboarding header or attendee hub)
+    const signoutBtn = page.locator('[data-signout]').first();
     await expect(signoutBtn).toBeVisible();
     await signoutBtn.click();
 
@@ -171,17 +171,23 @@ test.describe('Telegram Explicit Initiation & Session Logout', () => {
 
     await page.locator('#otp-input').fill(devOtp);
     await page.locator('[data-wa-verify-btn]').click();
-    await page.waitForURL(/\/me$/);
+    await page.waitForURL(/\/onboarding|\/me$/);
 
-    // Open mobile hamburger menu
-    const navToggle = page.locator('.nav-toggle');
-    await expect(navToggle).toBeVisible();
-    await navToggle.click();
+    if (page.url().includes('/onboarding')) {
+      const headerSignout = page.locator('header [data-signout]');
+      await expect(headerSignout).toBeVisible();
+      await headerSignout.click();
+    } else {
+      // Open mobile hamburger menu
+      const navToggle = page.locator('.nav-toggle');
+      await expect(navToggle).toBeVisible();
+      await navToggle.click();
 
-    // Mobile signout button should be visible in drawer
-    const mobileSignoutBtn = page.locator('.mobile-signout-btn');
-    await expect(mobileSignoutBtn).toBeVisible();
-    await mobileSignoutBtn.click();
+      // Mobile signout button should be visible in drawer
+      const mobileSignoutBtn = page.locator('.mobile-signout-btn');
+      await expect(mobileSignoutBtn).toBeVisible();
+      await mobileSignoutBtn.click();
+    }
 
     // Verify redirected to /signin
     await page.waitForURL(/\/signin/);

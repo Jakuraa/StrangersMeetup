@@ -164,29 +164,46 @@
       state.csrf = r.csrf || null;
       $$('[data-auth-button], [data-nav-auth-link]').forEach(function (a) {
         if (state.me) {
-          a.textContent = 'My bookings';
-          a.setAttribute('aria-label', 'My bookings');
-          a.setAttribute('href', '/me');
-          if (a.hasAttribute('data-auth-button')) {
-            a.classList.remove('btn-tg');
-            a.classList.add('btn-ghost');
+          if (state.me.onboardingCompleted) {
+            a.textContent = 'My bookings';
+            a.setAttribute('aria-label', 'My bookings');
+            a.setAttribute('href', '/me');
+            if (a.hasAttribute('data-auth-button')) {
+              a.classList.remove('btn-tg', 'btn-primary');
+              a.classList.add('btn-ghost');
+            }
+          } else {
+            a.textContent = 'Complete Profile';
+            a.setAttribute('aria-label', 'Complete onboarding profile');
+            a.setAttribute('href', '/onboarding');
+            if (a.hasAttribute('data-auth-button')) {
+              a.classList.remove('btn-tg', 'btn-ghost');
+              a.classList.add('btn-primary');
+            }
           }
         } else {
           if (a.hasAttribute('data-nav-auth-link')) {
-            a.textContent = 'Sign in with Telegram';
+            a.textContent = 'Sign in';
             a.setAttribute('href', '/signin');
           }
           if (a.hasAttribute('data-auth-button')) {
             a.textContent = 'Continue with Telegram';
             a.setAttribute('aria-label', 'Continue with Telegram');
             a.setAttribute('href', '/signin');
-            a.classList.remove('btn-ghost');
+            a.classList.remove('btn-ghost', 'btn-primary');
             a.classList.add('btn-tg');
           }
         }
       });
       $$('[data-nav-signout-li]').forEach(function (el) {
         el.hidden = !state.me;
+      });
+      $$('[data-bottom-nav]').forEach(function (bNav) {
+        if (location.pathname === '/onboarding' || location.pathname === '/signin') {
+          bNav.hidden = true;
+        } else {
+          bNav.hidden = false;
+        }
       });
       return state.me;
     }).catch(function () { return null; });
@@ -199,7 +216,14 @@
   function afterAuth(r, msgEl) {
     if (r.ok) {
       state.csrf = r.csrf;
-      location.href = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
+      var target = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
+      if (r.redirect) {
+        location.href = r.redirect;
+      } else if (r.user && !r.user.onboardingCompleted) {
+        location.href = '/onboarding' + (target !== '/me' ? '?next=' + encodeURIComponent(target) : '');
+      } else {
+        location.href = target;
+      }
     } else if (msgEl) {
       msgEl.className = 'form-msg error';
       msgEl.textContent = r.message || 'Sign-in failed. Please try again.';
@@ -589,10 +613,11 @@
         stateNonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
       }
       var isHttps = location.protocol === 'https:';
+      document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
       document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/auth/telegram; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
 
       var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
-      var callbackUrl = '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
+      var callbackUrl = window.location.origin + '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
 
       // 3. Inject Telegram widget script only upon explicit user click
       var existingScript = widget.querySelector('script[src*="telegram-widget.js"]');
@@ -605,6 +630,7 @@
         s.setAttribute('data-radius', '22');
         s.setAttribute('data-request-access', 'write');
         s.setAttribute('data-auth-url', callbackUrl);
+        s.setAttribute('data-onauth', 'smTelegramAuth(user)');
 
         s.onerror = function () {
           widgetLoading = false;
@@ -901,6 +927,20 @@
   function initAttendeeHub() {
     var hub = $('[data-attendee-hub]');
     if (!hub) return;
+
+    var ageGateBtn = $('[data-confirm-age-btn]', hub);
+    if (ageGateBtn) {
+      ageGateBtn.addEventListener('click', function () {
+        confirmAge().then(function (ok) {
+          if (ok) {
+            var banner = $('[data-age-gate-banner]', hub);
+            if (banner) banner.remove();
+            if (state.me) state.me.ageConfirmed = true;
+          }
+        });
+      });
+    }
+
     var tabBtns = $$('[data-hub-tab]', hub);
     tabBtns.forEach(function (btn) {
       btn.addEventListener('click', function () {
@@ -1239,23 +1279,362 @@
   }
 
   $$('[data-signout]').forEach(function (signout) {
-    signout.addEventListener('click', function () {
+    signout.addEventListener('click', function (ev) {
+      if (ev) ev.preventDefault();
       signout.disabled = true;
-      api('POST', '/api/auth/logout', {}).then(function (j) {
-        if (j.ok) {
-          state.me = null;
-          state.csrf = null;
-          location.href = '/signin';
-          return;
-        }
-        signout.disabled = false;
-        signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+      signout.textContent = 'Signing out…';
+      api('POST', '/api/auth/logout', {}).then(function () {
+        state.me = null;
+        state.csrf = null;
+        try { sessionStorage.clear(); } catch (e) {}
+        try { localStorage.removeItem('sm_in_tg'); } catch (e) {}
+        window.location.replace('/signin');
       }).catch(function () {
-        signout.disabled = false;
-        signout.textContent = 'Sign-out failed. Refresh the page and try again.';
+        state.me = null;
+        state.csrf = null;
+        window.location.replace('/signin');
       });
     });
   });
+
+  /* ---------- Member Onboarding Experience (6 Steps) ---------- */
+  function initOnboarding() {
+    var container = $('[data-onboarding-container]');
+    if (!container) return;
+
+    var nextUrl = container.getAttribute('data-next') || '/me';
+    var progressFill = $('[data-progress-fill]', container);
+    var stepBadge = $('[data-step-badge]', container);
+    var stepLabel = $('[data-step-label]', container);
+    var msgEl = $('[data-onboarding-msg]', container);
+
+    var STEP_NAMES = {
+      1: 'Welcome',
+      2: 'Age Verification',
+      3: 'Basic Profile',
+      4: 'Your Interests',
+      5: 'About You (Optional)',
+      6: 'You’re In!'
+    };
+
+    var currentStep = 1;
+    var profileData = {
+      displayName: '',
+      gender: '',
+      city: '',
+      ageConfirmed: false,
+      interests: [],
+      bio: '',
+      languages: []
+    };
+
+    function showMsg(text, type) {
+      if (!msgEl) return;
+      msgEl.className = 'form-msg ' + (type || '');
+      msgEl.textContent = text || '';
+    }
+
+    function goToStep(step) {
+      currentStep = Math.max(1, Math.min(6, step));
+      if (progressFill) {
+        progressFill.style.width = ((currentStep / 6) * 100) + '%';
+      }
+      if (stepBadge) {
+        stepBadge.textContent = 'Step ' + currentStep + ' of 6';
+      }
+      if (stepLabel) {
+        stepLabel.textContent = STEP_NAMES[currentStep] || '';
+      }
+      $$('[data-step-panel]', container).forEach(function (panel) {
+        var pStep = parseInt(panel.getAttribute('data-step-panel'), 10);
+        panel.hidden = pStep !== currentStep;
+      });
+      showMsg('', '');
+      try {
+        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) {
+        window.scrollTo(0, 0);
+      }
+    }
+
+    // Step navigation actions
+    container.addEventListener('click', function (ev) {
+      var nextBtn = ev.target.closest('[data-onboard-action="next-step"]');
+      if (nextBtn) {
+        var tStep = parseInt(nextBtn.getAttribute('data-target-step'), 10);
+        goToStep(tStep);
+        return;
+      }
+      var prevBtn = ev.target.closest('[data-onboard-action="prev-step"]');
+      if (prevBtn) {
+        var pStep = parseInt(prevBtn.getAttribute('data-target-step'), 10);
+        goToStep(pStep);
+        return;
+      }
+      var rejectAgeBtn = ev.target.closest('[data-onboard-action="reject-age"]');
+      if (rejectAgeBtn) {
+        api('POST', '/api/onboarding/age', { confirmed: false }).then(function () {
+          var step2Form = $('[data-step-form="2"]', container);
+          if (step2Form) step2Form.hidden = true;
+          var u21Notice = $('[data-under-21-notice]', container);
+          if (u21Notice) u21Notice.hidden = false;
+        });
+        return;
+      }
+      var skipOptBtn = ev.target.closest('[data-onboard-action="skip-optional"]');
+      if (skipOptBtn) {
+        goToStep(6);
+        updateCompletionScreen();
+        return;
+      }
+      var finishBtn = ev.target.closest('[data-onboard-action="finish-onboarding"]');
+      if (finishBtn) {
+        finishBtn.disabled = true;
+        finishBtn.textContent = 'Finalizing your membership…';
+        api('POST', '/api/onboarding/complete', {}).then(function (r) {
+          if (r.ok) {
+            var target = nextUrl && /^\/(?![\/\\])[\w\-./?=&#%]*$/.test(nextUrl) ? nextUrl : '/me';
+            window.location.replace(target);
+          } else {
+            finishBtn.disabled = false;
+            finishBtn.textContent = 'Explore Experiences →';
+            showMsg(r.message || 'Could not complete onboarding. Please verify required fields.', 'error');
+          }
+        }).catch(function () {
+          finishBtn.disabled = false;
+          finishBtn.textContent = 'Explore Experiences →';
+          showMsg('Network error while completing profile.', 'error');
+        });
+        return;
+      }
+    });
+
+    // Form Submissions
+    var step2Form = $('[data-step-form="2"]', container);
+    if (step2Form) {
+      step2Form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var check = $('#onboard-age-check', step2Form);
+        if (!check || !check.checked) {
+          showMsg('Please confirm you are 21 years of age or older to proceed.', 'error');
+          return;
+        }
+        var btn = $('[data-onboard-submit="2"]', step2Form);
+        if (btn) btn.disabled = true;
+        api('POST', '/api/onboarding/age', { confirmed: true }).then(function (r) {
+          if (btn) btn.disabled = false;
+          if (r.ok && r.eligible) {
+            profileData.ageConfirmed = true;
+            goToStep(3);
+          } else {
+            showMsg('Age eligibility could not be verified.', 'error');
+          }
+        }).catch(function () {
+          if (btn) btn.disabled = false;
+          showMsg('Network error while verifying age.', 'error');
+        });
+      });
+    }
+
+    var step3Form = $('[data-step-form="3"]', container);
+    if (step3Form) {
+      step3Form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var nameInput = $('#onboard-display-name', step3Form);
+        var genderSelect = $('#onboard-gender', step3Form);
+        var citySelect = $('#onboard-city', step3Form);
+        var dName = (nameInput.value || '').trim();
+        var gender = genderSelect.value;
+        var city = citySelect.value;
+
+        if (!dName) {
+          showMsg('Please enter your display name.', 'error');
+          nameInput.focus();
+          return;
+        }
+        if (!gender) {
+          showMsg('Please select your gender.', 'error');
+          genderSelect.focus();
+          return;
+        }
+        if (!city) {
+          showMsg('Please select your city.', 'error');
+          citySelect.focus();
+          return;
+        }
+
+        var btn = $('[data-onboard-submit="3"]', step3Form);
+        if (btn) btn.disabled = true;
+        api('POST', '/api/onboarding/profile', {
+          displayName: dName,
+          gender: gender,
+          city: city
+        }).then(function (r) {
+          if (btn) btn.disabled = false;
+          if (r.ok) {
+            profileData.displayName = dName;
+            profileData.gender = gender;
+            profileData.city = city;
+            goToStep(4);
+          } else {
+            showMsg(r.message || 'Failed to save basic profile.', 'error');
+          }
+        }).catch(function () {
+          if (btn) btn.disabled = false;
+          showMsg('Network error while saving profile.', 'error');
+        });
+      });
+    }
+
+    var step4Form = $('[data-step-form="4"]', container);
+    if (step4Form) {
+      var syncInterestsCounter = function () {
+        var checked = $$('input[name="interest"]:checked', step4Form);
+        var counter = $('[data-interests-counter]', step4Form);
+        if (counter) {
+          if (checked.length === 0) {
+            counter.innerHTML = '<span class="form-msg error" style="margin:0;">Select at least 1 interest to continue.</span>';
+          } else {
+            counter.innerHTML = '<span class="interests-active-count">✓ ' + checked.length + ' interest' + (checked.length > 1 ? 's' : '') + ' selected</span>';
+          }
+        }
+        $$('.interest-chip-card', step4Form).forEach(function (card) {
+          var inp = $('input[type="checkbox"]', card);
+          card.classList.toggle('is-selected', Boolean(inp && inp.checked));
+        });
+      };
+
+      step4Form.addEventListener('change', syncInterestsCounter);
+
+      step4Form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var checked = $$('input[name="interest"]:checked', step4Form).map(function (inp) { return inp.value; });
+        if (checked.length < 1) {
+          showMsg('Please select at least one interest to continue.', 'error');
+          return;
+        }
+        var btn = $('[data-onboard-submit="4"]', step4Form);
+        if (btn) btn.disabled = true;
+        api('POST', '/api/onboarding/interests', { interests: checked }).then(function (r) {
+          if (btn) btn.disabled = false;
+          if (r.ok) {
+            profileData.interests = checked;
+            goToStep(5);
+          } else {
+            showMsg(r.message || 'Failed to save interests.', 'error');
+          }
+        }).catch(function () {
+          if (btn) btn.disabled = false;
+          showMsg('Network error while saving interests.', 'error');
+        });
+      });
+    }
+
+    var step5Form = $('[data-step-form="5"]', container);
+    if (step5Form) {
+      step5Form.addEventListener('change', function () {
+        $$('.lang-chip', step5Form).forEach(function (chip) {
+          var inp = $('input[type="checkbox"]', chip);
+          chip.classList.toggle('is-selected', Boolean(inp && inp.checked));
+        });
+      });
+
+      step5Form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var bioVal = ($('#onboard-bio', step5Form).value || '').trim();
+        var langs = $$('input[name="language"]:checked', step5Form).map(function (inp) { return inp.value; });
+        var btn = $('[data-onboard-submit="5"]', step5Form);
+        if (btn) btn.disabled = true;
+        api('POST', '/api/onboarding/optional', {
+          bio: bioVal || undefined,
+          languages: langs.length ? langs : undefined
+        }).then(function (r) {
+          if (btn) btn.disabled = false;
+          if (r.ok) {
+            profileData.bio = bioVal;
+            profileData.languages = langs;
+            goToStep(6);
+            updateCompletionScreen();
+          } else {
+            showMsg(r.message || 'Failed to save additional info.', 'error');
+          }
+        }).catch(function () {
+          if (btn) btn.disabled = false;
+          showMsg('Network error while saving additional info.', 'error');
+        });
+      });
+    }
+
+    function updateCompletionScreen() {
+      var subHeading = $('[data-welcome-subheading]', container);
+      var name = profileData.displayName || (state.me && state.me.displayName) || 'there';
+      if (subHeading) {
+        subHeading.textContent = 'Welcome to NIGHTLIFEZ, ' + name + '! Your community pass is active.';
+      }
+    }
+
+    // Load initial server-side status to resume incomplete onboarding seamlessly
+    api('GET', '/api/onboarding/status').then(function (r) {
+      if (!r.ok) return;
+      if (r.completed) {
+        // Already completed, redirect to next destination
+        var target = nextUrl && /^\/(?![\/\\])[\w\-./?=&#%]*$/.test(nextUrl) ? nextUrl : '/me';
+        window.location.replace(target);
+        return;
+      }
+      var p = r.profile || {};
+      profileData.displayName = p.displayName || '';
+      profileData.gender = p.gender || '';
+      profileData.city = p.city || '';
+      profileData.ageConfirmed = Boolean(p.ageConfirmed);
+      profileData.interests = p.interests || [];
+      profileData.bio = p.bio || '';
+      profileData.languages = p.languages || [];
+
+      // Pre-fill inputs
+      var nameInput = $('#onboard-display-name', container);
+      if (nameInput && profileData.displayName) nameInput.value = profileData.displayName;
+      var genderSelect = $('#onboard-gender', container);
+      if (genderSelect && profileData.gender) genderSelect.value = profileData.gender;
+      var citySelect = $('#onboard-city', container);
+      if (citySelect && profileData.city) citySelect.value = profileData.city;
+      var ageCheck = $('#onboard-age-check', container);
+      if (ageCheck && profileData.ageConfirmed) ageCheck.checked = true;
+      var bioText = $('#onboard-bio', container);
+      if (bioText && profileData.bio) bioText.value = profileData.bio;
+
+      // Check existing interests
+      (profileData.interests || []).forEach(function (intKey) {
+        var inp = container.querySelector('input[name="interest"][value="' + esc(intKey) + '"]');
+        if (inp) {
+          inp.checked = true;
+          var card = inp.closest('.interest-chip-card');
+          if (card) card.classList.add('is-selected');
+        }
+      });
+      if (step4Form) syncInterestsCounter();
+
+      // Check existing languages
+      (profileData.languages || []).forEach(function (lang) {
+        var inp = container.querySelector('input[name="language"][value="' + esc(lang) + '"]');
+        if (inp) {
+          inp.checked = true;
+          var chip = inp.closest('.lang-chip');
+          if (chip) chip.classList.add('is-selected');
+        }
+      });
+
+      // Resume at current incomplete step
+      var resumeStep = 1;
+      if (r.currentStep && r.currentStep >= 1) {
+        resumeStep = Math.min(r.currentStep + 1, 6);
+      }
+      goToStep(resumeStep);
+    }).catch(function () {
+      var initStep = parseInt(container.getAttribute('data-initial-step'), 10) || 1;
+      goToStep(initStep);
+    });
+  }
 
   /* ---------- voluntary profile ---------- */
   var LABELS = {
@@ -1860,6 +2239,7 @@
   initInstantDiscovery();
 
   miniApp().then(refreshMe).then(function () {
+    initOnboarding();
     initAttendeeHub();
     initSaveEventHandlers();
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
