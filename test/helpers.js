@@ -177,6 +177,19 @@ export function makeWidgetData(user, { authDate = Math.floor(Date.now() / 1000),
   return { ...data, hash: crypto.createHmac('sha256', secret).update(dcs).digest('hex') };
 }
 
+/**
+ * Issues a valid Telegram widget state token through the application's state-issuance flow
+ * on the provided Client instance. The Client automatically stores the Set-Cookie (`sm_tg_state`).
+ * Returns the state token string.
+ */
+export async function obtainWidgetState(client, { ageConfirmed = true, next = '/me' } = {}) {
+  const res = await client.post('/api/auth/telegram/state', { ageConfirmed, next });
+  if (res.status !== 200 || !res.json?.ok || !res.json?.state) {
+    throw new Error(`Failed to obtain widget state: ${res.status} ${res.text}`);
+  }
+  return res.json.state;
+}
+
 let tgIdSeq = 700000000;
 export async function signedInClient({ ageConfirmed = true, tgId, onboarded = true } = {}) {
   const c = new Client();

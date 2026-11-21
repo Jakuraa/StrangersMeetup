@@ -603,11 +603,19 @@
       if (widgetWrap) widgetWrap.hidden = false;
       if (loadingEl) loadingEl.hidden = false;
 
-      // 2. Request cryptographically sealed state token binding explicit 21+ age confirmation
+      // 2. Request cryptographically sealed state token binding explicit 21+ age confirmation via same-origin POST
       var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
-      var stateUrl = '/auth/telegram/state?age=' + (age && age.checked ? '1' : '0') + '&next=' + encodeURIComponent(targetNext);
 
-      fetch(stateUrl)
+      fetch('/api/auth/telegram/state', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          ageConfirmed: true,
+          next: targetNext
+        })
+      })
         .then(function (res) {
           if (!res.ok) throw new Error('HTTP ' + res.status);
           return res.json();
