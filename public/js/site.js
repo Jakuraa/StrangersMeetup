@@ -976,6 +976,14 @@
         if (tab === 'account') {
           renderAccountSettings();
         }
+        if (tab === 'recommendations') {
+          var recBox = $('[data-my-recommendations]', hub);
+          if (recBox) renderRecommendations(recBox);
+        }
+        if (tab === 'connections') {
+          var connBox = $('[data-my-connections]', hub);
+          if (connBox) renderConnections(connBox);
+        }
         if (tab === 'profile') {
           var pf = $('[data-profile]', hub);
           if (pf) renderProfile(pf);
@@ -1094,6 +1102,110 @@
             });
           });
         }
+      });
+    }
+
+    function renderRecommendations(container) {
+      if (!container) return;
+      container.innerHTML = '<p class="muted">Loading tailored experiences…</p>';
+      api('GET', '/api/me/recommendations').then(function (r) {
+        if (!r.ok || !r.recommendations || !r.recommendations.length) {
+          container.innerHTML = '<div class="empty-state-card"><p class="muted">No event recommendations right now. Explore our full discovery feed!</p><p style="margin-top: 12px;"><a href="/events" class="btn btn-outline-cyan btn-sm">Browse All Events</a></p></div>';
+          return;
+        }
+        var h = '<div class="rec-grid" style="display: grid; gap: 16px;">';
+        r.recommendations.forEach(function (e) {
+          h += '<div class="rec-card" style="background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 10px;">' +
+            '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">' +
+              '<div>' +
+                '<h3 style="margin: 0 0 4px; font-size: 1.15rem;"><a href="/events/' + esc(e.slug) + '" style="color: var(--ink); text-decoration: none;">' + esc(e.title) + '</a></h3>' +
+                '<p class="muted small" style="margin: 0;">' + esc(e.city) + ' · ' + (e.venue_name ? esc(e.venue_name) : 'Secret Venue') + '</p>' +
+              '</div>' +
+              '<span class="pill pill-mode-biz">' + esc(e.category) + '</span>' +
+            '</div>' +
+            '<div class="rec-reason-badge" style="background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 8px; padding: 6px 12px; font-size: 0.85rem; color: var(--soft-lavender);">' +
+              '💡 ' + esc(e.recommendationReason || 'Curated popular event') +
+            '</div>' +
+            '<div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">' +
+              '<span style="font-weight: 600; color: var(--fresh-aqua);">' + (e.price_paise > 0 ? '₹' + (e.price_paise / 100) : 'Free RSVP') + '</span>' +
+              '<a href="/events/' + esc(e.slug) + '" class="btn btn-primary btn-sm">View Experience &amp; Book</a>' +
+            '</div>' +
+          '</div>';
+        });
+        h += '</div>';
+        container.innerHTML = h;
+      });
+    }
+
+    function renderConnections(container) {
+      if (!container) return;
+      container.innerHTML = '<p class="muted">Loading your connections network…</p>';
+      api('GET', '/api/me/connections').then(function (r) {
+        if (!r.ok) {
+          container.innerHTML = '<p class="form-msg error">Could not load connections.</p>';
+          return;
+        }
+        var h = '<div class="connections-block" style="display: flex; flex-direction: column; gap: 20px;">';
+        
+        if (r.pendingRequests && r.pendingRequests.length) {
+          h += '<div class="conn-section">' +
+            '<h3>Pending Connection Requests</h3>' +
+            '<div class="conn-list" style="display: grid; gap: 10px; margin-top: 10px;">';
+          r.pendingRequests.forEach(function (req) {
+            h += '<div class="conn-card" style="background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">' +
+              '<div>' +
+                '<strong>' + esc(req.display_name || req.alias || 'Nightlifez Member') + '</strong>' +
+                (req.city ? '<span class="muted small" style="margin-left: 8px;">(' + esc(req.city) + ')</span>' : '') +
+              '</div>' +
+              '<div style="display: flex; gap: 8px;">' +
+                '<button type="button" class="btn btn-primary btn-sm" data-accept-conn="' + esc(req.id) + '">Accept</button>' +
+                '<button type="button" class="btn btn-ghost btn-sm" data-decline-conn="' + esc(req.id) + '">Decline</button>' +
+              '</div>' +
+            '</div>';
+          });
+          h += '</div></div>';
+        }
+
+        h += '<div class="conn-section">' +
+          '<h3>Your Connections (' + (r.connections ? r.connections.length : 0) + ')</h3>';
+        if (r.connections && r.connections.length) {
+          h += '<div class="conn-list" style="display: grid; gap: 10px; margin-top: 10px;">';
+          r.connections.forEach(function (c) {
+            h += '<div class="conn-card" style="background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; display: flex; justify-content: space-between; align-items: center;">' +
+              '<div>' +
+                '<strong>' + esc(c.display_name || c.alias || 'Member') + '</strong>' +
+                (c.city ? '<span class="muted small" style="margin-left: 8px;">(' + esc(c.city) + ')</span>' : '') +
+              '</div>' +
+              '<span class="badge" style="background: rgba(6, 214, 160, 0.15); color: var(--fresh-aqua); font-size: 0.8rem; padding: 4px 10px; border-radius: 999px;">Connected</span>' +
+            '</div>';
+          });
+          h += '</div>';
+        } else {
+          h += '<p class="muted small" style="margin-top: 8px;">No active connections yet. Attend events and connect with fellow guests!</p>';
+        }
+        h += '</div></div>';
+
+        container.innerHTML = h;
+
+        $$('[data-accept-conn]', container).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var id = btn.getAttribute('data-accept-conn');
+            btn.disabled = true;
+            api('POST', '/api/me/connections/' + id + '/accept', {}).then(function (res) {
+              if (res.ok) renderConnections(container);
+            });
+          });
+        });
+
+        $$('[data-decline-conn]', container).forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var id = btn.getAttribute('data-decline-conn');
+            btn.disabled = true;
+            api('POST', '/api/me/connections/' + id + '/decline', {}).then(function (res) {
+              if (res.ok) renderConnections(container);
+            });
+          });
+        });
       });
     }
 
@@ -2627,10 +2739,598 @@
     startTimer();
   }
 
+  /* ---------- Business Command Centre (/business) ---------- */
+  function initBusinessHub() {
+    var hub = $('[data-business-hub]');
+    if (!hub) return;
+
+    var msgEl = $('[data-biz-msg]', hub);
+    function showBizMsg(text, type) {
+      if (!msgEl) return;
+      msgEl.className = 'form-msg ' + (type || '');
+      msgEl.textContent = text || '';
+    }
+
+    var tabBtns = $$('[data-biz-tab]', hub);
+    tabBtns.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tab = btn.getAttribute('data-biz-tab');
+        tabBtns.forEach(function (b) {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+        });
+        $$('[data-biz-panel]', hub).forEach(function (p) {
+          p.hidden = p.getAttribute('data-biz-panel') !== tab;
+        });
+        if (tab === 'events') loadEvents();
+        if (tab === 'venues') loadVenues();
+        if (tab === 'team') loadTeam();
+        if (tab === 'suppliers') loadSuppliers();
+        if (tab === 'analytics') loadAnalytics();
+      });
+    });
+
+    $$('[data-biz-tab-trigger]', hub).forEach(function (trigger) {
+      trigger.addEventListener('click', function () {
+        var tab = trigger.getAttribute('data-biz-tab-trigger');
+        var targetBtn = $('[data-biz-tab="' + tab + '"]', hub);
+        if (targetBtn) targetBtn.click();
+      });
+    });
+
+    function loadOverview() {
+      api('GET', '/api/business/overview').then(function (r) {
+        if (!r.ok) return;
+        var m = r.metrics || {};
+        var evEl = $('[data-metric-active-events]', hub); if (evEl) evEl.textContent = m.upcomingEvents || 0;
+        var attEl = $('[data-metric-attendees]', hub);
+        if (attEl) {
+          var totAtt = (r.events || []).reduce(function (acc, e) { return acc + Number(e.confirmed_attendees || 0); }, 0);
+          attEl.textContent = totAtt;
+        }
+        var venEl = $('[data-metric-venues]', hub); if (venEl) venEl.textContent = m.totalVenues || 0;
+        var enqEl = $('[data-metric-enquiries]', hub); if (enqEl) enqEl.textContent = m.pendingEnquiries || 0;
+
+        var evWrap = $('[data-overview-events-list]', hub);
+        if (evWrap) {
+          if (!r.events || !r.events.length) {
+            evWrap.innerHTML = '<p class="muted">No upcoming experiences listed yet. Create your first event!</p>';
+          } else {
+            var h = '<div style="display: grid; gap: 10px;">';
+            r.events.slice(0, 5).forEach(function (e) {
+              h += '<div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius-sm);">' +
+                '<div>' +
+                  '<strong>' + esc(e.title) + '</strong>' +
+                  '<p class="muted small" style="margin: 0;">' + esc(e.city) + ' · ' + esc(new Date(e.start_at).toLocaleDateString()) + '</p>' +
+                '</div>' +
+                '<span class="pill pill-mode-biz">' + esc(e.status) + '</span>' +
+              '</div>';
+            });
+            h += '</div>';
+            evWrap.innerHTML = h;
+          }
+        }
+
+        var bkWrap = $('[data-overview-bookings-list]', hub);
+        if (bkWrap) {
+          if (!r.recentBookings || !r.recentBookings.length) {
+            bkWrap.innerHTML = '<p class="muted">No attendee bookings recorded yet.</p>';
+          } else {
+            var bh = '<div style="display: grid; gap: 10px;">';
+            r.recentBookings.slice(0, 5).forEach(function (b) {
+              bh += '<div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius-sm);">' +
+                '<div>' +
+                  '<strong>' + esc(b.guest_name || 'Guest') + '</strong>' +
+                  '<p class="muted small" style="margin: 0;">' + esc(b.event_title) + ' · Ref: ' + esc(b.booking_reference) + '</p>' +
+                '</div>' +
+                '<span class="badge" style="background: rgba(6, 214, 160, 0.15); color: var(--fresh-aqua); font-size: .8rem; padding: 4px 8px; border-radius: 999px;">' + esc(b.status) + '</span>' +
+              '</div>';
+            });
+            bh += '</div>';
+            bkWrap.innerHTML = bh;
+          }
+        }
+
+        var cleanupSelect = $('#cleanup-event-select');
+        if (cleanupSelect && r.events) {
+          cleanupSelect.innerHTML = '<option value="">Choose an event…</option>';
+          r.events.forEach(function (e) {
+            var opt = document.createElement('option');
+            opt.value = e.id;
+            opt.textContent = e.title + ' (' + (e.city || 'Secret') + ')';
+            cleanupSelect.appendChild(opt);
+          });
+        }
+      });
+    }
+
+    function loadEvents() {
+      var tbody = $('[data-events-tbody]', hub);
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">Loading events…</td></tr>';
+      api('GET', '/api/business/events').then(function (r) {
+        if (!r.ok || !r.events || !r.events.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="muted">No events created yet.</td></tr>';
+          return;
+        }
+        var h = '';
+        r.events.forEach(function (e) {
+          var isCancelled = e.status === 'cancelled';
+          h += '<tr>' +
+            '<td><strong><a href="/organiser/events/' + esc(e.id) + '">' + esc(e.title) + '</a></strong></td>' +
+            '<td>' + esc(e.city || 'Secret') + '</td>' +
+            '<td>' + esc(new Date(e.start_at).toLocaleDateString()) + '</td>' +
+            '<td><span class="pill ' + (isCancelled ? 'pill-danger' : 'pill-mode-biz') + '">' + esc(e.status) + '</span></td>' +
+            '<td>' + (e.confirmed_attendees || 0) + ' confirmed</td>' +
+            '<td>' +
+              '<div style="display: flex; gap: 6px; flex-wrap: wrap;">' +
+                '<a href="/organiser/events/' + esc(e.id) + '" class="btn btn-ghost btn-sm">Edit</a>' +
+                '<button type="button" class="btn btn-ghost btn-sm" data-duplicate-event="' + esc(e.id) + '" title="Duplicate as new draft">Duplicate</button>' +
+                (!isCancelled ? '<button type="button" class="btn btn-outline btn-sm" data-cancel-event-btn="' + esc(e.id) + '" data-event-title="' + esc(e.title) + '">Cancel</button>' : '') +
+                '<button type="button" class="btn btn-danger btn-sm" data-delete-event-btn="' + esc(e.id) + '" title="Soft-delete event">Delete</button>' +
+              '</div>' +
+            '</td>' +
+          '</tr>';
+        });
+        tbody.innerHTML = h;
+      });
+    }
+
+    hub.addEventListener('click', function (ev) {
+      var dupBtn = ev.target.closest('[data-duplicate-event]');
+      if (dupBtn) {
+        var id = dupBtn.getAttribute('data-duplicate-event');
+        dupBtn.disabled = true;
+        api('POST', '/api/business/events/' + id + '/duplicate', {}).then(function (res) {
+          if (res.ok) {
+            showBizMsg('Event duplicated successfully as draft.', 'ok');
+            loadEvents();
+          } else {
+            showBizMsg(res.message || 'Could not duplicate event.', 'error');
+            dupBtn.disabled = false;
+          }
+        });
+      }
+
+      var cancelBtn = ev.target.closest('[data-cancel-event-btn]');
+      if (cancelBtn) {
+        var eventId = cancelBtn.getAttribute('data-cancel-event-btn');
+        var modal = $('[data-cancel-modal]', hub);
+        var idInput = $('[data-cancel-event-id]', modal);
+        if (idInput) idInput.value = eventId;
+        if (modal) modal.hidden = false;
+      }
+
+      if (ev.target.closest('[data-close-cancel-modal]')) {
+        var modal = $('[data-cancel-modal]', hub);
+        if (modal) modal.hidden = true;
+      }
+
+      var delBtn = ev.target.closest('[data-delete-event-btn]');
+      if (delBtn) {
+        var delId = delBtn.getAttribute('data-delete-event-btn');
+        if (!confirm('Are you sure you want to delete this event? Note: Events with confirmed attendees cannot be deleted until cancelled and refunded.')) return;
+        delBtn.disabled = true;
+        api('DELETE', '/api/business/events/' + delId, {}).then(function (res) {
+          if (res.ok) {
+            showBizMsg('Event safely deleted.', 'ok');
+            loadEvents();
+          } else {
+            showBizMsg(res.message || 'Could not delete event.', 'error');
+            delBtn.disabled = false;
+          }
+        });
+      }
+    });
+
+    var cancelForm = $('form[data-cancel-event-form]', hub);
+    if (cancelForm) {
+      cancelForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var idInput = $('[data-cancel-event-id]', cancelForm);
+        var id = idInput ? idInput.value : '';
+        var reasonSelect = $('#cancel-reason', cancelForm);
+        var detailsArea = $('#cancel-details', cancelForm);
+        var refundInput = $('#cancel-refund-notes', cancelForm);
+
+        var reason = reasonSelect.value;
+        if (detailsArea.value.trim()) {
+          reason += ': ' + detailsArea.value.trim();
+        }
+
+        var submitBtn = $('[data-confirm-cancel-btn]', cancelForm);
+        if (submitBtn) submitBtn.disabled = true;
+
+        api('POST', '/api/business/events/' + id + '/cancel', {
+          reason: reason,
+          refundNotes: refundInput ? refundInput.value.trim() : undefined
+        }).then(function (res) {
+          if (submitBtn) submitBtn.disabled = false;
+          if (res.ok) {
+            var modal = $('[data-cancel-modal]', hub);
+            if (modal) modal.hidden = true;
+            showBizMsg('Event successfully cancelled. ' + (res.attendeeCount || 0) + ' attendees notified.', 'ok');
+            loadEvents();
+          } else {
+            showBizMsg(res.message || 'Could not cancel event.', 'error');
+          }
+        });
+      });
+    }
+
+    function loadVenues() {
+      var vWrap = $('[data-venues-list]', hub);
+      if (!vWrap) return;
+      vWrap.innerHTML = '<p class="muted">Loading venues…</p>';
+      api('GET', '/api/business/venues').then(function (r) {
+        if (!r.ok || !r.venues || !r.venues.length) {
+          vWrap.innerHTML = '<p class="muted">No venues linked to this workspace yet.</p>';
+          return;
+        }
+        var h = '<div style="display: grid; gap: 14px;">';
+        r.venues.forEach(function (v) {
+          h += '<div style="background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 18px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">' +
+            '<div>' +
+              '<h3 style="margin: 0 0 4px; font-size: 1.15rem;">' + esc(v.name) + '</h3>' +
+              '<p class="muted small" style="margin: 0;">' + (v.address_public ? esc(v.address_public) : '') + (v.capacity ? ' · Capacity: ' + v.capacity : '') + '</p>' +
+              (v.description ? '<p class="muted small" style="margin-top: 6px;">' + esc(v.description) + '</p>' : '') +
+            '</div>' +
+            '<span class="badge" style="background: rgba(6, 214, 160, 0.15); color: var(--fresh-aqua); font-size: .8rem; padding: 4px 10px; border-radius: 999px;">' + esc(v.status) + '</span>' +
+          '</div>';
+        });
+        h += '</div>';
+        vWrap.innerHTML = h;
+      });
+    }
+
+    var toggleVenueBtn = $('[data-toggle-venue-form]', hub);
+    var venueCreateBox = $('[data-venue-create-box]', hub);
+    if (toggleVenueBtn && venueCreateBox) {
+      toggleVenueBtn.addEventListener('click', function () { venueCreateBox.hidden = !venueCreateBox.hidden; });
+      var cancelVenueBtn = $('[data-cancel-venue-form]', venueCreateBox);
+      if (cancelVenueBtn) cancelVenueBtn.addEventListener('click', function () { venueCreateBox.hidden = true; });
+    }
+
+    var createVenueForm = $('form[data-create-venue-form]', hub);
+    if (createVenueForm) {
+      createVenueForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var f = new FormData(createVenueForm);
+        api('POST', '/api/business/venues', {
+          name: f.get('name'),
+          city: f.get('city'),
+          addressPublic: f.get('addressPublic'),
+          capacity: f.get('capacity') ? Number(f.get('capacity')) : undefined,
+          contactEmail: f.get('contactEmail') || undefined,
+          contactPhone: f.get('contactPhone') || undefined,
+          description: f.get('description') || undefined
+        }).then(function (res) {
+          if (res.ok) {
+            createVenueForm.reset();
+            venueCreateBox.hidden = true;
+            showBizMsg('Venue added successfully.', 'ok');
+            loadVenues();
+          } else {
+            showBizMsg(res.message || 'Could not save venue.', 'error');
+          }
+        });
+      });
+    }
+
+    function loadTeam() {
+      var tbody = $('[data-team-tbody]', hub);
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" class="muted">Loading team…</td></tr>';
+      api('GET', '/api/business/team').then(function (r) {
+        if (!r.ok || !r.members || !r.members.length) {
+          tbody.innerHTML = '<tr><td colspan="4" class="muted">No team members found.</td></tr>';
+          return;
+        }
+        var h = '';
+        r.members.forEach(function (m) {
+          h += '<tr>' +
+            '<td><strong>' + esc(m.display_name || m.alias || 'Member') + '</strong></td>' +
+            '<td><span class="pill pill-role">' + esc(m.role) + '</span></td>' +
+            '<td><span class="badge" style="background: rgba(6, 214, 160, 0.15); color: var(--fresh-aqua); font-size: .8rem; padding: 4px 8px; border-radius: 999px;">' + esc(m.status) + '</span></td>' +
+            '<td>' + esc(new Date(m.created_at).toLocaleDateString()) + '</td>' +
+          '</tr>';
+        });
+        tbody.innerHTML = h;
+      });
+    }
+
+    function loadSuppliers() {
+      var sWrap = $('[data-suppliers-list]', hub);
+      if (!sWrap) return;
+      sWrap.innerHTML = '<p class="muted">Loading service partners…</p>';
+      api('GET', '/api/business/suppliers').then(function (r) {
+        if (!r.ok || !r.suppliers || !r.suppliers.length) {
+          sWrap.innerHTML = '<p class="muted">No service listings created yet.</p>';
+          return;
+        }
+        var h = '<div style="display: grid; gap: 14px;">';
+        r.suppliers.forEach(function (s) {
+          h += '<div style="background: var(--surface-card); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 18px; display: flex; justify-content: space-between; align-items: flex-start;">' +
+            '<div>' +
+              '<h3 style="margin: 0 0 4px; font-size: 1.15rem;">' + esc(s.category.replace(/_/g, ' ').toUpperCase()) + '</h3>' +
+              (s.pricing_notes ? '<p class="muted small" style="margin: 0;">' + esc(s.pricing_notes) + '</p>' : '') +
+            '</div>' +
+            '<span class="badge" style="background: rgba(6, 214, 160, 0.15); color: var(--fresh-aqua); font-size: .8rem; padding: 4px 10px; border-radius: 999px;">' + esc(s.status) + '</span>' +
+          '</div>';
+        });
+        h += '</div>';
+        sWrap.innerHTML = h;
+      });
+    }
+
+    var toggleSupBtn = $('[data-toggle-supplier-form]', hub);
+    var supCreateBox = $('[data-supplier-create-box]', hub);
+    if (toggleSupBtn && supCreateBox) {
+      toggleSupBtn.addEventListener('click', function () { supCreateBox.hidden = !supCreateBox.hidden; });
+      var cancelSupBtn = $('[data-cancel-supplier-form]', supCreateBox);
+      if (cancelSupBtn) cancelSupBtn.addEventListener('click', function () { supCreateBox.hidden = true; });
+    }
+
+    var createSupForm = $('form[data-create-supplier-form]', hub);
+    if (createSupForm) {
+      createSupForm.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var f = new FormData(createSupForm);
+        var urls = (f.get('portfolioUrls') || '').split('\n').map(function (u) { return u.trim(); }).filter(Boolean);
+        api('POST', '/api/business/suppliers', {
+          category: f.get('category'),
+          portfolioUrls: urls,
+          pricingNotes: f.get('pricingNotes') || undefined
+        }).then(function (res) {
+          if (res.ok) {
+            createSupForm.reset();
+            supCreateBox.hidden = true;
+            showBizMsg('Supplier service added.', 'ok');
+            loadSuppliers();
+          } else {
+            showBizMsg(res.message || 'Could not save supplier listing.', 'error');
+          }
+        });
+      });
+    }
+
+    var scanBtn = $('[data-scan-media-btn]', hub);
+    var cleanupResultsBox = $('[data-media-preview-results]', hub);
+    if (scanBtn) {
+      scanBtn.addEventListener('click', function () {
+        var select = $('#cleanup-event-select');
+        var eventId = select ? select.value : '';
+        if (!eventId) {
+          alert('Please select an event to calculate reclaimable media.');
+          return;
+        }
+        scanBtn.disabled = true;
+        api('GET', '/api/business/media/cleanup-preview?eventId=' + eventId).then(function (r) {
+          scanBtn.disabled = false;
+          if (r.ok) {
+            var cntEl = $('[data-preview-count]', cleanupResultsBox);
+            var bytesEl = $('[data-preview-bytes]', cleanupResultsBox);
+            if (cntEl) cntEl.textContent = r.imageCount || 0;
+            if (bytesEl) bytesEl.textContent = Math.round((r.reclaimableBytes || 0) / 1024) + ' KB';
+            cleanupResultsBox.hidden = false;
+          } else {
+            showBizMsg(r.message || 'Could not calculate reclaimable media.', 'error');
+          }
+        });
+      });
+    }
+
+    var runCleanupBtn = $('[data-run-cleanup-btn]', hub);
+    if (runCleanupBtn) {
+      runCleanupBtn.addEventListener('click', function () {
+        var select = $('#cleanup-event-select');
+        var eventId = select ? select.value : '';
+        if (!eventId) return;
+        if (!confirm('Clean up eligible media for this event now? Verified booking tickets and audit logs will remain intact.')) return;
+        runCleanupBtn.disabled = true;
+        api('POST', '/api/business/media/cleanup-now', { eventId: eventId }).then(function (res) {
+          runCleanupBtn.disabled = false;
+          if (res.ok) {
+            showBizMsg('Cleaned up ' + res.deletedCount + ' media files (' + Math.round(res.deletedBytes / 1024) + ' KB reclaimed).', 'ok');
+            cleanupResultsBox.hidden = true;
+          } else {
+            showBizMsg(res.message || 'Could not run media cleanup.', 'error');
+          }
+        });
+      });
+    }
+
+    function loadAnalytics() {
+      var tbody = $('[data-analytics-tbody]', hub);
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">Loading analytics…</td></tr>';
+      api('GET', '/api/business/analytics').then(function (r) {
+        if (!r.ok || !r.analytics || !r.analytics.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="muted">No event analytics available yet.</td></tr>';
+          return;
+        }
+        var h = '';
+        r.analytics.forEach(function (a) {
+          var rate = a.total_bookings > 0 ? Math.round((a.attended_count / a.total_bookings) * 100) + '%' : '0%';
+          h += '<tr>' +
+            '<td><strong>' + esc(a.title) + '</strong></td>' +
+            '<td>' + esc(new Date(a.start_at).toLocaleDateString()) + '</td>' +
+            '<td>' + (a.total_bookings || 0) + '</td>' +
+            '<td>' + (a.attended_count || 0) + '</td>' +
+            '<td>' + (a.cancelled_count || 0) + '</td>' +
+            '<td><span class="badge" style="background: rgba(99, 102, 241, 0.15); color: var(--soft-lavender); font-size: .8rem; padding: 4px 8px; border-radius: 999px;">' + rate + '</span></td>' +
+          '</tr>';
+        });
+        tbody.innerHTML = h;
+      });
+    }
+
+    loadOverview();
+  }
+
+  /* ---------- Self-Service Business Onboarding Wizard (/business/new) ---------- */
+  function initBusinessOnboarding() {
+    var ob = $('[data-biz-onboarding]');
+    if (!ob) return;
+
+    var progressFill = $('[data-biz-progress-fill]', ob);
+    var stepBadge = $('[data-biz-step-badge]', ob);
+    var stepLabel = $('[data-biz-step-label]', ob);
+    var msgEl = $('[data-biz-onboard-msg]', ob);
+
+    var STEP_NAMES = {
+      1: 'Business Type',
+      2: 'Brand Identity',
+      3: 'Operating Hubs',
+      4: 'Brand Assets',
+      5: 'Venue Profile',
+      6: 'Services & Equipment',
+      7: 'Host Curation',
+      8: 'Team Setup',
+      9: 'Trust & Safety',
+      10: 'Ready to Launch'
+    };
+
+    var currentStep = 1;
+    var data = {
+      businessType: ob.getAttribute('data-initial-type') || 'organiser',
+      name: '',
+      contactEmail: '',
+      contactPhone: '',
+      primaryCity: '',
+      secondaryCities: [],
+      tagline: '',
+      bio: ''
+    };
+
+    function showMsg(text, type) {
+      if (!msgEl) return;
+      msgEl.className = 'form-msg ' + (type || '');
+      msgEl.textContent = text || '';
+    }
+
+    function goToStep(step) {
+      currentStep = Math.max(1, Math.min(10, step));
+      if (progressFill) progressFill.style.width = ((currentStep / 10) * 100) + '%';
+      if (stepBadge) stepBadge.textContent = 'Step ' + currentStep + ' of 10';
+      if (stepLabel) stepLabel.textContent = STEP_NAMES[currentStep] || '';
+      $$('[data-biz-step]', ob).forEach(function (panel) {
+        panel.hidden = panel.getAttribute('data-biz-step') !== String(currentStep);
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    $$('.biz-type-card', ob).forEach(function (card) {
+      card.addEventListener('click', function () {
+        $$('.biz-type-card', ob).forEach(function (c) { c.classList.remove('selected'); });
+        card.classList.add('selected');
+        var r = card.querySelector('input[type="radio"]');
+        if (r) {
+          r.checked = true;
+          data.businessType = r.value;
+        }
+      });
+    });
+
+    $$('[data-biz-next]', ob).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = Number(btn.getAttribute('data-biz-next'));
+        goToStep(target);
+      });
+    });
+
+    $$('[data-biz-prev]', ob).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = Number(btn.getAttribute('data-biz-prev'));
+        goToStep(target);
+      });
+    });
+
+    var f2 = $('form[data-biz-form="2"]', ob);
+    if (f2) {
+      f2.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var f = new FormData(f2);
+        data.name = f.get('name');
+        data.contactEmail = f.get('contactEmail');
+        data.contactPhone = f.get('contactPhone');
+        goToStep(3);
+      });
+    }
+
+    var f3 = $('form[data-biz-form="3"]', ob);
+    if (f3) {
+      f3.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var f = new FormData(f3);
+        data.primaryCity = f.get('primaryCity');
+        data.secondaryCities = f.getAll('secondaryHubs');
+        goToStep(4);
+      });
+    }
+
+    var f4 = $('form[data-biz-form="4"]', ob);
+    if (f4) {
+      f4.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var f = new FormData(f4);
+        data.tagline = f.get('tagline');
+        data.bio = f.get('bio');
+        goToStep(5);
+      });
+    }
+
+    for (var s = 5; s <= 8; s++) {
+      (function (step) {
+        var form = $('form[data-biz-form="' + step + '"]', ob);
+        if (form) {
+          form.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            goToStep(step + 1);
+          });
+        }
+      })(s);
+    }
+
+    var f9 = $('form[data-biz-form="9"]', ob);
+    if (f9) {
+      f9.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var submitBtn = f9.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+
+        api('POST', '/api/onboarding/business/workspace', {
+          name: data.name,
+          businessType: data.businessType,
+          primaryCity: data.primaryCity,
+          secondaryCities: data.secondaryCities,
+          contactEmail: data.contactEmail,
+          contactPhone: data.contactPhone,
+          tagline: data.tagline,
+          bio: data.bio
+        }).then(function (res) {
+          if (res.ok) {
+            api('POST', '/api/onboarding/business/complete', {}).then(function () {
+              goToStep(10);
+            });
+          } else {
+            showMsg(res.message || 'Could not activate workspace.', 'error');
+            if (submitBtn) submitBtn.disabled = false;
+          }
+        }).catch(function (err) {
+          showMsg('Network error. Please try again.', 'error');
+          if (submitBtn) submitBtn.disabled = false;
+        });
+      });
+    }
+  }
+
   initInstantDiscovery();
 
   miniApp().then(refreshMe).then(function () {
     initOnboarding();
+    initBusinessHub();
+    initBusinessOnboarding();
     initAttendeeHub();
     initSaveEventHandlers();
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);

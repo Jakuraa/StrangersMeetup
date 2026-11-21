@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 25 migrations currently exist: 003 through 027
-  assert.equal(files.length, 25, `expected 25 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 26 migrations currently exist: 003 through 028
+  assert.equal(files.length, 26, `expected 26 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 25 migrations in correct order', async () => {
+test('schema_migrations table records all 26 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 25);
+  assert.equal(rows.length, 26);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 25
+  // Total count in schema_migrations must remain exactly 26
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 25);
+  assert.equal(countRes.n, 26);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -419,4 +419,34 @@ test('migration 027: preserves administrator-deactivated city status across migr
 
   // Restore kochi for other tests
   await db.query(`UPDATE location_cities SET active = true, is_discovery_active = true WHERE slug = 'kochi'`);
+});
+
+test('migration 028: master platform evolution schema integrity and backfills', async () => {
+  await migrate({ log: false });
+
+  // 1. Verify user columns
+  const userCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'users'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(userCols.includes('active_mode'), 'users must have active_mode');
+  assert.ok(userCols.includes('onboarding_flow'), 'users must have onboarding_flow');
+
+  // 2. Verify event columns
+  const eventCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'events'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(eventCols.includes('is_archived'), 'events must have is_archived');
+  assert.ok(eventCols.includes('is_deleted'), 'events must have is_deleted');
+  assert.ok(eventCols.includes('media_cleaned_up'), 'events must have media_cleaned_up');
+
+  // 3. Verify tables exist
+  const tables = (await db.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+  )).rows.map((r) => r.table_name);
+  assert.ok(tables.includes('user_preferences'), 'user_preferences table must exist');
+  assert.ok(tables.includes('user_connections'), 'user_connections table must exist');
+  assert.ok(tables.includes('business_workspaces'), 'business_workspaces table must exist');
+  assert.ok(tables.includes('business_suppliers'), 'business_suppliers table must exist');
+  assert.ok(tables.includes('event_cancellations'), 'event_cancellations table must exist');
+  assert.ok(tables.includes('media_cleanup_jobs'), 'media_cleanup_jobs table must exist');
 });
