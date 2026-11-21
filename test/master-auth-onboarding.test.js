@@ -2,6 +2,7 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { db, resetDb, startServer, stopServer, Client, signedInClient, makeWidgetData, BOT_TOKEN } from './helpers.js';
+import { sealWidgetState } from '../lib/telegram/auth.js';
 import { CITIES } from '../lib/services/events.js';
 import { INTEREST_CATEGORIES, COMMUNITY_CHANNELS } from '../lib/services/member-onboarding.js';
 
@@ -36,7 +37,7 @@ describe('Master Auth, Onboarding & Community Growth Suite', () => {
 
     test('authenticates genuine Telegram user with valid state cookie and HMAC signature', async () => {
       const client = new Client();
-      const stateNonce = crypto.randomBytes(16).toString('hex');
+      const stateNonce = sealWidgetState({ ageConfirmed: true, next: '/me' });
       const tgId = 88776655;
       const widgetData = makeWidgetData({
         id: tgId,
@@ -58,8 +59,11 @@ describe('Master Auth, Onboarding & Community Growth Suite', () => {
 
       // Check session cookie set
       const setCookies = res.headers.getSetCookie();
-      const sessionCookie = setCookies.find((c) => c.startsWith('sm_session='));
-      assert.ok(sessionCookie || client.cookies.sm_session);
+      assert.ok(setCookies.some((h) => h.startsWith('sm_session=')));
+
+      // Check age confirmation and audit
+      const u = await db.one('SELECT age_confirmed_21 FROM users WHERE telegram_user_id = $1', [tgId]);
+      assert.equal(u.age_confirmed_21, true);
     });
   });
 
@@ -130,7 +134,8 @@ describe('Master Auth, Onboarding & Community Growth Suite', () => {
 
   describe('Phase 5: City Directory Expansion & Admin Control', () => {
     test('contains all 49 major event cities across South, West, North, East, and Central India', () => {
-      assert.ok(CITIES.length >= 45, `Expected >= 45 cities, found ${CITIES.length}`);
+      assert.equal(CITIES.length, 49, `Expected exactly 49 canonical cities, found ${CITIES.length}`);
+      assert.equal(new Set(CITIES.map((c) => c.slug)).size, 49, 'All 49 city slugs must be strictly unique');
       const regions = new Set(CITIES.map((c) => c.region));
       assert.ok(regions.has('South'));
       assert.ok(regions.has('West'));

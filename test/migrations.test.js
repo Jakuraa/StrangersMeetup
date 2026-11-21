@@ -367,22 +367,56 @@ test('migration 027: master auth, onboarding, community joins, and expanded Indi
   );
   assert.equal(tblRes.rows.length, 1, 'member_community_joins table must exist');
 
-  // 3. Verify expanded cities directory contains all 4 major regions and required markets
+  // 3. Verify expanded cities directory contains all 4 major regions and exactly 49 canonical markets
   const cities = await db.query(
     `SELECT slug, name, market_tier, active, is_discovery_active FROM location_cities ORDER BY slug`
   );
-  assert.ok(cities.rows.length >= 40, `expected at least 40 cities, got ${cities.rows.length}`);
+  assert.ok(cities.rows.length >= 49, `expected at least 49 cities, got ${cities.rows.length}`);
 
   const citySlugs = new Set(cities.rows.map(c => c.slug));
   const requiredCities = [
-    'chennai', 'bengaluru', 'hyderabad', 'kochi', 'coimbatore', 'madurai', 'trivandrum', 'kozhikode',
-    'mysuru', 'mangaluru', 'vijayawada', 'visakhapatnam', 'tiruchirappalli', 'salem', 'puducherry',
-    'mumbai', 'pune', 'ahmedabad', 'surat', 'vadodara', 'goa', 'nagpur', 'nashik', 'indore', 'bhopal',
-    'delhi-ncr', 'gurugram', 'noida', 'chandigarh', 'jaipur', 'lucknow', 'dehradun', 'amritsar', 'ludhiana', 'jammu',
-    'kolkata', 'bhubaneswar', 'guwahati', 'patna', 'ranchi', 'raipur'
+    'chennai', 'bengaluru', 'hyderabad', 'kochi', 'coimbatore', 'puducherry', 'madurai', 'trivandrum',
+    'kozhikode', 'mysuru', 'mangaluru', 'vijayawada', 'visakhapatnam', 'tiruchirappalli', 'salem',
+    'warangal', 'guntur', 'hubli-dharwad',
+    'mumbai', 'pune', 'ahmedabad', 'goa', 'surat', 'vadodara', 'nagpur', 'nashik', 'rajkot', 'kolhapur',
+    'delhi-ncr', 'chandigarh', 'jaipur', 'gurugram', 'noida', 'lucknow', 'dehradun', 'amritsar',
+    'ludhiana', 'jammu', 'agra', 'varanasi', 'kanpur',
+    'kolkata', 'bhubaneswar', 'guwahati', 'patna', 'ranchi', 'raipur', 'indore', 'bhopal'
   ];
 
   for (const rc of requiredCities) {
     assert.ok(citySlugs.has(rc), `required city slug "${rc}" must exist in location_cities`);
   }
+});
+
+test('migration 027: preserves administrator-deactivated city status across migration reruns', async () => {
+  // 1. Ensure migration 027 is applied
+  await migrate({ log: false });
+
+  // 2. Administrator intentionally deactivates a city (e.g. 'kochi')
+  await db.query(
+    `UPDATE location_cities
+     SET active = false, is_discovery_active = false
+     WHERE slug = 'kochi'`
+  );
+
+  const beforeRerun = (await db.query(
+    `SELECT slug, active, is_discovery_active FROM location_cities WHERE slug = 'kochi'`
+  )).rows[0];
+  assert.equal(beforeRerun.active, false, 'kochi must be deactivated by admin');
+  assert.equal(beforeRerun.is_discovery_active, false, 'kochi discovery must be deactivated by admin');
+
+  // 3. Re-run migration 027 SQL script directly to simulate migration re-run
+  const migrationSql = fs.readFileSync(path.join(MIGRATIONS_DIR, '027_master_auth_onboarding_neon.sql'), 'utf8');
+  await db.query(migrationSql);
+
+  // 4. Confirm the city remains deactivated after migration rerun
+  const afterRerun = (await db.query(
+    `SELECT slug, active, is_discovery_active FROM location_cities WHERE slug = 'kochi'`
+  )).rows[0];
+  assert.equal(afterRerun.active, false, 'kochi must REMAIN deactivated after migration rerun');
+  assert.equal(afterRerun.is_discovery_active, false, 'kochi discovery must REMAIN deactivated after migration rerun');
+
+  // Restore kochi for other tests
+  await db.query(`UPDATE location_cities SET active = true, is_discovery_active = true WHERE slug = 'kochi'`);
 });

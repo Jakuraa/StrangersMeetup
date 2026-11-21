@@ -603,57 +603,70 @@
       if (widgetWrap) widgetWrap.hidden = false;
       if (loadingEl) loadingEl.hidden = false;
 
-      // 2. Generate secure state nonce for CSRF & replay protection
-      var stateNonce = '';
-      if (window.crypto && window.crypto.getRandomValues) {
-        var arr = new Uint8Array(16);
-        window.crypto.getRandomValues(arr);
-        stateNonce = Array.from(arr, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
-      } else {
-        stateNonce = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-      }
-      var isHttps = location.protocol === 'https:';
-      document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
-      document.cookie = 'sm_tg_state=; path=/auth/telegram; max-age=0; samesite=lax' + (isHttps ? '; secure' : '');
-
+      // 2. Request cryptographically sealed state token binding explicit 21+ age confirmation
       var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
-      var callbackUrl = window.location.origin + '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
+      var stateUrl = '/auth/telegram/state?age=' + (age && age.checked ? '1' : '0') + '&next=' + encodeURIComponent(targetNext);
 
-      // 3. Inject Telegram widget script only upon explicit user click
-      var existingScript = widget.querySelector('script[src*="telegram-widget.js"]');
-      if (!existingScript) {
-        var s = document.createElement('script');
-        s.async = true;
-        s.src = 'https://telegram.org/js/telegram-widget.js?22';
-        s.setAttribute('data-telegram-login', widget.getAttribute('data-bot'));
-        s.setAttribute('data-size', 'large');
-        s.setAttribute('data-radius', '22');
-        s.setAttribute('data-request-access', 'write');
-        s.setAttribute('data-auth-url', callbackUrl);
+      fetch(stateUrl)
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          if (!data || !data.ok || !data.state) throw new Error('Failed to prepare Telegram state');
+          var isHttps = location.protocol === 'https:';
+          document.cookie = 'sm_tg_state=' + encodeURIComponent(data.state) + '; path=/; max-age=300; samesite=lax' + (isHttps ? '; secure' : '');
+          document.cookie = 'sm_tg_state=; path=/auth/telegram; max-age=0; samesite=lax' + (isHttps ? '; secure' : '');
 
-        s.onerror = function () {
+          var callbackUrl = window.location.origin + '/auth/telegram/widget-callback?state=' + encodeURIComponent(data.state) + '&next=' + encodeURIComponent(targetNext);
+
+          // 3. Inject Telegram widget script only upon explicit user click
+          var existingScript = widget.querySelector('script[src*="telegram-widget.js"]');
+          if (!existingScript) {
+            var s = document.createElement('script');
+            s.async = true;
+            s.src = 'https://telegram.org/js/telegram-widget.js?22';
+            s.setAttribute('data-telegram-login', widget.getAttribute('data-bot'));
+            s.setAttribute('data-size', 'large');
+            s.setAttribute('data-radius', '22');
+            s.setAttribute('data-request-access', 'write');
+            s.setAttribute('data-auth-url', callbackUrl);
+
+            s.onerror = function () {
+              widgetLoading = false;
+              widgetInjected = false;
+              if (loadingEl) loadingEl.hidden = true;
+              if (actionWrap) actionWrap.hidden = false;
+              if (tgStartBtn) tgStartBtn.disabled = false;
+              if (widgetWrap) widgetWrap.hidden = true;
+              if (msg) {
+                msg.className = 'form-msg error';
+                msg.textContent = 'Unable to connect to Telegram. Please check your internet connection and try again.';
+              }
+            };
+
+            s.onload = function () {
+              widgetInjected = true;
+              widgetLoading = false;
+              setTimeout(function () {
+                if (loadingEl) loadingEl.hidden = true;
+              }, 800);
+            };
+
+            widget.appendChild(s);
+          }
+        })
+        .catch(function () {
           widgetLoading = false;
-          widgetInjected = false;
           if (loadingEl) loadingEl.hidden = true;
           if (actionWrap) actionWrap.hidden = false;
           if (tgStartBtn) tgStartBtn.disabled = false;
           if (widgetWrap) widgetWrap.hidden = true;
           if (msg) {
             msg.className = 'form-msg error';
-            msg.textContent = 'Unable to connect to Telegram. Please check your internet connection and try again.';
+            msg.textContent = 'Unable to initiate Telegram session. Please refresh and try again.';
           }
-        };
-
-        s.onload = function () {
-          widgetInjected = true;
-          widgetLoading = false;
-          setTimeout(function () {
-            if (loadingEl) loadingEl.hidden = true;
-          }, 800);
-        };
-
-        widget.appendChild(s);
-      }
+        });
 
       try {
         var obs = new MutationObserver(function () {
