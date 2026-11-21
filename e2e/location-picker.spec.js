@@ -42,6 +42,20 @@ test.describe('Location Intelligence V1 — Location Picker & Discovery', () => 
     await expect(dialog).not.toBeVisible();
   });
 
+  test('popular hubs: clicking Coimbatore pill applies city filter', async ({ page }) => {
+    await page.goto('/events');
+    await openLocationPicker(page);
+
+    const dialog = page.locator('[data-location-dialog]');
+    const cbePill = dialog.locator('.loc-pill[data-city-slug="coimbatore"]');
+    await expect(cbePill).toBeVisible();
+    await expect(cbePill).toHaveText('Coimbatore');
+
+    await cbePill.click();
+    await expect(page).toHaveURL(/city=coimbatore/);
+    await expect(page.locator('[data-loc-current-label]:visible').first()).toHaveText('Coimbatore');
+  });
+
   test('search matching: alias matching finds Bengaluru when typing Bangalore', async ({ page }) => {
     await page.goto('/events');
     await openLocationPicker(page);
