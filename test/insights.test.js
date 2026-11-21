@@ -99,7 +99,7 @@ test('profile: optional, validated, CSRF-protected, clearable', async () => {
   assert.equal(noCsrf.status, 403);
   assert.equal((await u.patch('/api/me/profile', { gender: 'robot' })).status, 400);
   assert.equal((await u.patch('/api/me/profile', { interests: ['nightlife', 'hacking'] })).status, 400);
-  assert.equal((await u.patch('/api/me/profile', { city: 'Mumbai' })).status, 400);
+  assert.equal((await u.patch('/api/me/profile', { city: 'Atlantis' })).status, 400);
   const ok = await u.patch('/api/me/profile', { gender: 'female', age_band: '25_29', city: 'Kochi', interests: ['nightlife', 'dinners', 'nightlife'] });
   assert.equal(ok.status, 200, ok.text);
   assert.deepEqual(ok.json.profile.interests, ['nightlife', 'dinners']);

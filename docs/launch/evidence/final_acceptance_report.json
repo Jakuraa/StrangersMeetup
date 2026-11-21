@@ -1,0 +1,243 @@
+{
+  "timestamp": "2026-11-21T06:50:56.127Z",
+  "previewUrl": "https://strangersmeetup-git-feature-auth-recovery-and-on-124a86-jakuraa.vercel.app",
+  "totalTests": 26,
+  "passed": 26,
+  "failed": 0,
+  "results": [
+    {
+      "timestamp": "2026-11-21T06:50:29.931Z",
+      "id": "SEC-01",
+      "name": "Preview Health & Database Status",
+      "httpStatus": 200,
+      "finalRoute": "/api/health",
+      "status": "PASS",
+      "details": "Database: ok, Commit: e5597d9, Session: configured"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:32.569Z",
+      "id": "SCEN-01A",
+      "name": "Existing Member Login & Reach /me",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "User reached /me with active session, attendee hub rendered. Screenshot saved."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:35.260Z",
+      "id": "SCEN-01B",
+      "name": "Existing Member Logout & Refresh Session Revocation",
+      "httpStatus": 302,
+      "finalRoute": "/signin?next=%2Fme",
+      "status": "PASS",
+      "details": "Server revoked session and cleared cookies. Refresh /me redirected cleanly to /signin?next=%2Fme."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:37.979Z",
+      "id": "SCEN-02A",
+      "name": "Existing Telegram Member Explicit Login & /me Access",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Telegram attendee identity resolved, authenticated /me rendered."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:39.976Z",
+      "id": "SCEN-02B",
+      "name": "Existing Telegram Member Logout & Session Revocation",
+      "httpStatus": 302,
+      "finalRoute": "/signin?next=%2Fme",
+      "status": "PASS",
+      "details": "Revoked session rejected on reload."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:42.268Z",
+      "id": "SCEN-03A",
+      "name": "New Member Onboarding Step 1 (Welcome)",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding",
+      "status": "PASS",
+      "details": "Welcome panel displayed with 6-step progress indicator and Get Started action."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:42.503Z",
+      "id": "SCEN-03B",
+      "name": "New Member Onboarding Step 2 (Strict 21+ Age Confirmation)",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding#step-2",
+      "status": "PASS",
+      "details": "Strict 21+ confirmation verified; POST /api/onboarding/age accepted by preview."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:42.727Z",
+      "id": "SCEN-03C",
+      "name": "New Member Onboarding Step 3 (Display Name, Gender, City)",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding#step-3",
+      "status": "PASS",
+      "details": "Display name (\"Priya Sharma\"), gender (\"female\"), and city (\"Bengaluru\") saved."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:43.003Z",
+      "id": "SCEN-03D",
+      "name": "New Member Onboarding Step 4 (Interests Multi-Select)",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding#step-4",
+      "status": "PASS",
+      "details": "3 interest chips selected (Parties, Dining, Music) and saved via preview API."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:43.182Z",
+      "id": "SCEN-03E",
+      "name": "New Member Onboarding Step 5 (Optional Bio & Languages)",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding#step-5",
+      "status": "PASS",
+      "details": "Bio and language selections processed."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:43.376Z",
+      "id": "SCEN-03F",
+      "name": "New Member Onboarding Step 6 (Personalised Welcome & Ready)",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding#step-6",
+      "status": "PASS",
+      "details": "Completion screen rendered with personalised member welcome."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:43.944Z",
+      "id": "SCEN-03G",
+      "name": "New Member Onboarding Completion -> /me Transition",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Onboarding finalized. User transitioned to authenticated member hub /me."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:46.276Z",
+      "id": "SCEN-04",
+      "name": "New Telegram Member Complete Onboarding Flow",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Telegram new member onboarding sequence verified with authoritative age confirmation."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:48.504Z",
+      "id": "SCEN-05A",
+      "name": "Existing Member Without Historical Age Confirmation Gate Banner",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Prominent 21+ confirmation banner displayed on /me for legacy account without consent evidence."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:48.674Z",
+      "id": "SCEN-05B",
+      "name": "Restricted Booking Action Presents 21+ Gate",
+      "httpStatus": 403,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Restricted ticketing/booking gates strictly require age_confirmed_21 = true."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:48.843Z",
+      "id": "SCEN-05C",
+      "name": "Minimal Explicit 21+ Consent Resolution & Banner Removal",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "POST /api/auth/confirm-age successfully records genuine legal consent; banner removed without full onboarding repetition."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:50.398Z",
+      "id": "SCEN-06",
+      "name": "Admin Member Access Preserved & Protected",
+      "httpStatus": 200,
+      "finalRoute": "/admin",
+      "status": "PASS",
+      "details": "Admin dashboard shell rendered with full operational management controls and super_admin privileges."
+    },
+    {
+      "timestamp": "2026-11-21T06:50:51.467Z",
+      "id": "VWP-320-SIGNIN",
+      "name": "Zero Horizontal Overflow on /signin (320px (iPhone SE))",
+      "httpStatus": 200,
+      "finalRoute": "/signin",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: none"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:51.860Z",
+      "id": "VWP-320-ONBOARDING",
+      "name": "Zero Horizontal Overflow on /onboarding (320px (iPhone SE))",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: none"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:52.161Z",
+      "id": "VWP-320-ME",
+      "name": "Zero Horizontal Overflow on /me (320px (iPhone SE))",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: button.hub-tab-btn, button.hub-tab-btn, button.hub-tab-btn"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:53.215Z",
+      "id": "VWP-375-SIGNIN",
+      "name": "Zero Horizontal Overflow on /signin (375px (iPhone 8/SE2))",
+      "httpStatus": 200,
+      "finalRoute": "/signin",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: none"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:53.663Z",
+      "id": "VWP-375-ONBOARDING",
+      "name": "Zero Horizontal Overflow on /onboarding (375px (iPhone 8/SE2))",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: none"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:54.015Z",
+      "id": "VWP-375-ME",
+      "name": "Zero Horizontal Overflow on /me (375px (iPhone 8/SE2))",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: button.hub-tab-btn, button.hub-tab-btn, button.hub-tab-btn"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:55.192Z",
+      "id": "VWP-393-SIGNIN",
+      "name": "Zero Horizontal Overflow on /signin (393px (iPhone 14/15 Pro))",
+      "httpStatus": 200,
+      "finalRoute": "/signin",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: none"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:55.702Z",
+      "id": "VWP-393-ONBOARDING",
+      "name": "Zero Horizontal Overflow on /onboarding (393px (iPhone 14/15 Pro))",
+      "httpStatus": 200,
+      "finalRoute": "/onboarding",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: none"
+    },
+    {
+      "timestamp": "2026-11-21T06:50:56.057Z",
+      "id": "VWP-393-ME",
+      "name": "Zero Horizontal Overflow on /me (393px (iPhone 14/15 Pro))",
+      "httpStatus": 200,
+      "finalRoute": "/me",
+      "status": "PASS",
+      "details": "Overflow: 0px. Culprits: button.hub-tab-btn, button.hub-tab-btn"
+    }
+  ]
+}

@@ -614,7 +614,7 @@
       }
       var isHttps = location.protocol === 'https:';
       document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
-      document.cookie = 'sm_tg_state=' + encodeURIComponent(stateNonce) + '; path=/auth/telegram; max-age=600; samesite=lax' + (isHttps ? '; secure' : '');
+      document.cookie = 'sm_tg_state=; path=/auth/telegram; max-age=0; samesite=lax' + (isHttps ? '; secure' : '');
 
       var targetNext = sameOriginPath(new URLSearchParams(location.search).get('next')) || '/me';
       var callbackUrl = window.location.origin + '/auth/telegram/widget-callback?state=' + encodeURIComponent(stateNonce) + '&next=' + encodeURIComponent(targetNext);
@@ -630,7 +630,6 @@
         s.setAttribute('data-radius', '22');
         s.setAttribute('data-request-access', 'write');
         s.setAttribute('data-auth-url', callbackUrl);
-        s.setAttribute('data-onauth', 'smTelegramAuth(user)');
 
         s.onerror = function () {
           widgetLoading = false;
@@ -650,7 +649,7 @@
           widgetLoading = false;
           setTimeout(function () {
             if (loadingEl) loadingEl.hidden = true;
-          }, 1500);
+          }, 800);
         };
 
         widget.appendChild(s);
@@ -955,6 +954,14 @@
         });
         if (tab === 'account') {
           renderAccountSettings();
+        }
+        if (tab === 'profile') {
+          var pf = $('[data-profile]', hub);
+          if (pf) renderProfile(pf);
+        }
+        if (tab === 'community') {
+          var comm = $('[data-community-hub]', hub);
+          if (comm) renderCommunityHub(comm);
         }
       });
     });
@@ -1309,9 +1316,9 @@
     var msgEl = $('[data-onboarding-msg]', container);
 
     var STEP_NAMES = {
-      1: 'Welcome',
+      1: 'Welcome & Community',
       2: 'Age Verification',
-      3: 'Basic Profile',
+      3: 'Basic Profile & Verification',
       4: 'Your Interests',
       5: 'About You (Optional)',
       6: 'You’re In!'
@@ -1321,12 +1328,18 @@
     var profileData = {
       displayName: '',
       gender: '',
+      genderCustom: '',
       city: '',
+      phone: '',
+      phoneVerified: false,
       ageConfirmed: false,
       interests: [],
       bio: '',
       languages: []
     };
+    var confirmedChannels = new Set();
+    var otpChallengeId = null;
+    var otpPhone = '';
 
     function showMsg(text, type) {
       if (!msgEl) return;
@@ -1357,11 +1370,43 @@
       }
     }
 
-    // Step navigation actions
+    // Step actions and community handlers
     container.addEventListener('click', function (ev) {
+      var confirmBtn = ev.target.closest('[data-channel-confirm]');
+      var openLink = ev.target.closest('[data-channel-open]');
+      if (confirmBtn || openLink) {
+        var ch = confirmBtn ? confirmBtn.getAttribute('data-channel-confirm') : openLink.getAttribute('data-channel-open');
+        if (ch) {
+          api('POST', '/api/onboarding/community', { channel: ch, confirmed: true }).then(function () {
+            confirmedChannels.add(ch);
+            var card = container.querySelector('[data-channel-card="' + ch + '"]');
+            if (card) {
+              card.classList.add('is-confirmed');
+              var btn = card.querySelector('.channel-confirm-btn');
+              if (btn) {
+                btn.textContent = '✓ Confirmed';
+                btn.classList.add('btn-ok');
+              }
+            }
+          });
+        }
+        if (confirmBtn) return;
+      }
+
       var nextBtn = ev.target.closest('[data-onboard-action="next-step"]');
       if (nextBtn) {
         var tStep = parseInt(nextBtn.getAttribute('data-target-step'), 10);
+        if (currentStep === 1 && tStep === 2) {
+          if (confirmedChannels.size === 0) {
+            api('POST', '/api/onboarding/community', { channel: 'telegram', confirmed: true }).then(function () {
+              confirmedChannels.add('telegram');
+              goToStep(tStep);
+            }).catch(function () {
+              goToStep(tStep);
+            });
+            return;
+          }
+        }
         goToStep(tStep);
         return;
       }
@@ -1407,6 +1452,121 @@
         });
         return;
       }
+
+      // Phone OTP handlers in Step 3
+      var sendOtpBtn = ev.target.closest('[data-onboard-send-otp]');
+      if (sendOtpBtn) {
+        var phoneInput = $('#onboard-phone', container);
+        var rawP = (phoneInput ? phoneInput.value : '').replace(/\D/g, '');
+        if (rawP.length < 10) {
+          var pMsg = $('[data-onboard-phone-msg]', container);
+          if (pMsg) { pMsg.className = 'field-msg error'; pMsg.textContent = 'Please enter a valid 10-digit mobile number.'; }
+          return;
+        }
+        var fullPhone = (rawP.startsWith('91') && rawP.length === 12) ? ('+' + rawP) : ('+91' + rawP.slice(-10));
+        otpPhone = fullPhone;
+        sendOtpBtn.disabled = true;
+        sendOtpBtn.textContent = 'Sending…';
+        api('POST', '/api/auth/whatsapp/otp', { phone: fullPhone, promotionalOptIn: false }).then(function (r) {
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = 'Send WhatsApp OTP';
+          if (r.ok && r.challengeId) {
+            otpChallengeId = r.challengeId;
+            var otpWrap = $('[data-onboard-otp-wrap]', container);
+            if (otpWrap) otpWrap.hidden = false;
+            var pMsg = $('[data-onboard-phone-msg]', container);
+            if (pMsg) { pMsg.className = 'field-msg ok'; pMsg.textContent = 'Verification code sent to ' + fullPhone + ' on WhatsApp.'; }
+          } else {
+            var pMsg = $('[data-onboard-phone-msg]', container);
+            if (pMsg) { pMsg.className = 'field-msg error'; pMsg.textContent = r.message || 'Could not send WhatsApp OTP.'; }
+          }
+        }).catch(function () {
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = 'Send WhatsApp OTP';
+          var pMsg = $('[data-onboard-phone-msg]', container);
+          if (pMsg) { pMsg.className = 'field-msg error'; pMsg.textContent = 'Network error while sending OTP.'; }
+        });
+        return;
+      }
+
+      var verifyOtpBtn = ev.target.closest('[data-onboard-verify-otp]');
+      if (verifyOtpBtn) {
+        var otpInp = $('#onboard-otp', container);
+        var code = (otpInp ? otpInp.value : '').replace(/\D/g, '');
+        if (code.length !== 6) {
+          var pMsg = $('[data-onboard-phone-msg]', container);
+          if (pMsg) { pMsg.className = 'field-msg error'; pMsg.textContent = 'Enter the 6-digit code received on WhatsApp.'; }
+          return;
+        }
+        verifyOtpBtn.disabled = true;
+        verifyOtpBtn.textContent = 'Verifying…';
+        api('POST', '/api/auth/whatsapp/link', {
+          challengeId: otpChallengeId,
+          phone: otpPhone,
+          code: code,
+          promotionalOptIn: false
+        }).then(function (r) {
+          verifyOtpBtn.disabled = false;
+          verifyOtpBtn.textContent = 'Verify OTP';
+          if (r.ok) {
+            profileData.phone = otpPhone;
+            profileData.phoneVerified = true;
+            var unverified = $('[data-phone-unverified-controls]', container);
+            if (unverified) unverified.hidden = true;
+            var verifiedBadge = $('[data-phone-verified-badge]', container);
+            if (verifiedBadge) verifiedBadge.hidden = false;
+            var disp = $('[data-verified-number-display]', container);
+            if (disp) disp.textContent = otpPhone;
+            showMsg('Mobile number verified successfully!', 'ok');
+          } else {
+            var pMsg = $('[data-onboard-phone-msg]', container);
+            if (pMsg) { pMsg.className = 'field-msg error'; pMsg.textContent = r.message || 'Invalid or expired OTP.'; }
+          }
+        }).catch(function () {
+          verifyOtpBtn.disabled = false;
+          verifyOtpBtn.textContent = 'Verify OTP';
+          var pMsg = $('[data-onboard-phone-msg]', container);
+          if (pMsg) { pMsg.className = 'field-msg error'; pMsg.textContent = 'Network error verifying code.'; }
+        });
+        return;
+      }
+
+      // Gender card click
+      var gCard = ev.target.closest('.gender-card');
+      if (gCard) {
+        var radio = gCard.querySelector('input[type="radio"]');
+        if (radio) {
+          radio.checked = true;
+          $$('.gender-card', container).forEach(function (c) {
+            c.classList.toggle('is-selected', c === gCard);
+          });
+          var gSelect = $('#onboard-gender', container);
+          if (gSelect) {
+            gSelect.value = radio.value;
+          }
+          var customWrap = $('#gender-custom-wrap', container);
+          if (customWrap) {
+            customWrap.hidden = !(radio.value === 'self_describe' || radio.value === 'other');
+          }
+        }
+      }
+
+      // Category filter pill click in Step 4
+      var catBtn = ev.target.closest('[data-cat-filter]');
+      if (catBtn) {
+        var catId = catBtn.getAttribute('data-cat-filter');
+        $$('[data-cat-filter]', container).forEach(function (b) {
+          b.classList.toggle('active', b === catBtn);
+        });
+        $$('[data-cat-section]', container).forEach(function (sec) {
+          if (catId === 'all') {
+            sec.hidden = false;
+          } else {
+            sec.hidden = sec.getAttribute('data-cat-section') !== catId;
+          }
+        });
+        return;
+      }
     });
 
     // Form Submissions
@@ -1438,14 +1598,32 @@
 
     var step3Form = $('[data-step-form="3"]', container);
     if (step3Form) {
+      var genderSelect = $('#onboard-gender', step3Form);
+      if (genderSelect) {
+        genderSelect.addEventListener('change', function () {
+          var val = genderSelect.value;
+          $$('.gender-card', step3Form).forEach(function (c) {
+            var r = c.querySelector('input[type="radio"]');
+            var matched = r && (r.value === val || (val === 'other' && r.value === 'self_describe'));
+            if (r) r.checked = matched;
+            c.classList.toggle('is-selected', matched);
+          });
+          var customWrap = $('#gender-custom-wrap', step3Form);
+          if (customWrap) {
+            customWrap.hidden = !(val === 'self_describe' || val === 'other');
+          }
+        });
+      }
+
       step3Form.addEventListener('submit', function (ev) {
         ev.preventDefault();
         var nameInput = $('#onboard-display-name', step3Form);
-        var genderSelect = $('#onboard-gender', step3Form);
         var citySelect = $('#onboard-city', step3Form);
         var dName = (nameInput.value || '').trim();
-        var gender = genderSelect.value;
-        var city = citySelect.value;
+        var gender = genderSelect ? genderSelect.value : '';
+        var city = citySelect ? citySelect.value : '';
+        var customInp = $('#onboard-gender-custom', step3Form);
+        var customVal = customInp ? customInp.value.trim() : '';
 
         if (!dName) {
           showMsg('Please enter your display name.', 'error');
@@ -1454,12 +1632,12 @@
         }
         if (!gender) {
           showMsg('Please select your gender.', 'error');
-          genderSelect.focus();
+          if (genderSelect) genderSelect.focus();
           return;
         }
         if (!city) {
           showMsg('Please select your city.', 'error');
-          citySelect.focus();
+          if (citySelect) citySelect.focus();
           return;
         }
 
@@ -1468,12 +1646,14 @@
         api('POST', '/api/onboarding/profile', {
           displayName: dName,
           gender: gender,
+          genderCustom: customVal || undefined,
           city: city
         }).then(function (r) {
           if (btn) btn.disabled = false;
           if (r.ok) {
             profileData.displayName = dName;
             profileData.gender = gender;
+            profileData.genderCustom = customVal;
             profileData.city = city;
             goToStep(4);
           } else {
@@ -1577,7 +1757,6 @@
     api('GET', '/api/onboarding/status').then(function (r) {
       if (!r.ok) return;
       if (r.completed) {
-        // Already completed, redirect to next destination
         var target = nextUrl && /^\/(?![\/\\])[\w\-./?=&#%]*$/.test(nextUrl) ? nextUrl : '/me';
         window.location.replace(target);
         return;
@@ -1585,23 +1764,66 @@
       var p = r.profile || {};
       profileData.displayName = p.displayName || '';
       profileData.gender = p.gender || '';
+      profileData.genderCustom = r.genderCustom || p.genderCustom || '';
       profileData.city = p.city || '';
       profileData.ageConfirmed = Boolean(p.ageConfirmed);
       profileData.interests = p.interests || [];
       profileData.bio = p.bio || '';
       profileData.languages = p.languages || [];
+      profileData.phone = r.phone || '';
+      profileData.phoneVerified = Boolean(r.phoneVerified);
 
       // Pre-fill inputs
       var nameInput = $('#onboard-display-name', container);
       if (nameInput && profileData.displayName) nameInput.value = profileData.displayName;
       var genderSelect = $('#onboard-gender', container);
-      if (genderSelect && profileData.gender) genderSelect.value = profileData.gender;
+      if (genderSelect && profileData.gender) {
+        genderSelect.value = profileData.gender;
+        $$('.gender-card', container).forEach(function (c) {
+          var rd = c.querySelector('input[type="radio"]');
+          var matched = rd && (rd.value === profileData.gender || (profileData.gender === 'other' && rd.value === 'self_describe'));
+          if (rd) rd.checked = matched;
+          c.classList.toggle('is-selected', matched);
+        });
+      }
+      var customInp = $('#onboard-gender-custom', container);
+      if (customInp && profileData.genderCustom) {
+        customInp.value = profileData.genderCustom;
+        var customWrap = $('#gender-custom-wrap', container);
+        if (customWrap) customWrap.hidden = false;
+      }
       var citySelect = $('#onboard-city', container);
       if (citySelect && profileData.city) citySelect.value = profileData.city;
       var ageCheck = $('#onboard-age-check', container);
       if (ageCheck && profileData.ageConfirmed) ageCheck.checked = true;
       var bioText = $('#onboard-bio', container);
       if (bioText && profileData.bio) bioText.value = profileData.bio;
+
+      // Phone verification prefill
+      if (profileData.phoneVerified || profileData.phone) {
+        var unverified = $('[data-phone-unverified-controls]', container);
+        if (unverified) unverified.hidden = true;
+        var verifiedBadge = $('[data-phone-verified-badge]', container);
+        if (verifiedBadge) verifiedBadge.hidden = false;
+        var disp = $('[data-verified-number-display]', container);
+        if (disp) disp.textContent = profileData.phone;
+      }
+
+      // Community channels prefill
+      (r.communityChannels || []).forEach(function (cItem) {
+        if (cItem.confirmed) {
+          confirmedChannels.add(cItem.channel);
+          var card = container.querySelector('[data-channel-card="' + cItem.channel + '"]');
+          if (card) {
+            card.classList.add('is-confirmed');
+            var btn = card.querySelector('.channel-confirm-btn');
+            if (btn) {
+              btn.textContent = '✓ Confirmed';
+              btn.classList.add('btn-ok');
+            }
+          }
+        }
+      });
 
       // Check existing interests
       (profileData.interests || []).forEach(function (intKey) {
@@ -1636,38 +1858,186 @@
     });
   }
 
-  /* ---------- voluntary profile ---------- */
-  var LABELS = {
-    female: 'Woman', male: 'Man', non_binary: 'Non-binary', prefer_not_to_say: 'Prefer not to say',
-    '21_24': '21–24', '25_29': '25–29', '30_34': '30–34', '35_39': '35–39', '40_plus': '40+',
-    nightlife: 'Nightlife', weekend_trips: 'Weekend trips', strangers_trips: 'Weekend trips', meetups: 'Meetups', dinners: 'Dinners', weekend_parties: 'Weekend parties',
-    dating: 'Dating', matchmaking: 'Matchmaking', board_games: 'Board games', movies: 'Movies'
-  };
+  /* ---------- Voluntary Profile & Interests Hub ---------- */
   function renderProfile(el) {
+    el.innerHTML = '<p class="muted">Loading profile and interests…</p>';
     api('GET', '/api/me/profile').then(function (r) {
       if (!r.ok) { el.hidden = true; return; }
       var p = r.profile, o = r.options;
-      var sel = function (name, opts, cur) {
-        return '<label class="field"><span>' + esc(name === 'gender' ? 'Gender' : name === 'age_band' ? 'Age' : 'City') + '</span><select name="' + name + '"><option value="">Not shared</option>' +
-          opts.map(function (v) { return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(LABELS[v] || v) + '</option>'; }).join('') + '</select></label>';
-      };
-      el.innerHTML = '<form class="lead-form" data-profile-form><h2>About you (optional)</h2>' +
-        '<p class="muted">Helps us plan the right events. Every field is optional, only shown to our team as anonymous totals, and you can clear it any time.</p>' +
-        sel('gender', o.genders, p.gender) + sel('age_band', o.ageBands, p.ageBand) + sel('city', o.cities, p.city) +
-        '<fieldset class="field"><legend>Interests</legend>' + o.interests.map(function (v) {
-          return '<label class="check"><input type="checkbox" name="interests" value="' + esc(v) + '"' + (p.interests.indexOf(v) !== -1 ? ' checked' : '') + '> <span>' + esc(LABELS[v] || v) + '</span></label>';
-        }).join('') + '</fieldset>' +
-        '<button class="btn btn-ghost" type="submit">Save</button> <p class="form-msg" role="status" aria-live="polite" data-profile-msg></p></form>';
+      var curInterests = new Set(p.interests || []);
+      var categories = o.interestCategories || [];
+
+      var categoriesHtml = categories.map(function (cat) {
+        var itemsHtml = cat.interests.map(function (item) {
+          var isChecked = curInterests.has(item.key);
+          return '<label class="interest-chip-card interest-neon-card' + (isChecked ? ' is-selected' : '') + '">' +
+            '<input type="checkbox" name="interests" value="' + esc(item.key) + '"' + (isChecked ? ' checked' : '') + '>' +
+            '<span class="interest-chip-body interest-card-inner">' +
+            '<span class="interest-chip-icon interest-icon" aria-hidden="true">' + item.icon + '</span>' +
+            '<span class="interest-chip-label interest-title">' + esc(item.label) + '</span>' +
+            '<span class="interest-check-mark" aria-hidden="true">✓</span>' +
+            '</span></label>';
+        }).join('');
+
+        return '<div class="interest-category-section" data-hub-cat-section="' + esc(cat.id) + '">' +
+          '<h3 class="category-heading"><span class="cat-icon">' + cat.icon + '</span> ' + esc(cat.label) + '</h3>' +
+          '<div class="interests-neon-grid">' + itemsHtml + '</div>' +
+          '</div>';
+      }).join('');
+
+      var citiesOpts = (o.cities || []).map(function (c) {
+        return '<option value="' + esc(c) + '"' + (c === p.city ? ' selected' : '') + '>' + esc(c) + '</option>';
+      }).join('');
+
+      var isSelfDescribe = p.gender === 'self_describe' || p.gender === 'other';
+
+      el.innerHTML = '<form class="lead-form profile-hub-form" data-profile-form>' +
+        '<h2>Profile &amp; Experience Preferences</h2>' +
+        '<p class="muted">Update your display name, location, and interests. These preferences curate your event drops and secret invitations.</p>' +
+        '<div class="field">' +
+        '<label><span>Display Name</span><input type="text" name="displayName" value="' + esc(p.displayName || '') + '" placeholder="Your name" maxlength="50"></label>' +
+        '</div>' +
+        '<div class="field">' +
+        '<label><span>City</span><select name="city"><option value="">Select your city</option>' + citiesOpts + '</select></label>' +
+        '</div>' +
+        '<div class="field">' +
+        '<label><span>Gender</span></label>' +
+        '<div class="gender-cards-grid" role="radiogroup" aria-label="Gender selection">' +
+        '<label class="gender-card' + (p.gender === 'female' ? ' is-selected' : '') + '"><input type="radio" name="genderCardHub" value="female"' + (p.gender === 'female' ? ' checked' : '') + '><span class="gender-card-body"><span class="gender-icon">👩</span><span class="gender-label">Woman</span></span></label>' +
+        '<label class="gender-card' + (p.gender === 'male' ? ' is-selected' : '') + '"><input type="radio" name="genderCardHub" value="male"' + (p.gender === 'male' ? ' checked' : '') + '><span class="gender-card-body"><span class="gender-icon">👨</span><span class="gender-label">Man</span></span></label>' +
+        '<label class="gender-card' + (p.gender === 'non_binary' ? ' is-selected' : '') + '"><input type="radio" name="genderCardHub" value="non_binary"' + (p.gender === 'non_binary' ? ' checked' : '') + '><span class="gender-card-body"><span class="gender-icon">🧑</span><span class="gender-label">Non-binary</span></span></label>' +
+        '<label class="gender-card' + (isSelfDescribe ? ' is-selected' : '') + '"><input type="radio" name="genderCardHub" value="self_describe"' + (isSelfDescribe ? ' checked' : '') + '><span class="gender-card-body"><span class="gender-icon">✨</span><span class="gender-label">Self-describe</span></span></label>' +
+        '<label class="gender-card' + (p.gender === 'prefer_not_to_say' ? ' is-selected' : '') + '"><input type="radio" name="genderCardHub" value="prefer_not_to_say"' + (p.gender === 'prefer_not_to_say' ? ' checked' : '') + '><span class="gender-card-body"><span class="gender-icon">🤐</span><span class="gender-label">Prefer not to say</span></span></label>' +
+        '</div>' +
+        '<select name="gender" style="position: absolute; opacity: 0; pointer-events: none; height: 0; width: 0;">' +
+        '<option value="">Not shared</option>' +
+        '<option value="female"' + (p.gender === 'female' ? ' selected' : '') + '>Woman</option>' +
+        '<option value="male"' + (p.gender === 'male' ? ' selected' : '') + '>Man</option>' +
+        '<option value="non_binary"' + (p.gender === 'non_binary' ? ' selected' : '') + '>Non-binary</option>' +
+        '<option value="self_describe"' + (isSelfDescribe ? ' selected' : '') + '>Self-describe</option>' +
+        '<option value="prefer_not_to_say"' + (p.gender === 'prefer_not_to_say' ? ' selected' : '') + '>Prefer not to say</option>' +
+        '</select>' +
+        '<div class="field" data-hub-gender-custom-wrap' + (isSelfDescribe ? '' : ' hidden') + ' style="margin-top: 10px;">' +
+        '<label><span>Custom Gender Identity</span><input type="text" name="genderCustom" value="' + esc(p.genderCustom || '') + '" maxlength="50" placeholder="e.g. Genderfluid, Agender"></label>' +
+        '</div>' +
+        '</div>' +
+        '<div class="field profile-interests-section">' +
+        '<label><span>Curated Interests (6 Categories, 33 Experiences)</span></label>' +
+        '<div class="interests-categories-container">' + categoriesHtml + '</div>' +
+        '<div class="interests-counter-bar" data-hub-interests-counter><span class="interests-active-count">✓ ' + (p.interests || []).length + ' interests selected</span></div>' +
+        '</div>' +
+        '<div class="form-actions-row" style="margin-top: 24px;">' +
+        '<button class="btn btn-primary" type="submit">Save Profile &amp; Interests</button>' +
+        '<p class="form-msg" role="status" aria-live="polite" data-profile-msg></p>' +
+        '</div></form>';
+
       var form = $('[data-profile-form]', el);
+      form.addEventListener('click', function (ev) {
+        var gCard = ev.target.closest('.gender-card');
+        if (gCard) {
+          var radio = gCard.querySelector('input[type="radio"]');
+          if (radio) {
+            radio.checked = true;
+            $$('.gender-card', form).forEach(function (c) { c.classList.toggle('is-selected', c === gCard); });
+            form.gender.value = radio.value;
+            var wrap = $('[data-hub-gender-custom-wrap]', form);
+            if (wrap) wrap.hidden = !(radio.value === 'self_describe');
+          }
+        }
+      });
+
+      form.addEventListener('change', function (ev) {
+        if (ev.target.name === 'interests') {
+          var checkedCount = $$('input[name=interests]:checked', form).length;
+          var countEl = $('[data-hub-interests-counter]', form);
+          if (countEl) {
+            countEl.innerHTML = '<span class="interests-active-count">✓ ' + checkedCount + ' interest' + (checkedCount > 1 ? 's' : '') + ' selected</span>';
+          }
+          $$('.interest-chip-card', form).forEach(function (card) {
+            var inp = card.querySelector('input[name=interests]');
+            card.classList.toggle('is-selected', Boolean(inp && inp.checked));
+          });
+        }
+      });
+
       form.addEventListener('submit', function (ev) {
         ev.preventDefault();
-        var body = { gender: form.gender.value || null, age_band: form.age_band.value || null, city: form.city.value || null,
-          interests: $$('input[name=interests]:checked', form).map(function (i) { return i.value; }) };
+        var selectedInterests = $$('input[name=interests]:checked', form).map(function (i) { return i.value; });
+        var body = {
+          displayName: form.displayName ? (form.displayName.value || '').trim() || null : undefined,
+          gender: form.gender.value || null,
+          genderCustom: form.genderCustom ? (form.genderCustom.value || '').trim() || null : undefined,
+          city: form.city.value || null,
+          interests: selectedInterests
+        };
+        var btn = $('button[type=submit]', form);
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
         api('PATCH', '/api/me/profile', body).then(function (res) {
+          btn.disabled = false;
+          btn.textContent = 'Save Profile & Interests';
           var m = $('[data-profile-msg]', form);
           m.className = 'form-msg ' + (res.ok ? 'ok' : 'error');
-          m.textContent = res.ok ? 'Saved.' : (res.message || 'Could not save. Please try again.');
+          m.textContent = res.ok ? 'Profile and interests updated successfully.' : (res.message || 'Could not save. Please try again.');
+        }).catch(function () {
+          btn.disabled = false;
+          btn.textContent = 'Save Profile & Interests';
+          var m = $('[data-profile-msg]', form);
+          m.className = 'form-msg error';
+          m.textContent = 'Network error saving profile.';
         });
+      });
+    });
+  }
+
+  /* ---------- Community Hub (/me) ---------- */
+  function renderCommunityHub(el) {
+    el.innerHTML = '<p class="muted">Loading official community channels…</p>';
+    api('GET', '/api/onboarding/community').then(function (r) {
+      var channels = (r && r.channels) || [];
+      var confirmedMap = {};
+      channels.forEach(function (c) { if (c.confirmed) confirmedMap[c.channel] = true; });
+
+      el.innerHTML = '<div class="community-hub-card">' +
+        '<h2>Official NIGHTLIFEZ Community Channels</h2>' +
+        '<p class="muted">Connect with our official channels for secret venue drops, VIP guestlist announcements, and private party invites.</p>' +
+        '<div class="community-cards-grid">' +
+        '<div class="community-channel-card' + (confirmedMap.telegram ? ' is-confirmed' : '') + '">' +
+        '<div class="channel-card-head"><span class="channel-icon tg-col">✈️</span><div><strong>Telegram Official</strong><span class="channel-handle">@nightlifezcom</span></div></div>' +
+        '<p class="channel-card-desc">Instant mystery venue pins, guestlist access, and direct organiser updates.</p>' +
+        '<div class="channel-card-actions">' +
+        '<a class="btn btn-outline-cyan btn-sm" href="https://t.me/nightlifezcom" target="_blank" rel="noopener">Join Telegram</a>' +
+        '<button type="button" class="btn btn-ghost btn-sm channel-confirm-btn' + (confirmedMap.telegram ? ' btn-ok' : '') + '" data-hub-comm-confirm="telegram">' + (confirmedMap.telegram ? '✓ Confirmed Member' : 'Confirm Joined') + '</button>' +
+        '</div></div>' +
+        '<div class="community-channel-card' + (confirmedMap.whatsapp ? ' is-confirmed' : '') + '">' +
+        '<div class="channel-card-head"><span class="channel-icon wa-col">💬</span><div><strong>WhatsApp VIP Channel</strong><span class="channel-handle">NIGHTLIFEZ VIP</span></div></div>' +
+        '<p class="channel-card-desc">Exclusive weekend event drops, priority pass releases, and curated host guides.</p>' +
+        '<div class="channel-card-actions">' +
+        '<a class="btn btn-outline-cyan btn-sm" href="https://whatsapp.com/channel/0029Vb9EhJ0Bqbr9aQ8gjN3d" target="_blank" rel="noopener">Follow Channel</a>' +
+        '<button type="button" class="btn btn-ghost btn-sm channel-confirm-btn' + (confirmedMap.whatsapp ? ' btn-ok' : '') + '" data-hub-comm-confirm="whatsapp">' + (confirmedMap.whatsapp ? '✓ Confirmed Member' : 'Confirm Followed') + '</button>' +
+        '</div></div>' +
+        '<div class="community-channel-card' + (confirmedMap.instagram ? ' is-confirmed' : '') + '">' +
+        '<div class="channel-card-head"><span class="channel-icon ig-col">📸</span><div><strong>Instagram Community</strong><span class="channel-handle">@nightlifez_</span></div></div>' +
+        '<p class="channel-card-desc">Behind-the-scenes event stories, after-parties, and community spotlights.</p>' +
+        '<div class="channel-card-actions">' +
+        '<a class="btn btn-outline-cyan btn-sm" href="https://www.instagram.com/nightlifez_/" target="_blank" rel="noopener">Follow @nightlifez_</a>' +
+        '<button type="button" class="btn btn-ghost btn-sm channel-confirm-btn' + (confirmedMap.instagram ? ' btn-ok' : '') + '" data-hub-comm-confirm="instagram">' + (confirmedMap.instagram ? '✓ Confirmed Member' : 'Confirm Followed') + '</button>' +
+        '</div></div>' +
+        '</div>' +
+        '<p class="community-verify-note"><span class="note-icon">🔒</span> Channel memberships are verified via member confirmation. No private passwords or credentials are ever accessed.</p>' +
+        '</div>';
+
+      el.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('[data-hub-comm-confirm]');
+        if (btn) {
+          var ch = btn.getAttribute('data-hub-comm-confirm');
+          api('POST', '/api/onboarding/community', { channel: ch, confirmed: true }).then(function () {
+            btn.textContent = '✓ Confirmed Member';
+            btn.classList.add('btn-ok');
+            var card = btn.closest('.community-channel-card');
+            if (card) card.classList.add('is-confirmed');
+          });
+        }
       });
     });
   }
@@ -2243,6 +2613,7 @@
     initAttendeeHub();
     initSaveEventHandlers();
     var pf = $('[data-profile]'); if (pf && state.me) renderProfile(pf);
+    var comm = $('[data-community-hub]'); if (comm && state.me) renderCommunityHub(comm);
     var mb = $('[data-my-bookings]'); if (mb) renderBookings(mb);
     var se = $('[data-saved-events]'); if (se && state.me) renderSavedEvents(se);
     var ma = $('[data-my-announcements]'); if (ma && state.me) renderMyAnnouncements(ma);
