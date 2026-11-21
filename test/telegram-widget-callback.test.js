@@ -3,6 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { resetDb, startServer, stopServer, Client, makeWidgetData, db, BOT_TOKEN } from './helpers.js';
+import { sealWidgetState, TG_WIDGET_MAX_AGE_S } from '../lib/telegram/auth.js';
 
 before(async () => {
   await resetDb();
@@ -20,21 +21,28 @@ function buildCallbackQuery(widgetData, state, next) {
   return params.toString();
 }
 
-async function seedOnboardedUser(id, alias = 'User') {
+function makeState({ ageConfirmed = true, next = '/me', exp } = {}) {
+  return sealWidgetState({ ageConfirmed, next, exp });
+}
+
+async function seedOnboardedUser(id, alias = 'User', ageConfirmed = true) {
   await db.query(
     `INSERT INTO users (telegram_user_id, alias, display_name, age_confirmed_21, status, onboarding_completed, onboarding_step)
-     VALUES ($1, $2, $2, true, 'active', true, 6)
-     ON CONFLICT (telegram_user_id) DO UPDATE SET onboarding_completed = true, onboarding_step = 6`,
-    [id, alias]
+     VALUES ($1, $2, $2, $3, 'active', true, 6)
+     ON CONFLICT (telegram_user_id) DO UPDATE SET
+       onboarding_completed = true,
+       onboarding_step = 6,
+       age_confirmed_21 = EXCLUDED.age_confirmed_21`,
+    [id, alias, ageConfirmed]
   );
 }
 
 test('valid Telegram widget callback establishes session, clears state cookie, and redirects to next', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState({ ageConfirmed: true, next: '/admin' });
   c.cookies.sm_tg_state = state;
 
-  await seedOnboardedUser(5001, 'Aditi');
+  await seedOnboardedUser(5001, 'Aditi', true);
   const widget = makeWidgetData({ id: 5001, first_name: 'Aditi', username: 'aditi_dev' });
   const qs = buildCallbackQuery(widget, state, '/admin');
 
@@ -54,16 +62,23 @@ test('valid Telegram widget callback establishes session, clears state cookie, a
   assert.ok(clearedStateCookie, 'sm_tg_state must be cleared');
   assert.match(clearedStateCookie, /max-age=0/i);
 
-  // Verify user in database
+  // Verify user in database has age confirmed
   const u = await db.one('SELECT telegram_user_id, alias, age_confirmed_21 FROM users WHERE telegram_user_id = 5001');
   assert.equal(u.telegram_user_id, 5001);
   assert.equal(u.alias, 'Aditi');
   assert.equal(u.age_confirmed_21, true);
+
+  // Verify audit record in onboarding_consents
+  const consent = await db.one(
+    `SELECT confirmed, consent_type FROM onboarding_consents WHERE user_id = (SELECT id FROM users WHERE telegram_user_id = 5001)`
+  );
+  assert.equal(consent.confirmed, true);
+  assert.equal(consent.consent_type, 'age_21_plus');
 });
 
 test('owner ID matching ADMIN_BOOTSTRAP_TELEGRAM_ID is automatically bootstrapped as super_admin upon reaching /admin', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState({ ageConfirmed: true, next: '/admin' });
   c.cookies.sm_tg_state = state;
 
   // process.env.ADMIN_BOOTSTRAP_TELEGRAM_ID is 900000001 in test/helpers.js
@@ -84,9 +99,107 @@ test('owner ID matching ADMIN_BOOTSTRAP_TELEGRAM_ID is automatically bootstrappe
   assert.equal(adminRow.active, true);
 });
 
+test('user authenticating without 21+ consent does not have consent fabricated', async () => {
+  const c = new Client();
+  // State generated with ageConfirmed = false (user did not check 21+ confirmation)
+  const state = makeState({ ageConfirmed: false, next: '/me' });
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({ id: 5090, first_name: 'NoAgeUser' });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+
+  // User is created, but age_confirmed_21 must remain false
+  const u = await db.one('SELECT id, telegram_user_id, age_confirmed_21 FROM users WHERE telegram_user_id = 5090');
+  assert.equal(u.age_confirmed_21, false, 'age_confirmed_21 must be false when user did not check 21+');
+
+  // No audit record in onboarding_consents
+  const consent = (await db.query('SELECT * FROM onboarding_consents WHERE user_id = $1', [u.id])).rows;
+  assert.equal(consent.length, 0, 'No consent record must be fabricated');
+});
+
+test('existing user with previously recorded consent preserves consent even if subsequent state is unconfirmed', async () => {
+  const c = new Client();
+  // Seed existing user with age_confirmed_21 = true
+  await seedOnboardedUser(5091, 'StickyConsentUser', true);
+
+  // Subsequent login with ageConfirmed = false in state
+  const state = makeState({ ageConfirmed: false, next: '/me' });
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({ id: 5091, first_name: 'StickyConsentUser' });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+
+  const u = await db.one('SELECT telegram_user_id, age_confirmed_21 FROM users WHERE telegram_user_id = 5091');
+  assert.equal(u.age_confirmed_21, true, 'Sticky consent must be preserved for existing user');
+});
+
+test('existing user without recorded consent does not have consent fabricated on login', async () => {
+  const c = new Client();
+  // Seed existing user with age_confirmed_21 = false
+  await seedOnboardedUser(5092, 'LegacyNoAgeUser', false);
+
+  // Login with ageConfirmed = false
+  const state = makeState({ ageConfirmed: false, next: '/me' });
+  c.cookies.sm_tg_state = state;
+
+  const widget = makeWidgetData({ id: 5092, first_name: 'LegacyNoAgeUser' });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+
+  const u = await db.one('SELECT telegram_user_id, age_confirmed_21 FROM users WHERE telegram_user_id = 5092');
+  assert.equal(u.age_confirmed_21, false, 'Historical unconfirmed status must not be altered');
+});
+
+test('user tampering with state token is rejected with error=expired', async () => {
+  const c = new Client();
+  const validState = makeState({ ageConfirmed: true, next: '/me' });
+  const tamperedState = validState + 'injected_tamper';
+  c.cookies.sm_tg_state = tamperedState;
+
+  const widget = makeWidgetData({ id: 5093, first_name: 'Tamperer' });
+  const qs = buildCallbackQuery(widget, tamperedState, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/signin?error=expired&next=%2Fme');
+  assert.ok(!r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+});
+
+test('replaying a state nonce is rejected with error=replay', async () => {
+  const c = new Client();
+  const state = makeState({ ageConfirmed: true, next: '/me' });
+  c.cookies.sm_tg_state = state;
+
+  await seedOnboardedUser(5094, 'StateReplayer', true);
+  const widget1 = makeWidgetData({ id: 5094, first_name: 'StateReplayer' });
+  const qs1 = buildCallbackQuery(widget1, state, '/me');
+
+  // First use: succeeds
+  const r1 = await c.get(`/auth/telegram/widget-callback?${qs1}`);
+  assert.equal(r1.status, 302);
+  assert.equal(r1.headers.get('location'), '/me');
+
+  // Second use with the same state (even with fresh widget signature): rejected as replay
+  c.cookies.sm_tg_state = state; // Re-supply state cookie
+  const widget2 = makeWidgetData({ id: 5094, first_name: 'StateReplayer' });
+  const qs2 = buildCallbackQuery(widget2, state, '/me');
+
+  const r2 = await c.get(`/auth/telegram/widget-callback?${qs2}`);
+  assert.equal(r2.status, 302);
+  assert.equal(r2.headers.get('location'), '/signin?error=replay&next=%2Fme');
+});
+
 test('missing state cookie is rejected and redirects to signin with error=expired', async () => {
   const c = new Client(); // no sm_tg_state cookie set
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   const widget = makeWidgetData({ id: 5002, first_name: 'Bob' });
   const qs = buildCallbackQuery(widget, state, '/organiser');
 
@@ -101,9 +214,9 @@ test('missing state cookie is rejected and redirects to signin with error=expire
 
 test('mismatched state cookie is rejected and redirects to signin with error=expired', async () => {
   const c = new Client();
-  c.cookies.sm_tg_state = 'cookie-state-12345';
+  c.cookies.sm_tg_state = makeState({ ageConfirmed: true });
   const widget = makeWidgetData({ id: 5003, first_name: 'Carol' });
-  const qs = buildCallbackQuery(widget, 'url-state-different', '/me');
+  const qs = buildCallbackQuery(widget, makeState({ ageConfirmed: true }), '/me');
 
   const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
   assert.equal(r.status, 302);
@@ -113,7 +226,7 @@ test('mismatched state cookie is rejected and redirects to signin with error=exp
 
 test('invalid HMAC signature is rejected and redirects to signin with error=invalid_telegram_auth', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   const widget = makeWidgetData({ id: 5004, first_name: 'Dan' });
@@ -128,7 +241,7 @@ test('invalid HMAC signature is rejected and redirects to signin with error=inva
 
 test('tampered field (e.g. ID altered after signing) is rejected', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   const widget = makeWidgetData({ id: 5005, first_name: 'Eve' });
@@ -141,12 +254,12 @@ test('tampered field (e.g. ID altered after signing) is rejected', async () => {
   assert.ok(!r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
 });
 
-test('expired auth_date (> 86400s old) is rejected', async () => {
+test('stale auth_date (> 300s / 5 minutes old) is rejected', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
-  const staleTimestamp = Math.floor(Date.now() / 1000) - 86500; // >24h old
+  const staleTimestamp = Math.floor(Date.now() / 1000) - 305; // 305s old (> 300s window)
   const widget = makeWidgetData({ id: 5007, first_name: 'Frank' }, { authDate: staleTimestamp });
   const qs = buildCallbackQuery(widget, state, '/me');
 
@@ -156,13 +269,44 @@ test('expired auth_date (> 86400s old) is rejected', async () => {
   assert.ok(!r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
 });
 
+test('future auth_date (> 30s clock skew allowance) is rejected', async () => {
+  const c = new Client();
+  const state = makeState();
+  c.cookies.sm_tg_state = state;
+
+  const futureTimestamp = Math.floor(Date.now() / 1000) + 60; // 60s in future (> 30s skew tolerance)
+  const widget = makeWidgetData({ id: 5009, first_name: 'FutureUser' }, { authDate: futureTimestamp });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
+  assert.ok(!r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+});
+
+test('valid auth_date with minor clock skew (<= 30s) is accepted', async () => {
+  const c = new Client();
+  const state = makeState();
+  c.cookies.sm_tg_state = state;
+
+  await seedOnboardedUser(5015, 'SkewUser');
+  const skewTimestamp = Math.floor(Date.now() / 1000) + 15; // 15s in future (within 30s skew allowance)
+  const widget = makeWidgetData({ id: 5015, first_name: 'SkewUser' }, { authDate: skewTimestamp });
+  const qs = buildCallbackQuery(widget, state, '/me');
+
+  const r = await c.get(`/auth/telegram/widget-callback?${qs}`);
+  assert.equal(r.status, 302);
+  assert.equal(r.headers.get('location'), '/me');
+  assert.ok(r.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
+});
+
 test('anti-replay protection rejects duplicate callback hash', async () => {
   await seedOnboardedUser(5008, 'Grace');
   const widget = makeWidgetData({ id: 5008, first_name: 'Grace' });
 
   // First attempt: succeeds
   const c1 = new Client();
-  const state1 = crypto.randomBytes(16).toString('hex');
+  const state1 = makeState();
   c1.cookies.sm_tg_state = state1;
   const qs1 = buildCallbackQuery(widget, state1, '/me');
   const r1 = await c1.get(`/auth/telegram/widget-callback?${qs1}`);
@@ -170,9 +314,9 @@ test('anti-replay protection rejects duplicate callback hash', async () => {
   assert.equal(r1.headers.get('location'), '/me');
   assert.ok(r1.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
 
-  // Second attempt with exact same signed widget payload (even with fresh state): rejected as replay
+  // Second attempt with exact same signed widget payload: rejected as replay
   const c2 = new Client();
-  const state2 = crypto.randomBytes(16).toString('hex');
+  const state2 = makeState();
   c2.cookies.sm_tg_state = state2;
   const qs2 = buildCallbackQuery(widget, state2, '/me');
   const r2 = await c2.get(`/auth/telegram/widget-callback?${qs2}`);
@@ -192,7 +336,7 @@ test('unsafe redirect destinations are sanitized to /me', async () => {
 
   for (let i = 0; i < unsafeTargets.length; i++) {
     const c = new Client();
-    const state = crypto.randomBytes(16).toString('hex');
+    const state = makeState();
     c.cookies.sm_tg_state = state;
 
     await seedOnboardedUser(5010 + i, `Target${i}`);
@@ -207,7 +351,7 @@ test('unsafe redirect destinations are sanitized to /me', async () => {
 
 test('payload containing is_premium is verified and establishes session', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   await seedOnboardedUser(5020, 'PremiumUser');
@@ -226,7 +370,7 @@ test('payload containing is_premium is verified and establishes session', async 
 
 test('payload containing language_code is verified and establishes session', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   await seedOnboardedUser(5021, 'LangUser');
@@ -241,7 +385,7 @@ test('payload containing language_code is verified and establishes session', asy
 
 test('payload containing multiple extra Telegram fields is verified', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   await seedOnboardedUser(5022, 'FullMeta');
@@ -267,61 +411,62 @@ test('payload containing multiple extra Telegram fields is verified', async () =
 });
 
 test('missing required Telegram fields (hash, id, or auth_date) are rejected', async () => {
-  const state = crypto.randomBytes(16).toString('hex');
-
   // Missing hash
   const c1 = new Client();
-  c1.cookies.sm_tg_state = state;
+  const state1 = makeState();
+  c1.cookies.sm_tg_state = state1;
   const widgetNoHash = makeWidgetData({ id: 5030, first_name: 'NoHash' });
   delete widgetNoHash.hash;
-  const r1 = await c1.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoHash, state, '/me')}`);
+  const r1 = await c1.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoHash, state1, '/me')}`);
   assert.equal(r1.status, 302);
   assert.equal(r1.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
   assert.ok(!r1.headers.getSetCookie().some((h) => h.startsWith('sm_session=')));
 
   // Missing id
   const c2 = new Client();
-  c2.cookies.sm_tg_state = state;
+  const state2 = makeState();
+  c2.cookies.sm_tg_state = state2;
   const widgetNoId = makeWidgetData({ id: 5031, first_name: 'NoId' });
   delete widgetNoId.id;
-  const r2 = await c2.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoId, state, '/me')}`);
+  const r2 = await c2.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoId, state2, '/me')}`);
   assert.equal(r2.status, 302);
   assert.equal(r2.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
 
   // Missing auth_date
   const c3 = new Client();
-  c3.cookies.sm_tg_state = state;
+  const state3 = makeState();
+  c3.cookies.sm_tg_state = state3;
   const widgetNoDate = makeWidgetData({ id: 5032, first_name: 'NoDate' });
   delete widgetNoDate.auth_date;
-  const r3 = await c3.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoDate, state, '/me')}`);
+  const r3 = await c3.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetNoDate, state3, '/me')}`);
   assert.equal(r3.status, 302);
   assert.equal(r3.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
 });
 
 test('malformed required fields (invalid hash format, non-numeric id) are rejected', async () => {
-  const state = crypto.randomBytes(16).toString('hex');
-
   // Malformed hash (short non-64 hex)
   const c1 = new Client();
-  c1.cookies.sm_tg_state = state;
+  const state1 = makeState();
+  c1.cookies.sm_tg_state = state1;
   const widgetShortHash = { ...makeWidgetData({ id: 5033, first_name: 'ShortHash' }), hash: 'badhash' };
-  const r1 = await c1.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetShortHash, state, '/me')}`);
+  const r1 = await c1.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetShortHash, state1, '/me')}`);
   assert.equal(r1.status, 302);
   assert.equal(r1.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
 
   // Malformed ID (non-numeric string)
   const c2 = new Client();
-  c2.cookies.sm_tg_state = state;
+  const state2 = makeState();
+  c2.cookies.sm_tg_state = state2;
   const widgetBadId = makeWidgetData({ id: 5034, first_name: 'BadId' });
   widgetBadId.id = 'not-a-number';
-  const r2 = await c2.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetBadId, state, '/me')}`);
+  const r2 = await c2.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetBadId, state2, '/me')}`);
   assert.equal(r2.status, 302);
   assert.equal(r2.headers.get('location'), '/signin?error=invalid_telegram_auth&next=%2Fme');
 });
 
 test('payload signed with a different bot token is rejected', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   const differentToken = '987654321:DIFFERENT_BOT_TOKEN_1234567890';
@@ -336,7 +481,7 @@ test('payload signed with a different bot token is rejected', async () => {
 
 test('duplicate security-sensitive parameters (HTTP parameter pollution) are rejected', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   const widget = makeWidgetData({ id: 5036, first_name: 'DupParam' });
@@ -350,7 +495,7 @@ test('duplicate security-sensitive parameters (HTTP parameter pollution) are rej
 
 test('unauthorized user cannot access /admin and cannot bootstrap administrator role', async () => {
   const c = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
+  const state = makeState();
   c.cookies.sm_tg_state = state;
 
   await seedOnboardedUser(888888888, 'NormalUser');

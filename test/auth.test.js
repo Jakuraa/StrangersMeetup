@@ -126,7 +126,7 @@ test('signed-in user reaches /me with status 200', async () => {
 test('signin page explains why Telegram is used without passwords', async () => {
   const r = await new Client().get('/signin');
   assert.equal(r.status, 200);
-  assert.match(r.text, /Why sign in with Telegram\?/);
+  assert.match(r.text, /Why sign in with Telegram/);
   assert.match(r.text, /No passwords to manage/);
   assert.match(r.text, /Your privacy stays protected/);
   assert.match(r.text, /Direct venue delivery/);

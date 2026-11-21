@@ -2,7 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import { resetDb, startServer, stopServer, Client, makeWidgetData, db, BOT_TOKEN } from './helpers.js';
+import { resetDb, startServer, stopServer, Client, makeWidgetData, obtainWidgetState, db, BOT_TOKEN } from './helpers.js';
 
 before(async () => {
   await resetDb();
@@ -34,8 +34,7 @@ test('Telegram multi-account: accepts authentication from any valid Telegram acc
 
   // Test Account 1: User 70001 (Alice)
   const client1 = new Client();
-  const state1 = crypto.randomBytes(16).toString('hex');
-  client1.cookies.sm_tg_state = state1;
+  const state1 = await obtainWidgetState(client1, { ageConfirmed: true, next: '/me' });
 
   const widgetAlice = makeWidgetData({ id: 70001, first_name: 'Alice', username: 'alice_telegram' });
   const qs1 = buildCallbackQuery(widgetAlice, state1, '/me');
@@ -55,8 +54,7 @@ test('Telegram multi-account: accepts authentication from any valid Telegram acc
 
   // Test Account 2: User 70002 (Bob)
   const client2 = new Client();
-  const state2 = crypto.randomBytes(16).toString('hex');
-  client2.cookies.sm_tg_state = state2;
+  const state2 = await obtainWidgetState(client2, { ageConfirmed: true, next: '/me' });
 
   const widgetBob = makeWidgetData({ id: 70002, first_name: 'Bob', username: 'bob_telegram' });
   const qs2 = buildCallbackQuery(widgetBob, state2, '/me');
@@ -82,8 +80,7 @@ test('Telegram multi-account: accepts authentication from any valid Telegram acc
 
 test('Telegram identity: identity is bound strictly to Telegram verified numeric ID, not browser username', async () => {
   const client = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
-  client.cookies.sm_tg_state = state;
+  const state = await obtainWidgetState(client, { ageConfirmed: true, next: '/me' });
 
   // Sign in with verified numeric ID 70003, username 'charlie_smith'
   const widget1 = makeWidgetData({ id: 70003, first_name: 'Charlie', username: 'charlie_smith' });
@@ -94,8 +91,7 @@ test('Telegram identity: identity is bound strictly to Telegram verified numeric
 
   // Subsequent login with same numeric ID but changed username/first_name updates profile, preserves user ID
   const clientFollowup = new Client();
-  const stateFollowup = crypto.randomBytes(16).toString('hex');
-  clientFollowup.cookies.sm_tg_state = stateFollowup;
+  const stateFollowup = await obtainWidgetState(clientFollowup, { ageConfirmed: true, next: '/me' });
 
   const widgetUpdated = makeWidgetData({ id: 70003, first_name: 'Charlie Smith Updated', username: 'new_username' });
   await clientFollowup.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetUpdated, stateFollowup, '/me')}`);
@@ -108,8 +104,7 @@ test('Telegram identity: identity is bound strictly to Telegram verified numeric
 test('Telegram isolation: a different Telegram account cannot access another user NIGHTLIFEZ account', async () => {
   // Alice (70010) creates booking or access
   const clientAlice = new Client();
-  const stateA = crypto.randomBytes(16).toString('hex');
-  clientAlice.cookies.sm_tg_state = stateA;
+  const stateA = await obtainWidgetState(clientAlice, { ageConfirmed: true, next: '/me' });
   const widgetA = makeWidgetData({ id: 70010, first_name: 'Alice_Isolated' });
   await clientAlice.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetA, stateA, '/me')}`);
 
@@ -117,8 +112,7 @@ test('Telegram isolation: a different Telegram account cannot access another use
 
   // Eve (70011) attempts access
   const clientEve = new Client();
-  const stateE = crypto.randomBytes(16).toString('hex');
-  clientEve.cookies.sm_tg_state = stateE;
+  const stateE = await obtainWidgetState(clientEve, { ageConfirmed: true, next: '/me' });
   const widgetE = makeWidgetData({ id: 70011, first_name: 'Eve_Attacker' });
   await clientEve.get(`/auth/telegram/widget-callback?${buildCallbackQuery(widgetE, stateE, '/me')}`);
 
@@ -131,8 +125,7 @@ test('Telegram isolation: a different Telegram account cannot access another use
 
 test('Telegram tampering: forged or mismatched Telegram ID breaks HMAC and fails authentication', async () => {
   const client = new Client();
-  const state = crypto.randomBytes(16).toString('hex');
-  client.cookies.sm_tg_state = state;
+  const state = await obtainWidgetState(client, { ageConfirmed: true, next: '/me' });
 
   // Attacker signs payload for 70020, but tampers URL to say id=70021
   const widget = makeWidgetData({ id: 70020, first_name: 'Attacker' });
@@ -203,17 +196,27 @@ test('WhatsApp unavailable UI: renders clear unavailable card and hides phone fo
     const res = await client.get('/signin');
     assert.equal(res.status, 200);
 
-    // When WhatsApp is unavailable, the unavailable card is rendered
+    // 1. WhatsApp unavailable messaging is visible when Production credentials are absent
     assert.match(res.text, /data-wa-unavailable/);
     assert.match(res.text, /WhatsApp sign-in is temporarily unavailable/);
-    assert.match(res.text, /data-switch-to-telegram/);
 
-    // And phone form is NOT rendered on the WhatsApp panel
+    // 2. The WhatsApp phone form is hidden in that unavailable state
     assert.doesNotMatch(res.text, /data-wa-phone-form/);
 
-    // Telegram tab is active by default
+    // 3. Telegram is the active default tab
     assert.match(res.text, /data-auth-tab="telegram"/);
-    assert.match(res.text, /class="auth-tab-btn active"[^>]*data-auth-tab="telegram"/);
+    const tgBtnMatch = res.text.match(/<button[^>]*data-auth-tab="telegram"[^>]*>/);
+    assert.ok(tgBtnMatch, 'Telegram tab button must exist');
+    assert.match(tgBtnMatch[0], /\bactive\b/, 'Telegram tab must have active class');
+    assert.match(tgBtnMatch[0], /aria-selected="true"/, 'Telegram tab must have aria-selected="true"');
+
+    const waBtnMatch = res.text.match(/<button[^>]*data-auth-tab="whatsapp"[^>]*>/);
+    assert.ok(waBtnMatch, 'WhatsApp tab button must exist');
+    assert.match(waBtnMatch[0], /aria-selected="false"/, 'WhatsApp tab must have aria-selected="false"');
+    assert.ok(!waBtnMatch[0].includes('active'), 'WhatsApp tab must not be active');
+
+    // 4. Switching to Telegram remains possible
+    assert.match(res.text, /data-switch-to-telegram/);
   } finally {
     if (prevVercel !== undefined) process.env.VERCEL = prevVercel;
     else delete process.env.VERCEL;
@@ -298,4 +301,91 @@ test('CSS Invariant: [hidden] attribute strictly enforces display: none !importa
   // Verify CSS contains !important on hidden attribute
   assert.match(res.text, /\[hidden\]\s*\{\s*display:\s*none\s*!important/);
   assert.match(res.text, /\.otp-box\[hidden\]/);
+});
+
+/* ========================================================================== */
+/* OBJECTIVE D: Age-Consent State Issuance Security Guardrails                */
+/* ========================================================================== */
+
+test('Age-consent state issuance: GET request is rejected with 405 Method Not Allowed', async () => {
+  const client = new Client();
+  const res1 = await client.get('/auth/telegram/state?age=1');
+  assert.equal(res1.status, 405);
+  assert.equal(res1.json?.error, 'method_not_allowed');
+
+  const res2 = await client.get('/api/auth/telegram/state?age=1');
+  assert.equal(res2.status, 405);
+  assert.equal(res2.json?.error, 'method_not_allowed');
+});
+
+test('Age-consent state issuance: cross-origin requests are rejected with 403', async () => {
+  const client = new Client();
+
+  // Test cross-origin via Origin header
+  const res1 = await client.post('/api/auth/telegram/state', { ageConfirmed: true }, {
+    origin: 'https://malicious-attacker.com'
+  });
+  assert.equal(res1.status, 403);
+  assert.equal(res1.json?.error, 'cross_origin_rejected');
+
+  // Test cross-origin via Sec-Fetch-Site header
+  const res2 = await client.post('/api/auth/telegram/state', { ageConfirmed: true }, {
+    'sec-fetch-site': 'cross-site'
+  });
+  assert.equal(res2.status, 403);
+  assert.equal(res2.json?.error, 'cross_origin_rejected');
+
+  // Test cross-origin via Referer header
+  const res3 = await client.post('/api/auth/telegram/state', { ageConfirmed: true }, {
+    referer: 'https://evil-phish.net/login'
+  });
+  assert.equal(res3.status, 403);
+  assert.equal(res3.json?.error, 'cross_origin_rejected');
+});
+
+test('Age-consent state issuance: missing or false age confirmation cannot issue age-approved state', async () => {
+  const client = new Client();
+
+  // Empty payload
+  const res1 = await client.post('/api/auth/telegram/state', {});
+  assert.equal(res1.status, 400);
+  assert.equal(res1.json?.error, 'missing_age_confirmation');
+
+  // Explicit false consent
+  const res2 = await client.post('/api/auth/telegram/state', { ageConfirmed: false });
+  assert.equal(res2.status, 400);
+  assert.equal(res2.json?.error, 'missing_age_confirmation');
+
+  // String value or non-boolean true
+  const res3 = await client.post('/api/auth/telegram/state', { ageConfirmed: 'yes' });
+  assert.equal(res3.status, 400);
+  assert.equal(res3.json?.error, 'missing_age_confirmation');
+
+  // Non-JSON content type
+  const res4 = await client.req('POST', '/api/auth/telegram/state', 'ageConfirmed=true', {
+    'content-type': 'application/x-www-form-urlencoded'
+  });
+  assert.equal(res4.status, 400);
+  assert.equal(res4.json?.error, 'invalid_content_type');
+});
+
+test('Age-consent state issuance: same-origin affirmative POST issues valid signed state binding age consent', async () => {
+  const client = new Client();
+  const res = await client.post('/api/auth/telegram/state', { ageConfirmed: true, next: '/events' });
+  assert.equal(res.status, 200);
+  assert.equal(res.json?.ok, true);
+  assert.equal(res.json?.ageConfirmed, true);
+  assert.ok(typeof res.json?.state === 'string');
+
+  // State cookie set in cookie jar
+  assert.ok(client.cookies.sm_tg_state);
+  assert.equal(client.cookies.sm_tg_state, res.json.state);
+
+  // Unseal token to verify cryptographically bound claims
+  const { unsealWidgetState } = await import('../lib/telegram/auth.js');
+  const payload = unsealWidgetState(res.json.state);
+  assert.ok(payload);
+  assert.equal(payload.age, true);
+  assert.equal(payload.next, '/events');
+  assert.ok(payload.nonce);
 });

@@ -8,6 +8,7 @@ import { db, resetDb, startServer, stopServer, Client, makeInitData, makeWidgetD
 import { requestWhatsAppOtp, verifyWhatsAppOtpAndResolveUser } from '../lib/services/whatsapp-auth.js';
 import { createSession, revokeSession, getSessionUser, SESSION_COOKIE } from '../lib/session.js';
 import { ONBOARDING_STEPS } from '../lib/services/member-onboarding.js';
+import { sealWidgetState } from '../lib/telegram/auth.js';
 
 let tgSeq = 880000000;
 let phoneSeq = 9876500000;
@@ -116,7 +117,7 @@ test('AUTHENTICATION: Sign-out rejects invalid CSRF tokens with 403 (CSRF guardr
 test('AUTHENTICATION: Telegram Login Widget callback with state validation and replay defense', async () => {
   const client = new Client();
   const tgUser = nextTgUser('Telegram Callback');
-  const stateNonce = crypto.randomBytes(16).toString('hex');
+  const stateNonce = sealWidgetState({ ageConfirmed: true, next: '/events' });
 
   // Set state cookie
   client.cookies['sm_tg_state'] = stateNonce;
@@ -136,8 +137,14 @@ test('AUTHENTICATION: Telegram Login Widget callback with state validation and r
 
   // Replay attempt with same hash must be rejected
   const replayClient = new Client();
-  replayClient.cookies['sm_tg_state'] = stateNonce;
-  const replayRes = await replayClient.get(`/auth/telegram/widget-callback?${queryParams.toString()}`);
+  const replayState = sealWidgetState({ ageConfirmed: true, next: '/events' });
+  replayClient.cookies['sm_tg_state'] = replayState;
+  const replayParams = new URLSearchParams({
+    ...widgetData,
+    state: replayState,
+    next: '/events'
+  });
+  const replayRes = await replayClient.get(`/auth/telegram/widget-callback?${replayParams.toString()}`);
   assert.equal(replayRes.status, 302);
   assert.match(replayRes.headers.get('location'), /error=replay/);
 });
@@ -145,7 +152,7 @@ test('AUTHENTICATION: Telegram Login Widget callback with state validation and r
 test('AUTHENTICATION: Telegram callback signature failure rejects forged payloads', async () => {
   const client = new Client();
   const tgUser = nextTgUser('Forged Telegram');
-  const stateNonce = crypto.randomBytes(16).toString('hex');
+  const stateNonce = sealWidgetState({ ageConfirmed: true, next: '/me' });
   client.cookies['sm_tg_state'] = stateNonce;
 
   const widgetData = makeWidgetData(tgUser);

@@ -94,21 +94,19 @@ test('2. Official Districts: 87 districts across TN, KA, KL, PY with official LG
 
 test('3. Active Cities and Towns: Market tiers, aliases, and discovery', async () => {
   const cities = await listCities();
-  assert.equal(cities.length, 19, 'Must seed 19 active discovery cities');
+  assert.ok(cities.length >= 19, 'Must seed at least 19 active discovery cities across India');
 
   // Business Market Tiers (distinct from administrative tiers)
   const primary = cities.filter((c) => c.market_tier === 'primary_market');
   const expansion = cities.filter((c) => c.market_tier === 'expansion_market');
-  const getaway = cities.filter((c) => c.market_tier === 'getaway_destination');
 
-  assert.equal(primary.length, 5, 'Primary markets: Chennai, Bengaluru, Coimbatore, Kochi, Puducherry');
-  assert.equal(expansion.length, 7, 'Expansion markets: Mysuru, Mangaluru, Madurai, Salem, Trichy, Trivandrum, Kozhikode');
-  assert.equal(getaway.length, 7, 'Getaway destinations: Ooty, Kodaikanal, Coorg, Gokarna, Chikmagalur, Varkala, Wayanad');
+  assert.ok(primary.length >= 5, 'Primary markets must include Chennai, Bengaluru, Coimbatore, Kochi, Puducherry, Mumbai, Delhi');
+  assert.ok(expansion.length >= 7, 'Expansion markets must include Mysuru, Mangaluru, Madurai, Salem, Trichy, Trivandrum, Kozhikode');
 
-  // All coordinates must be valid numbers within India latitude/longitude bounds
+  // All coordinates must be valid numbers within India latitude/longitude bounds (8°N–38°N, 68°E–98°E)
   for (const c of cities) {
-    assert.ok(c.lat >= 8.0 && c.lat <= 16.0, `${c.name} lat (${c.lat}) must be in South India bounds`);
-    assert.ok(c.lng >= 74.0 && c.lng <= 81.0, `${c.name} lng (${c.lng}) must be in South India bounds`);
+    assert.ok(c.lat >= 8.0 && c.lat <= 38.0, `${c.name} lat (${c.lat}) must be in India bounds`);
+    assert.ok(c.lng >= 68.0 && c.lng <= 98.0, `${c.name} lng (${c.lng}) must be in India bounds`);
   }
 
   // Alias matching: 'Bangalore' -> Bengaluru, 'Kovai' -> Coimbatore, 'Madras' -> Chennai

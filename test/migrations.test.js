@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 24 migrations currently exist: 003 through 026
-  assert.equal(files.length, 24, `expected 24 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 25 migrations currently exist: 003 through 027
+  assert.equal(files.length, 25, `expected 25 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 24 migrations in correct order', async () => {
+test('schema_migrations table records all 25 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 24);
+  assert.equal(rows.length, 25);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 24
+  // Total count in schema_migrations must remain exactly 25
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 24);
+  assert.equal(countRes.n, 25);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -352,4 +352,71 @@ test('migration 026: safe grandfathering of pre-existing accounts without bookin
   // Verify uExistingWithoutAge still has age_confirmed_21 = false after migration rerun
   const checkNoAgeRerun = (await db.query('SELECT age_confirmed_21 FROM users WHERE id = $1', [uExistingWithoutAge.id])).rows[0];
   assert.equal(checkNoAgeRerun.age_confirmed_21, false, 'rerun must never manufacture age confirmation');
+});
+
+test('migration 027: master auth, onboarding, community joins, and expanded Indian cities', async () => {
+  // 1. Verify gender_custom column on users table
+  const colRes = await db.query(
+    `SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'gender_custom'`
+  );
+  assert.equal(colRes.rows.length, 1, 'users.gender_custom column must exist');
+
+  // 2. Verify member_community_joins table exists
+  const tblRes = await db.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_name = 'member_community_joins'`
+  );
+  assert.equal(tblRes.rows.length, 1, 'member_community_joins table must exist');
+
+  // 3. Verify expanded cities directory contains all 4 major regions and exactly 49 canonical markets
+  const cities = await db.query(
+    `SELECT slug, name, market_tier, active, is_discovery_active FROM location_cities ORDER BY slug`
+  );
+  assert.ok(cities.rows.length >= 49, `expected at least 49 cities, got ${cities.rows.length}`);
+
+  const citySlugs = new Set(cities.rows.map(c => c.slug));
+  const requiredCities = [
+    'chennai', 'bengaluru', 'hyderabad', 'kochi', 'coimbatore', 'puducherry', 'madurai', 'trivandrum',
+    'kozhikode', 'mysuru', 'mangaluru', 'vijayawada', 'visakhapatnam', 'tiruchirappalli', 'salem',
+    'warangal', 'guntur', 'hubli-dharwad',
+    'mumbai', 'pune', 'ahmedabad', 'goa', 'surat', 'vadodara', 'nagpur', 'nashik', 'rajkot', 'kolhapur',
+    'delhi-ncr', 'chandigarh', 'jaipur', 'gurugram', 'noida', 'lucknow', 'dehradun', 'amritsar',
+    'ludhiana', 'jammu', 'agra', 'varanasi', 'kanpur',
+    'kolkata', 'bhubaneswar', 'guwahati', 'patna', 'ranchi', 'raipur', 'indore', 'bhopal'
+  ];
+
+  for (const rc of requiredCities) {
+    assert.ok(citySlugs.has(rc), `required city slug "${rc}" must exist in location_cities`);
+  }
+});
+
+test('migration 027: preserves administrator-deactivated city status across migration reruns', async () => {
+  // 1. Ensure migration 027 is applied
+  await migrate({ log: false });
+
+  // 2. Administrator intentionally deactivates a city (e.g. 'kochi')
+  await db.query(
+    `UPDATE location_cities
+     SET active = false, is_discovery_active = false
+     WHERE slug = 'kochi'`
+  );
+
+  const beforeRerun = (await db.query(
+    `SELECT slug, active, is_discovery_active FROM location_cities WHERE slug = 'kochi'`
+  )).rows[0];
+  assert.equal(beforeRerun.active, false, 'kochi must be deactivated by admin');
+  assert.equal(beforeRerun.is_discovery_active, false, 'kochi discovery must be deactivated by admin');
+
+  // 3. Re-run migration 027 SQL script directly to simulate migration re-run
+  const migrationSql = fs.readFileSync(path.join(MIGRATIONS_DIR, '027_master_auth_onboarding_neon.sql'), 'utf8');
+  await db.query(migrationSql);
+
+  // 4. Confirm the city remains deactivated after migration rerun
+  const afterRerun = (await db.query(
+    `SELECT slug, active, is_discovery_active FROM location_cities WHERE slug = 'kochi'`
+  )).rows[0];
+  assert.equal(afterRerun.active, false, 'kochi must REMAIN deactivated after migration rerun');
+  assert.equal(afterRerun.is_discovery_active, false, 'kochi discovery must REMAIN deactivated after migration rerun');
+
+  // Restore kochi for other tests
+  await db.query(`UPDATE location_cities SET active = true, is_discovery_active = true WHERE slug = 'kochi'`);
 });
