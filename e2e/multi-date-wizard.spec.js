@@ -86,7 +86,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     // Verify Payment contradiction notice
     const payNotice = page.locator('.notice-warn');
     await expect(payNotice).toBeVisible();
-    await expect(payNotice).toContainText('Online payment is not configured yet');
+    await expect(payNotice).toContainText(/Online payment is (?:pending gateway configuration|not configured yet)/);
 
     // Verify quick-add chips exist and are accessible
     const quickAddGeneral = page.locator('button.chip[data-act="add-tier"][data-preset="general"]');

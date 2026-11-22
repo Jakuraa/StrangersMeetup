@@ -109,7 +109,7 @@
           '<div class="org-fin-kpi highlight"><span class="org-fin-kpi-lbl">Outstanding Balance</span><span class="org-fin-kpi-val" style="color:' + (acc.outstandingBalancePaise > 0 ? 'var(--party-pink,#FF315B)' : 'var(--neon-green,#00FF88)') + ';">' + money(acc.outstandingBalancePaise) + '</span></div>' +
           '</div>' +
           '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
-          '<a class="btn btn-sm btn-ghost" href="/api/organiser/finance/statement" download>📥 Download Financial Statement (CSV)</a>' +
+          '<a class="btn btn-sm btn-ghost org-fin-btn" href="/api/organiser/finance/statement" download>📥 Download Statement (CSV)</a>' +
           '<span class="muted small">Manage and settle event fees directly from each event\'s Manage tab.</span>' +
           '</div>' +
           '</div>';
@@ -298,7 +298,7 @@
         h += '<div class="org-card" style="padding:20px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">' +
           '<h3 style="margin:0;">Payment Claims & History</h3>' +
-          '<a class="btn btn-sm btn-ghost" href="/api/organiser/finance/statement" download>📥 Download Financial Statement (CSV)</a>' +
+          '<a class="btn btn-sm btn-ghost org-fin-btn" href="/api/organiser/finance/statement" download>📥 Download Statement (CSV)</a>' +
           '</div>';
 
         if (!subs.length) {
