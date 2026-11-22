@@ -1468,7 +1468,13 @@
             date: ymd,
             startLocal: ymd + 'T' + startTime,
             endLocal: ymd + 'T' + endTime,
-            label: 'Session ' + count
+            label: 'Session ' + count,
+            venueId: null,
+            venueName: sched.venueArrangement === 'same' ? (d.venue || '') : '',
+            venueAddress: sched.venueArrangement === 'same' ? (d.venue || '') : '',
+            city: d.city || '',
+            mapsUrl: sched.venueArrangement === 'same' ? (d.mapsUrl || '') : '',
+            timezone: d.timezone || 'Asia/Kolkata'
           });
         }
         current.setUTCDate(current.getUTCDate() + 1);
@@ -1514,11 +1520,32 @@
           '<p class="help">Attendees will see the full multi-day dates on the event page. In the Tickets step, you can sell passes for all days or specific individual dates.</p>';
       } else if (curType === 'custom_dates' || curType === 'recurring') {
         var dates = sched.dates || [];
+        var va = sched.venueArrangement || 'same';
+        var venueArrangementHtml = '<div class="venue-arrangement-section" style="margin:14px 0;padding:14px;border:1px solid var(--border-strong, #6670B0);border-radius:var(--radius-sm);background:var(--surface-input, #0B0E1E);">' +
+          '<h4 style="margin:0 0 6px 0;font-size:0.95rem;color:var(--fg-primary, #FFFFFF);">Venue arrangement</h4>' +
+          '<p class="help" style="margin-bottom:10px;color:var(--fg-muted, #A3ABC9);">Does every session take place at the same venue, or does each session have its own location?</p>' +
+          '<div class="chips">' +
+          '<button type="button" class="chip' + (va === 'same' ? ' is-active' : '') + '" data-act="set-venue-arrangement" data-val="same">' + (va === 'same' ? '✓ ' : '') + 'Use the same venue for every session</button>' +
+          '<button type="button" class="chip' + (va === 'different' ? ' is-active' : '') + '" data-act="set-venue-arrangement" data-val="different">' + (va === 'different' ? '✓ ' : '') + 'Set a different venue for each session</button>' +
+          '</div></div>';
+
         var rows = dates.map(function (item, idx) {
           var p = 'schedule.dates.' + idx;
-          return '<li class="schedule-session-card" style="padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:10px;">' +
+          var venueFields = va === 'different'
+            ? '<div class="session-venue-fields" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-strong, #6670B0);">' +
+              '<div class="row2">' +
+              text(p + '.venueName', 'Session venue name', { required: true, placeholder: 'e.g. Club Cubana, Venue B', max: 120 }) +
+              text(p + '.city', 'City', { required: true, placeholder: 'e.g. Bengaluru, Coimbatore', max: 80, def: d.city || '' }) +
+              '</div>' +
+              '<div class="row2">' +
+              text(p + '.venueAddress', 'Address / Locality (optional)', { placeholder: 'Street address or landmark', max: 255 }) +
+              text(p + '.mapsUrl', 'Google Maps link (optional)', { placeholder: 'https://maps.app.goo.gl/...', max: 500 }) +
+              '</div></div>'
+            : '<p class="muted small" style="margin-top:6px;color:var(--fg-muted, #A3ABC9);">📍 Shares primary venue: <strong>' + esc(d.venue || 'Venue to be set below') + '</strong> (' + esc(d.city || 'City') + ').</p>';
+
+          return '<li class="schedule-session-card" style="padding:14px;border:1px solid var(--border-strong, #6670B0);border-radius:var(--radius-sm);background:var(--surface-card, #171B34);margin-bottom:12px;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-            '<strong style="font-size:0.92rem;color:var(--ink);">Session ' + (idx + 1) + (item.date ? ' · ' + esc(dayLabel(item.date)) : '') + '</strong>' +
+            '<strong style="font-size:0.95rem;color:var(--fg-primary, #FFFFFF);">Session ' + (idx + 1) + (item.date ? ' · ' + esc(dayLabel(item.date)) : '') + '</strong>' +
             (dates.length > 1 ? '<button class="btn btn-sm btn-ghost" type="button" data-act="del-schedule-date" data-i="' + idx + '" style="color:var(--party-pink);">Remove</button>' : '') +
             '</div>' +
             '<div class="row3">' +
@@ -1527,6 +1554,7 @@
             text(p + '.endLocal', 'End time', { type: 'datetime-local', required: true }) +
             '</div>' +
             text(p + '.label', 'Session label (optional)', { optional: true, placeholder: 'e.g. Opening Night, Semi-Final, Grand Finale', max: 80 }) +
+            venueFields +
             '</li>';
         }).join('');
 
@@ -1557,7 +1585,7 @@
             '</div>';
         }
 
-        content += recurringGenerator +
+        content += venueArrangementHtml + recurringGenerator +
           '<p class="lbl" style="margin-bottom:8px;">Scheduled sessions (' + dates.length + '):</p>' +
           (rows ? '<ul style="list-style:none;padding:0;margin:0 0 12px;">' + rows + '</ul>' : '<p class="muted">No sessions configured yet.</p>') +
           '<button class="btn btn-ghost btn-sm" type="button" data-act="add-schedule-date">+ Add another date / session</button>' +
@@ -1701,34 +1729,58 @@
         dlist.forEach(function (x) { validOptions.push([x, dayLabel(x)]); });
       }
       var balance = d.features && d.features.balance && d.features.balance.enabled;
+      var catOptions = [
+        ['general', 'General admission'],
+        ['men', "Men's Pass"],
+        ['women', "Women's Pass"],
+        ['couple', 'Couple Pass (Admits 2)'],
+        ['group', 'Group Pass (Admits 4)'],
+        ['vip', 'VIP Pass'],
+        ['early_bird', 'Early Bird'],
+        ['custom', 'Custom Category']
+      ];
+
       var tiers = (d.tickets || []).map(function (t, i) {
         var p = 'tickets.' + i;
         var statusPill = t.kind === 'free'
           ? '<span class="pill pill-free">Free</span>'
           : (co.available
-            ? '<span class="pill pill-paid">Paid</span>'
+            ? '<span class="pill pill-paid" style="background:rgba(6,214,160,0.18);color:#06D6A0;border:1px solid rgba(6,214,160,0.35);">Paid (Automated UPI)</span>'
             : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Draft — External Checkout Pending)</span>');
 
         var checkoutWarning = (t.kind === 'paid' && !co.available)
           ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is not configured yet. This ticket will be saved as a draft and displayed to attendees with the badge <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable by attendees.</p>'
           : '';
 
+        var defaultAdmit = t.category === 'couple' ? 2 : (t.category === 'group' ? 4 : 1);
+
         return '<li class="tier-card"><div class="tier-card-head"><h4>' + esc(t.name || 'Untitled ticket') + '</h4>' + statusPill + '</div>' +
           checkoutWarning +
-          '<div class="row2">' + text(p + '.name', 'Ticket name', { max: 60 }) +
+          '<div class="row2">' +
+          select(p + '.category', 'Ticket category', catOptions, { def: 'general' }) +
+          text(p + '.name', 'Ticket display name', { max: 60 }) +
+          '</div>' +
+          '<div class="row2">' +
           '<fieldset class="fld seg"><legend>Type</legend>' +
           '<label><input type="radio" name="kind-' + esc(t.id) + '" value="free"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'free' ? ' checked' : '') + '> Free</label>' +
-          '<label><input type="radio" name="kind-' + esc(t.id) + '" value="paid"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'paid' ? ' checked' : '') + '> Paid</label></fieldset></div>' +
-          '<div class="row3">' + (t.kind === 'paid' ? text(p + '.pricePaise', 'Price (₹)', { type: 'number', min: 0, inputmode: 'decimal', kind: 'rupees', display: function (v) { return Number.isInteger(v) ? v / 100 : ''; } }) : '<div class="fld"><p class="lbl">Price</p><p class="free-note">Free — no payment is ever collected.</p></div>') +
+          '<label><input type="radio" name="kind-' + esc(t.id) + '" value="paid"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'paid' ? ' checked' : '') + '> Paid</label></fieldset>' +
+          text(p + '.admitCount', 'Admits (guests per ticket)', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: defaultAdmit, help: 'E.g. Couple = 2 guests, Group = 4 guests' }) +
+          '</div>' +
+          '<div class="row3">' +
+          (t.kind === 'paid' ? text(p + '.pricePaise', 'Price (₹)', { type: 'number', min: 0, inputmode: 'decimal', kind: 'rupees', display: function (v) { return Number.isInteger(v) ? v / 100 : ''; } }) : '<div class="fld"><p class="lbl">Price</p><p class="free-note">Free — no payment is ever collected.</p></div>') +
           text(p + '.quantity', 'Quantity available', { type: 'number', min: 0, inputmode: 'numeric', kind: 'int' }) +
-          text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, inputmode: 'numeric', kind: 'int' }) + '</div>' +
-          (isMulti ? select(p + '.validOn', 'Valid for', validOptions, { def: 'all' }) : '') +
-          (balance ? text(p + '.eligibility', 'Who is this ticket for?', { max: 120, optional: true, placeholder: 'e.g. Women, Men, Couples', help: 'Guests confirm they meet this when booking.' }) : '') +
+          text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, inputmode: 'numeric', kind: 'int', def: t.category === 'couple' ? 1 : 4 }) +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.minPerBooking', 'Min per booking', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: 1 }) +
+          (isMulti ? select(p + '.validOn', 'Valid for session/date', validOptions, { def: 'all' }) : '<div class="fld"></div>') +
+          '</div>' +
+          text(p + '.eligibility', 'Eligibility description', { max: 120, optional: true, placeholder: 'e.g. One pass admits 1 couple arriving together', help: 'Shown on the event page and ticket rules before booking.' }) +
           '<div class="org-item-actions"><button class="btn btn-sm btn-ghost" type="button" data-act="dup-tier" data-i="' + i + '">Duplicate</button>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-act="del-tier" data-i="' + i + '">Delete</button></div></li>';
       }).join('');
       var payCard = co.available
-        ? '<p class="notice">Paid tickets use a hosted checkout' + (co.testMode ? ' in <strong>test mode</strong> (no real money)' : '') + '. A booking is confirmed only after the payment provider confirms payment.</p>'
+        ? '<div class="notice notice-success" style="background:rgba(6,214,160,0.12);border:1px solid rgba(6,214,160,0.35);color:#06D6A0;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>⚡ Automated UPI Verification Active:</strong> Paid tickets use automated provider verification (PhonePe PG). A booking and QR pass are issued and confirmed immediately upon automated banking verification.</p></div>'
         : '<div class="notice notice-warn" role="status"><p><strong>Online payment is not configured yet.</strong> ' + esc(co.message) + '</p>' +
           '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets will be created as <strong>Drafts</strong> and shown to attendees as <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable/bookable by attendees.</p></div>';
       return card('Payment', payCard) +
@@ -1963,6 +2015,10 @@
     function presetTier(key) {
       var p = clone(CFG.ticketPresets[key] || CFG.ticketPresets.general);
       p.id = uid();
+      p.category = p.category || key || 'general';
+      p.admitCount = p.admitCount || (p.category === 'couple' ? 2 : p.category === 'group' ? 4 : 1);
+      p.minPerBooking = p.minPerBooking || 1;
+      p.maxPerBooking = p.maxPerBooking || (p.category === 'couple' ? 1 : 4);
       if (p.kind === 'free') p.pricePaise = 0;
       return p;
     }
@@ -2107,6 +2163,14 @@
             label: 'Session ' + (sarr.length + 1)
           });
           syncScheduleBounds();
+          touch(); return render();
+        case 'set-venue-arrangement':
+          var vaVal = b.getAttribute('data-val') || 'same';
+          if (!S.data.schedule) S.data.schedule = {};
+          S.data.schedule.venueArrangement = vaVal;
+          if (S.data.schedule.recurring) {
+            S.data.schedule.recurring.venueArrangement = vaVal;
+          }
           touch(); return render();
         case 'del-schedule-date':
           var didx = Number(b.getAttribute('data-i'));
