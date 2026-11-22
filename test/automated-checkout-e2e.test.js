@@ -22,6 +22,7 @@ import { deliverDue } from '../lib/services/notifications.js';
 test.beforeEach(async () => {
   await resetDb();
   process.env.UPI_CHECKOUT_ENABLED = 'true';
+  process.env.ALLOW_PREVIEW_PAID_CHECKOUT = 'true';
   process.env.FORCE_PHONEPE = 'true';
   process.env.PHONEPE_MERCHANT_ID = 'PGTESTPAYUAT';
   process.env.PHONEPE_SALT_KEY = '099eb0cd-0252-4e2a-8aca-eb3c6bd470f1';
@@ -31,6 +32,7 @@ test.beforeEach(async () => {
 
 test.afterEach(() => {
   process.env.UPI_CHECKOUT_ENABLED = 'false';
+  delete process.env.ALLOW_PREVIEW_PAID_CHECKOUT;
   delete process.env.FORCE_PHONEPE;
   getWhatsAppProvider().clearSentMessages();
 });

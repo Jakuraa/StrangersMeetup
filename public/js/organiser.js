@@ -1745,11 +1745,13 @@
         var statusPill = t.kind === 'free'
           ? '<span class="pill pill-free">Free</span>'
           : (co.available
-            ? '<span class="pill pill-paid" style="background:rgba(6,214,160,0.18);color:#06D6A0;border:1px solid rgba(6,214,160,0.35);">Paid (Automated UPI)</span>'
-            : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Draft — External Checkout Pending)</span>');
+            ? (co.isSandbox
+              ? '<span class="pill pill-test" style="background:rgba(251,191,36,0.18);color:#FBBF24;border:1px solid rgba(251,191,36,0.35);">Paid (Sandbox Test Mode)</span>'
+              : '<span class="pill pill-paid">Paid</span>')
+            : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Gateway Pending)</span>');
 
         var checkoutWarning = (t.kind === 'paid' && !co.available)
-          ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is not configured yet. This ticket will be saved as a draft and displayed to attendees with the badge <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable by attendees.</p>'
+          ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is pending gateway activation. This ticket will be saved as a draft and displayed to attendees with the notice <em>“Online payment pending gateway configuration”</em>. Free tickets are fully bookable.</p>'
           : '';
 
         var defaultAdmit = t.category === 'couple' ? 2 : (t.category === 'group' ? 4 : 1);
@@ -1780,9 +1782,11 @@
           '<button class="btn btn-sm btn-ghost" type="button" data-act="del-tier" data-i="' + i + '">Delete</button></div></li>';
       }).join('');
       var payCard = co.available
-        ? '<div class="notice notice-success" style="background:rgba(6,214,160,0.12);border:1px solid rgba(6,214,160,0.35);color:#06D6A0;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>⚡ Automated UPI Verification Active:</strong> Paid tickets use automated provider verification (PhonePe PG). A booking and QR pass are issued and confirmed immediately upon automated banking verification.</p></div>'
-        : '<div class="notice notice-warn" role="status"><p><strong>Online payment is not configured yet.</strong> ' + esc(co.message) + '</p>' +
-          '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets will be created as <strong>Drafts</strong> and shown to attendees as <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable/bookable by attendees.</p></div>';
+        ? (co.isSandbox
+          ? '<div class="notice notice-info" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.35);color:#38BDF8;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>🧪 Sandbox UPI Testing Active:</strong> Paid tickets use simulated provider verification for non-production testing. Live gateway checkout is disabled until merchant onboarding is complete.</p></div>'
+          : '<div class="notice notice-success" style="background:rgba(6,214,160,0.12);border:1px solid rgba(6,214,160,0.35);color:#06D6A0;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>Online Checkout Active:</strong> Paid tickets use verified payment gateway checkout.</p></div>')
+        : '<div class="notice notice-warn" role="status"><p><strong>Online payment is pending gateway configuration.</strong> ' + esc(co.message) + '</p>' +
+          '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets can be configured and priced in draft mode. Free tickets are live and bookable by attendees.</p></div>';
       return card('Payment', payCard) +
         card('Ticket types', '<p class="help">Quick add:</p><div class="chips">' + Object.keys(CFG.ticketPresets).map(function (k) {
           return '<button type="button" class="chip" data-act="add-tier" data-preset="' + esc(k) + '">+ ' + esc(CFG.ticketPresets[k].name) + '</button>';
