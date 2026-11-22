@@ -692,6 +692,16 @@
         ['Bank UTR Reference', function (s) { return el('code', { text: s.utr_number }); }],
         ['Submitted On', function (s) { return fmtDT(s.created_at); }],
         ['Outstanding Before', function (s) { return rupees(s.outstanding_before_confirmation_paise); }],
+        ['Proof', function (s) {
+          if (!s.screenshot_url) return el('span', { class: 'muted small', text: 'None' });
+          return el('a', {
+            href: s.screenshot_url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            class: 'link-subtle small',
+            text: 'View Proof ↗'
+          });
+        }],
         ['Status', function (s) { return pill(s.status); }],
         ['', function (s) {
           if (s.status === 'verified') return el('span', { class: 'muted small', text: 'Verified' });

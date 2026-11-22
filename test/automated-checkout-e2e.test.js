@@ -124,7 +124,7 @@ test('End-to-end automated checkout: Intent -> Webhook -> Pass issuance -> Whats
   });
 
   assert.ok(intent.orderId);
-  assert.equal(intent.amountPaise, 129900);
+  assert.equal(intent.amountPaise, 136395); // 129,900 + 5% platform fee (6,495)
   assert.ok(intent.upiIntentUrl);
 
   // Seat hold is active
@@ -139,7 +139,7 @@ test('End-to-end automated checkout: Intent -> Webhook -> Pass issuance -> Whats
       merchantId: 'PGTESTPAYUAT',
       merchantTransactionId: intent.orderId,
       transactionId: `TXN_${crypto.randomBytes(6).toString('hex')}`,
-      amount: 129900,
+      amount: intent.amountPaise,
       currency: 'INR',
       state: 'COMPLETED',
       responseCode: 'SUCCESS',

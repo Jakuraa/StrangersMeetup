@@ -17,7 +17,9 @@ import {
   getOrganiserFinanceSummary,
   getAdminFinanceOverview,
   extendPaymentDeadline,
-  DEFAULT_FEE_PERCENTAGE
+  DEFAULT_FEE_PERCENTAGE,
+  getPlatformFinanceUpi,
+  getPlatformFinanceName
 } from '../lib/services/finance.js';
 import {
   createDraft,
@@ -538,9 +540,9 @@ test('12. Organiser isolation: cannot view or pay another organiser\'s finances'
     amountPaise: 5000,
     utrNumber: `HACK-UTR-${Date.now()}`
   });
-  // Does not affect Organiser A's invoice
-  const subCreated = (await db.query(`SELECT * FROM organiser_fee_payment_submissions WHERE id = $1`, [hackRes.json.submission.id])).rows[0];
-  assert.equal(subCreated.invoice_id, null, 'Invoice ID must be ignored if owned by another organiser');
+  // Must reject with 404 because invoice is not owned by Organiser B
+  assert.equal(hackRes.status, 404, 'Must strictly reject submitting payments against another organiser\'s invoice');
+  assert.equal(hackRes.json.error, 'invoice_not_found');
 });
 
 test('13. Non-finance admin cannot confirm or reject payments', async () => {
@@ -702,4 +704,241 @@ test('19. Admin deadline extension updates invoice due date and records audit tr
   const auditLog = (await db.query(`SELECT * FROM finance_audit_logs WHERE action = 'fee_deadline_extended' AND entity_id = $1`, [event.id])).rows[0];
   assert.ok(auditLog);
   assert.equal(auditLog.actor_id, financeClient.admin.id);
+});
+
+test('20. Accrual idempotency: repeated recordBookingFeeEntry calls do not duplicate balance or invoice lines', async () => {
+  const feeEntryRow = (await db.query(`SELECT * FROM infrastructure_fee_entries LIMIT 1`)).rows[0];
+  const booking = (await db.query(`SELECT * FROM bookings WHERE id = $1`, [feeEntryRow.booking_id])).rows[0];
+  const event = (await db.query(`SELECT * FROM events WHERE id = $1`, [feeEntryRow.event_id])).rows[0];
+  const tier = (await db.query(`SELECT * FROM ticket_types WHERE id = $1`, [feeEntryRow.ticket_type_id])).rows[0];
+
+  const accBefore = (await db.query(`SELECT * FROM organiser_fee_accounts WHERE organiser_id = $1`, [event.organiser_user_id])).rows[0];
+  const linesBefore = (await db.query(`SELECT COUNT(*)::int AS count FROM organiser_fee_invoice_lines WHERE fee_entry_id = $1`, [feeEntryRow.id])).rows[0].count;
+
+  // Re-run recordBookingFeeEntry for the same booking
+  const duplicateResult = await recordBookingFeeEntry(booking, event, tier);
+  assert.ok(duplicateResult);
+  assert.equal(duplicateResult.duplicate, true);
+
+  const accAfter = (await db.query(`SELECT * FROM organiser_fee_accounts WHERE organiser_id = $1`, [event.organiser_user_id])).rows[0];
+  const linesAfter = (await db.query(`SELECT COUNT(*)::int AS count FROM organiser_fee_invoice_lines WHERE fee_entry_id = $1`, [feeEntryRow.id])).rows[0].count;
+
+  assert.equal(accAfter.total_fee_payable_paise, accBefore.total_fee_payable_paise, 'Payable balance must not increase on duplicate call');
+  assert.equal(linesAfter, linesBefore, 'Invoice lines must not be duplicated on duplicate call');
+});
+
+test('21. Cross-organiser invoice allocation is strictly rejected with 400', async () => {
+  const invA = (await db.query(`SELECT * FROM organiser_fee_invoices WHERE organiser_id = $1 LIMIT 1`, [organiserAClient.user.id])).rows[0];
+  const invB = (await db.query(`SELECT * FROM organiser_fee_invoices WHERE organiser_id = $1 LIMIT 1`, [organiserBClient.user.id])).rows[0];
+
+  const sub = await submitFeePayment({
+    organiserId: organiserAClient.user.id,
+    invoiceId: invA.id,
+    amountPaise: 5000,
+    utrNumber: `CROSS-ALLOC-${Date.now()}`
+  });
+
+  // Finance admin attempts to allocate Organiser A's bank payment to Organiser B's invoice
+  await assert.rejects(
+    async () => {
+      await confirmFeePayment({
+        submissionId: sub.submission.id,
+        bankTxId: `BANK-TX-CROSS-${Date.now()}`,
+        verifiedAmountPaise: 5000,
+        adminUser: financeClient.user,
+        allocations: [{ invoiceId: invB.id, amountPaise: 5000 }]
+      });
+    },
+    (err) => {
+      assert.equal(err.status, 400);
+      assert.equal(err.code, 'cross_organiser_allocation');
+      return true;
+    }
+  );
+});
+
+test('22. Malicious screenshot URLs in payment submission are rejected with 400', async () => {
+  const invA = (await db.query(`SELECT * FROM organiser_fee_invoices WHERE organiser_id = $1 LIMIT 1`, [organiserAClient.user.id])).rows[0];
+
+  // JavaScript scheme
+  const jsRes = await organiserAClient.post('/api/organiser/finance/submit-payment', {
+    invoiceId: invA.id,
+    amountPaise: 5000,
+    utrNumber: `XSS-JS-${Date.now()}`,
+    screenshotUrl: 'javascript:alert(document.cookie)'
+  });
+  assert.equal(jsRes.status, 400);
+  assert.equal(jsRes.json.error, 'validation');
+
+  // Data URI scheme
+  const dataRes = await organiserAClient.post('/api/organiser/finance/submit-payment', {
+    invoiceId: invA.id,
+    amountPaise: 5000,
+    utrNumber: `XSS-DATA-${Date.now()}`,
+    screenshotUrl: 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='
+  });
+  assert.equal(dataRes.status, 400);
+  assert.equal(dataRes.json.error, 'validation');
+
+  // Valid HTTPS URL succeeds
+  const validRes = await organiserAClient.post('/api/organiser/finance/submit-payment', {
+    invoiceId: invA.id,
+    amountPaise: 5000,
+    utrNumber: `VALID-URL-${Date.now()}`,
+    screenshotUrl: 'https://images.nightlifez.in/uploads/payment-receipt-123.png'
+  });
+  assert.equal(validRes.status, 201);
+  assert.equal(validRes.json.ok, true);
+});
+
+test('23. State machine guards: cannot re-reject or investigate already terminal submissions', async () => {
+  // Find a rejected submission
+  const rejSub = (await db.query(`SELECT * FROM organiser_fee_payment_submissions WHERE status = 'rejected' LIMIT 1`)).rows[0];
+  assert.ok(rejSub, 'Must have a rejected submission from earlier tests');
+
+  // Attempting to re-reject
+  const reRejectRes = await financeClient.post('/api/admin/finance/reject-payment', {
+    submissionId: rejSub.id,
+    reason: 'Second rejection attempt'
+  });
+  assert.equal(reRejectRes.status, 409);
+  assert.equal(reRejectRes.json.error, 'already_rejected');
+
+  // Attempting to investigate an already rejected submission
+  const rejInvestigateRes = await financeClient.post('/api/admin/finance/investigate-payment', {
+    submissionId: rejSub.id,
+    notes: 'Investigating rejected claim'
+  });
+  assert.equal(rejInvestigateRes.status, 409);
+  assert.equal(rejInvestigateRes.json.error, 'already_rejected');
+
+  // Find a verified submission
+  const verSub = (await db.query(`SELECT * FROM organiser_fee_payment_submissions WHERE status = 'verified' LIMIT 1`)).rows[0];
+  assert.ok(verSub, 'Must have a verified submission from earlier tests');
+
+  // Attempting to investigate an already verified submission
+  const verInvestigateRes = await financeClient.post('/api/admin/finance/investigate-payment', {
+    submissionId: verSub.id,
+    notes: 'Investigating confirmed claim'
+  });
+  assert.equal(verInvestigateRes.status, 409);
+  assert.equal(verInvestigateRes.json.error, 'already_verified');
+});
+
+const restoreEnv = (k, v) => (v !== undefined ? process.env[k] = v : delete process.env[k]);
+
+test('24. Production UPI Fail-Closed: Development fallback cannot be used in production, placeholders return null, and legal name is not fabricated', async () => {
+  const origVercelEnv = process.env.VERCEL_ENV;
+  const origUpi = process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+  const origName = process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+  try {
+    // 1. Simulate production environment with no configured UPI ID
+    process.env.VERCEL_ENV = 'production';
+    delete process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+    delete process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+    assert.equal(getPlatformFinanceUpi(), null, 'Production must return null if NIGHTLIFEZ_FINANCE_UPI_ID is unset');
+    assert.equal(getPlatformFinanceName(), null, 'Production must not fabricate legal entity name if unset');
+
+    // 2. Setting fallback VPA in production must fail closed to null
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'nightlifez.finance@icici';
+    assert.equal(getPlatformFinanceUpi(), null, 'Fallback VPA must fail closed to null in production');
+
+    // 3. Setting test/dummy/placeholder VPA in production must fail closed to null
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'test@okhdfcbank';
+    assert.equal(getPlatformFinanceUpi(), null, 'Test VPA must fail closed to null in production');
+
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'placeholder@icici';
+    assert.equal(getPlatformFinanceUpi(), null, 'Placeholder VPA must fail closed to null in production');
+
+    // 4. Setting valid production VPA and entity name succeeds
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'nightlifez.live@icici';
+    process.env.NIGHTLIFEZ_FINANCE_NAME = 'NIGHTLIFEZ Experiences Private Limited';
+    assert.equal(getPlatformFinanceUpi(), 'nightlifez.live@icici');
+    assert.equal(getPlatformFinanceName(), 'NIGHTLIFEZ Experiences Private Limited');
+
+    // 5. In non-production (dev/test), fallbacks work as expected
+    delete process.env.VERCEL_ENV;
+    delete process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+    delete process.env.NIGHTLIFEZ_FINANCE_NAME;
+    assert.equal(getPlatformFinanceUpi(), 'nightlifez.finance@icici');
+    assert.equal(getPlatformFinanceName(), 'NIGHTLIFEZ Experiences Private Limited');
+  } finally {
+    restoreEnv('VERCEL_ENV', origVercelEnv);
+    restoreEnv('NIGHTLIFEZ_FINANCE_UPI_ID', origUpi);
+    restoreEnv('NIGHTLIFEZ_FINANCE_NAME', origName);
+  }
+});
+
+test('25. Organiser payment claim submission is blocked with 503 when platform UPI is unconfigured in production', async () => {
+  const origVercelEnv = process.env.VERCEL_ENV;
+  const origUpi = process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+  const origName = process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+  try {
+    process.env.VERCEL_ENV = 'production';
+    delete process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+    delete process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+    // Summary reflects unconfigured VPA, unconfigured name, and empty instructions
+    const summary = await getOrganiserFinanceSummary(organiserAClient.user.id);
+    assert.equal(summary.platformUpi.vpa, null);
+    assert.equal(summary.platformUpi.name, null);
+    assert.deepEqual(summary.platformUpi.instructions, []);
+
+    // Submission fails closed with 503
+    const invA = (await db.query(`SELECT * FROM organiser_fee_invoices WHERE organiser_id = $1 LIMIT 1`, [organiserAClient.user.id])).rows[0];
+    await assert.rejects(
+      async () => {
+        await submitFeePayment({
+          organiserId: organiserAClient.user.id,
+          invoiceId: invA.id,
+          amountPaise: 5000,
+          utrNumber: `PROD-FAIL-CLOSED-${Date.now()}`
+        });
+      },
+      (err) => {
+        assert.equal(err.status, 503);
+        assert.equal(err.code, 'platform_upi_not_configured');
+        return true;
+      }
+    );
+  } finally {
+    restoreEnv('VERCEL_ENV', origVercelEnv);
+    restoreEnv('NIGHTLIFEZ_FINANCE_UPI_ID', origUpi);
+    restoreEnv('NIGHTLIFEZ_FINANCE_NAME', origName);
+  }
+});
+
+test('26. Attendee checkout payee destination is immutable from server event data and cannot be overridden by attendee input', async () => {
+  const evRow = (await db.query(`SELECT * FROM events WHERE organiser_user_id IS NOT NULL AND status = 'published' LIMIT 1`)).rows[0];
+  const tierRow = (await db.query(`SELECT * FROM ticket_types WHERE event_id = $1 AND kind = 'paid' LIMIT 1`, [evRow.id])).rows[0];
+
+  const buyer = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, age_confirmed_21, phone)
+     VALUES ($1, $2, true, $3) RETURNING *`,
+    [Math.floor(100000 + Math.random() * 900000), 'buyer_sec_audit', `+919${Math.floor(100000000 + Math.random() * 900000000)}`]
+  )).rows[0];
+
+  // Try to pass an attendee-controlled payee UPI ID or price in intent creation
+  const intent = await createUpiPaymentIntent({
+    slug: evRow.slug,
+    ticketTypeId: tierRow.id,
+    quantity: 1,
+    deviceType: 'mobile',
+    user: buyer,
+    // Attacker attempts injection
+    paise: 100,
+    amountPaise: 100,
+    price: 1,
+    payeeUpi: 'attacker@upi',
+    organiserUpiId: 'attacker@upi'
+  });
+
+  // Intent amount must be the server-calculated price (ticket base + 5% platform fee)
+  const expectedFee = Math.round(tierRow.price_paise * 0.05);
+  const expectedTotal = tierRow.price_paise + expectedFee;
+  assert.equal(intent.amountPaise, expectedTotal, 'Attendee cannot override server-calculated amount');
+  assert.ok(intent.orderId);
 });
