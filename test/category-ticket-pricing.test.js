@@ -239,7 +239,7 @@ test('Paid ticket categories: Server-authoritative price calculation and minimum
     }
   );
 
-  // 2. Server-calculated total payable amount: 2 women passes @ ₹499 = ₹998 (99800 paise)
+  // 2. Server-calculated total payable amount: 2 women passes @ ₹499 = ₹998 (99800 paise base + 5% fee = 104790 paise)
   const intent = await createUpiPaymentIntent({
     slug: ev.slug,
     user: attendee,
@@ -247,7 +247,8 @@ test('Paid ticket categories: Server-authoritative price calculation and minimum
     quantity: 2
   });
   assert.ok(intent.orderId);
-  assert.equal(intent.amountPaise, 99800, 'Server must calculate price from ticket_types, ignoring client');
+  assert.equal(intent.baseAmountPaise, 99800, 'Server must calculate base price from ticket_types, ignoring client');
+  assert.equal(intent.amountPaise, 104790, 'Total payable includes 5% infrastructure fee');
 
   // 3. Active payment hold accounting: 2 tickets are held while payment intent is active
   const held = await activePaymentHolds(db, ev.id);

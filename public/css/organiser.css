@@ -427,3 +427,19 @@
 .org-modal-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); max-width: 540px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); }
 .org-modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .org-modal-head h2 { margin: 0; font-size: 1.25rem; }
+
+/* Organiser Finance & Infrastructure Fee styles */
+.org-fin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
+.org-fin-kpi { background: var(--surface-2, rgba(255, 255, 255, 0.03)); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.org-fin-kpi.highlight { border-color: rgba(255, 49, 91, 0.4); background: rgba(255, 49, 91, 0.05); }
+.org-fin-kpi-lbl { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.org-fin-kpi-val { font-size: 1.25rem; font-weight: 700; color: var(--ink); }
+.org-fin-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.org-fin-table th, .org-fin-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+.org-fin-table th { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.pill-ok { background: rgba(0, 255, 136, 0.15); border-color: rgba(0, 255, 136, 0.4); color: var(--neon-green, #00FF88); }
+.pill-info { background: rgba(0, 217, 255, 0.15); border-color: rgba(0, 217, 255, 0.4); color: var(--neon-cyan, #00D9FF); }
+.pill-warn { background: rgba(255, 184, 0, 0.15); border-color: rgba(255, 184, 0, 0.4); color: #ffb800; }
+.pill-danger { background: rgba(255, 49, 91, 0.15); border-color: rgba(255, 49, 91, 0.4); color: var(--party-pink, #FF315B); }
+.pill-pending { background: rgba(255, 200, 0, 0.15); border-color: rgba(255, 200, 0, 0.4); color: #ffd15c; }
+

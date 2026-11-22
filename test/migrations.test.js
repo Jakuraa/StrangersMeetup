@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 27 migrations currently exist: 003 through 029
-  assert.equal(files.length, 27, `expected 27 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 28 migrations currently exist: 003 through 030
+  assert.equal(files.length, 28, `expected 28 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_', '029_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_', '029_', '030_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 27 migrations in correct order', async () => {
+test('schema_migrations table records all 28 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 27);
+  assert.equal(rows.length, 28);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 27
+  // Total count in schema_migrations must remain exactly 28
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 27);
+  assert.equal(countRes.n, 28);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -493,4 +493,51 @@ test('migration 029: recurring venues, session models, and category ticket prici
   assert.ok(tCols.includes('session_id'));
   assert.ok(tCols.includes('session_date'));
   assert.ok(tCols.includes('admit_count'));
+});
+
+test('migration 030: infrastructure fee accounting schema integrity and default 5% rule', async () => {
+  // 1. Verify tables exist
+  const expectedTables = [
+    'infrastructure_fee_rules',
+    'organiser_fee_accounts',
+    'infrastructure_fee_entries',
+    'organiser_fee_invoices',
+    'organiser_fee_invoice_lines',
+    'nightlifez_bank_transactions',
+    'organiser_fee_payment_submissions',
+    'organiser_fee_payment_allocations',
+    'infrastructure_fee_adjustments',
+    'finance_audit_logs'
+  ];
+  const { rows: tables } = await db.query(
+    `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
+  );
+  const tableNames = new Set(tables.map((t) => t.table_name));
+  for (const t of expectedTables) {
+    assert.ok(tableNames.has(t), `expected table ${t} to exist`);
+  }
+
+  // 2. Verify default 5% rule exists
+  const defaultRule = await db.one(
+    `SELECT * FROM infrastructure_fee_rules WHERE is_active = true ORDER BY effective_from DESC LIMIT 1`
+  );
+  assert.ok(defaultRule, 'default infrastructure fee rule should exist');
+  assert.equal(Number(defaultRule.fee_percentage), 5.00, 'default fee percentage must be 5.00%');
+
+  // 3. Verify columns on events
+  const eventCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'events'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(eventCols.includes('organiser_upi_id'), 'events must have organiser_upi_id');
+  assert.ok(eventCols.includes('infrastructure_fee_deadline'), 'events must have infrastructure_fee_deadline');
+
+  // 4. Verify columns on bookings
+  const bookingCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'bookings'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(bookingCols.includes('fee_rule_id'), 'bookings must have fee_rule_id');
+  assert.ok(bookingCols.includes('fee_percentage'), 'bookings must have fee_percentage');
+  assert.ok(bookingCols.includes('base_price_paise'), 'bookings must have base_price_paise');
+  assert.ok(bookingCols.includes('infrastructure_fee_paise'), 'bookings must have infrastructure_fee_paise');
+  assert.ok(bookingCols.includes('fee_calculation_snapshot'), 'bookings must have fee_calculation_snapshot');
 });

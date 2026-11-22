@@ -609,6 +609,226 @@
     });
   };
 
+  /* ---------- Finance & Infrastructure Fees ---------- */
+  TABS.finance = function (filterOpts) {
+    filterOpts = filterOpts || {};
+    var qs = [];
+    if (filterOpts.status) qs.push('status=' + encodeURIComponent(filterOpts.status));
+    if (filterOpts.organiserId) qs.push('organiser_id=' + encodeURIComponent(filterOpts.organiserId));
+    if (filterOpts.eventId) qs.push('event_id=' + encodeURIComponent(filterOpts.eventId));
+    if (filterOpts.minOutstanding) qs.push('min_outstanding=' + encodeURIComponent(filterOpts.minOutstanding));
+    var qStr = qs.length ? '?' + qs.join('&') : '';
+
+    return Promise.all([
+      api('GET', '/api/admin/finance/overview' + qStr),
+      api('GET', '/api/admin/finance/queue')
+    ]).then(function (results) {
+      var r = results[0];
+      var q = results[1] || {};
+      var k = r.kpis || {};
+      var activeRule = r.activeRule || {};
+      var rules = r.rules || [];
+      var auditLogs = r.auditLogs || [];
+      var queue = q.queue || [];
+      var invoices = r.invoices || [];
+
+      function kpiCard(label, val, sub, highlight) {
+        return el('div', { class: 'cmd-kpi-card' }, [
+          el('div', { class: 'cmd-kpi-top' }, [el('span', { class: 'cmd-kpi-lbl', text: label })]),
+          el('div', { class: 'cmd-kpi-val' + (highlight ? ' highlight' : ''), text: String(val) }),
+          el('div', { class: 'cmd-kpi-sub', text: sub || '' })
+        ]);
+      }
+
+      var wrap = el('div', { class: 'cmd-centre' });
+
+      // Header
+      var header = el('div', { class: 'cmd-header' }, [
+        el('div', { class: 'cmd-header-left' }, [
+          el('div', { class: 'cmd-title-row' }, [
+            el('h1', { text: 'Finance & Infrastructure Fee Accounting' }),
+            el('span', { class: 'cmd-badge cmd-badge-ok', text: '5% Platform Fee Active' })
+          ]),
+          el('p', { class: 'cmd-sub', text: 'Central organiser fee accounting, bank verification queue, settlement tracking, and audit ledger.' })
+        ]),
+        el('div', { class: 'cmd-header-right' }, [
+          btn('📥 Export Finance CSV', function () { window.open('/api/admin/finance/export', '_blank'); }, 'btn-sm btn-ghost', 'Export CSV'),
+          btn('⚙️ Configure Fee %', function () {
+            var newPct = prompt('Enter new platform infrastructure fee percentage (e.g. 5.00):', activeRule.fee_percentage || '5.00');
+            if (newPct === null) return;
+            var num = parseFloat(newPct);
+            if (isNaN(num) || num < 0 || num > 100) { alert('Invalid percentage (0-100)'); return; }
+            var reason = prompt('Reason for commission rule change:') || 'Updated platform commission percentage';
+            api('POST', '/api/admin/finance/rules', { percentage: num, notes: reason }).then(function () {
+              toast('Fee rule updated to ' + num.toFixed(2) + '%');
+              TABS.finance(filterOpts);
+            }).catch(fail);
+          }, 'btn-sm btn-primary', 'Configure fee rate'),
+          btn('↻ Refresh', function () { TABS.finance(filterOpts); }, 'btn-sm btn-ghost', 'Refresh data')
+        ])
+      ]);
+      wrap.appendChild(header);
+
+      // KPI Grid
+      var kpiGrid = el('div', { class: 'cmd-kpi-grid' }, [
+        kpiCard('Gross Eligible Ticket Value', rupees(k.grossTicketValuePaise), 'Eligible paid bookings'),
+        kpiCard('Total Infrastructure Fees Earned', rupees(k.totalFeesEarnedPaise), '5% platform infrastructure share'),
+        kpiCard('Fee Payments Confirmed', rupees(k.confirmedPaymentsPaise), 'Verified bank credits', true),
+        kpiCard('Outstanding Balances', rupees(k.outstandingBalancesPaise), 'Unsettled fees', k.outstandingBalancesPaise > 0),
+        kpiCard('Overdue Balances', rupees(k.overdueBalancesPaise), 'Past payment deadline', k.overdueBalancesPaise > 0),
+        kpiCard('Refunds & Adjustments', rupees(k.refundAdjustmentTotalsPaise), 'Approved credit notes'),
+        kpiCard('Awaiting Bank Verification', k.pendingVerificationCount + ' claim(s)', rupees(k.paymentsAwaitingVerificationPaise), k.pendingVerificationCount > 0)
+      ]);
+      wrap.appendChild(kpiGrid);
+
+      // --- SECTION 1: Admin Payment Verification Queue ---
+      wrap.appendChild(el('h2', { text: 'Admin Payment Verification Queue (' + queue.length + ' pending)' }));
+      wrap.appendChild(el('p', { class: 'muted', text: 'Review organiser payment claims. Verify the incoming credit in the NIGHTLIFEZ bank account or transaction feed before confirming receipt.' }));
+
+      var queueCols = [
+        ['Organiser', function (s) { return s.organiser_alias || s.organiser_id.slice(0, 8); }],
+        ['Event / Invoice', function (s) { return (s.event_title || 'Event') + ' (' + s.invoice_number + ')'; }],
+        ['Submitted Amount', function (s) { return rupees(s.amount_paise); }],
+        ['Bank UTR Reference', function (s) { return el('code', { text: s.utr_number }); }],
+        ['Submitted On', function (s) { return fmtDT(s.created_at); }],
+        ['Outstanding Before', function (s) { return rupees(s.outstanding_before_confirmation_paise); }],
+        ['Status', function (s) { return pill(s.status); }],
+        ['', function (s) {
+          if (s.status === 'verified') return el('span', { class: 'muted small', text: 'Verified' });
+          if (s.status === 'rejected') return el('span', { class: 'muted small', text: 'Rejected' });
+
+          return el('div', { class: 'actions-group', style: 'display:flex;gap:6px;' }, [
+            btn('✓ Confirm Received', function () {
+              var bankTxId = prompt('Enter NIGHTLIFEZ Bank Statement / Transaction ID to confirm incoming credit:');
+              if (!bankTxId || !bankTxId.trim()) return;
+              var notes = prompt('Verification notes (optional):') || '';
+              api('POST', '/api/admin/finance/confirm-payment', {
+                submissionId: s.id,
+                bankTxId: bankTxId.trim(),
+                verifiedAmountPaise: s.amount_paise,
+                notes: notes
+              }).then(function (res) {
+                toast('Payment confirmed! Receipt: ' + (res.receiptNumbers ? res.receiptNumbers.join(', ') : 'Generated'));
+                TABS.finance(filterOpts);
+              }).catch(fail);
+            }, 'btn-primary btn-sm', 'Confirm payment'),
+            btn('✗ Reject', function () {
+              var reason = prompt('Mandatory rejection reason (minimum 5 characters, e.g. UTR not found on bank statement):');
+              if (!reason || reason.trim().length < 5) { alert('Rejection reason must be at least 5 characters'); return; }
+              api('POST', '/api/admin/finance/reject-payment', {
+                submissionId: s.id,
+                reason: reason.trim()
+              }).then(function () {
+                toast('Payment claim rejected');
+                TABS.finance(filterOpts);
+              }).catch(fail);
+            }, 'btn-ghost btn-sm', 'Reject claim'),
+            btn('🔍 Investigate', function () {
+              var notes = prompt('Investigation notes / details needed:');
+              if (!notes || !notes.trim()) return;
+              api('POST', '/api/admin/finance/investigate-payment', {
+                submissionId: s.id,
+                notes: notes.trim()
+              }).then(function () {
+                toast('Marked for investigation');
+                TABS.finance(filterOpts);
+              }).catch(fail);
+            }, 'btn-ghost btn-sm', 'Investigate claim')
+          ]);
+        }]
+      ];
+
+      var queuePanel = el('div', { class: 'panel', style: 'margin-bottom:32px;' }, [
+        table(queueCols, queue, 'No payment claims awaiting verification in the queue.', { name: 'Payment Queue', primary: 0 })
+      ]);
+      wrap.appendChild(queuePanel);
+
+      // --- SECTION 2: Organiser Fee Invoices & Settlement Accounts ---
+      wrap.appendChild(el('h2', { text: 'Organiser Settlement Invoices & Balances' }));
+      var filterRow = el('div', { style: 'display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap;' }, [
+        el('label', { class: 'muted small' }, ['Filter Status: ']),
+        el('select', {
+          'aria-label': 'Filter status',
+          onchange: function (e) {
+            filterOpts.status = e.target.value;
+            TABS.finance(filterOpts);
+          }
+        }, ['', 'pending', 'under_verification', 'partially_settled', 'fully_settled', 'rejected', 'overdue'].map(function (st) {
+          return el('option', { value: st, text: st ? st.replace(/_/g, ' ') : 'All statuses', selected: (filterOpts.status || '') === st });
+        }))
+      ]);
+      wrap.appendChild(filterRow);
+
+      var invCols = [
+        ['Invoice #', function (i) { return el('code', { text: i.invoice_number }); }],
+        ['Payment Ref', function (i) { return el('code', { text: i.payment_reference }); }],
+        ['Organiser', function (i) { return i.organiser_alias || i.organiser_id.slice(0, 8); }],
+        ['Event', function (i) { return i.event_title; }],
+        ['Tickets', function (i) { return String(i.tickets_count); }],
+        ['Gross Value', function (i) { return rupees(i.gross_ticket_value_paise); }],
+        ['Platform Fee', function (i) { return rupees(i.fee_amount_paise); }],
+        ['Reversals', function (i) { return rupees(i.reversals_paise); }],
+        ['Paid', function (i) { return rupees(i.amount_paid_paise); }],
+        ['Outstanding', function (i) {
+          var out = Number(i.outstanding_amount_paise);
+          return el('span', { style: out > 0 ? 'font-weight:700;color:var(--party-pink,#FF315B);' : 'color:var(--neon-green,#00FF88);', text: rupees(out) });
+        }],
+        ['Status', function (i) { return pill(i.status); }],
+        ['Due Date', function (i) { return fmtDT(i.due_date); }],
+        ['', function (i) {
+          if (Number(i.outstanding_amount_paise) <= 0) return '';
+          return btn('Extend Deadline', function () {
+            var newDate = prompt('Enter new ISO deadline date (e.g. 2026-12-01T23:59:59Z):');
+            if (!newDate) return;
+            var reason = prompt('Reason for deadline extension:');
+            if (!reason || reason.trim().length < 5) { alert('Extension reason is required (min 5 chars)'); return; }
+            api('POST', '/api/admin/finance/extend-deadline', {
+              eventId: i.event_id,
+              newDeadline: newDate.trim(),
+              reason: reason.trim()
+            }).then(function () {
+              toast('Payment deadline extended');
+              TABS.finance(filterOpts);
+            }).catch(fail);
+          }, 'btn-sm btn-ghost', 'Extend deadline for ' + i.invoice_number);
+        }]
+      ];
+
+      var invPanel = el('div', { class: 'panel', style: 'margin-bottom:32px;' }, [
+        table(invCols, invoices, 'No settlement invoices match the filters.', { name: 'Invoices', primary: 0 })
+      ]);
+      wrap.appendChild(invPanel);
+
+      // --- SECTION 3: Commission Rules & Audit Logs ---
+      wrap.appendChild(el('h2', { text: 'Commission Rules & Finance Audit Ledger' }));
+      var ruleBox = el('div', { style: 'background:var(--alt);padding:14px 18px;border-radius:8px;margin-bottom:16px;' }, [
+        el('p', { style: 'margin:0 0 4px;' }, [
+          el('strong', { text: 'Active Platform Commission Rule: ' }),
+          el('span', { class: 'cmd-badge cmd-badge-ok', text: (activeRule.fee_percentage || '5.00') + '% Infrastructure Fee' }),
+          el('span', { class: 'muted small', text: ' (Effective since ' + fmtDT(activeRule.effective_from) + ')' })
+        ]),
+        el('p', { class: 'muted small', style: 'margin:0;' }, [
+          el('span', { text: activeRule.notes || 'Standard platform fee applied to base ticket price at checkout.' })
+        ])
+      ]);
+      wrap.appendChild(ruleBox);
+
+      var auditCols = [
+        ['Timestamp', function (a) { return fmtDT(a.created_at); }],
+        ['Entity', function (a) { return a.entity_type; }],
+        ['Action', function (a) { return pill(a.action); }],
+        ['Actor', function (a) { return a.actor_type + ' (' + a.actor_id + ')'; }],
+        ['Notes / Description', function (a) { return a.notes || '—'; }]
+      ];
+      var auditPanel = el('div', { class: 'panel' }, [
+        table(auditCols, auditLogs, 'No financial audit logs recorded yet.', { name: 'Audit Logs', primary: 0 })
+      ]);
+      wrap.appendChild(auditPanel);
+
+      clear(main).appendChild(wrap);
+    });
+  };
+
   /* ---------- bookings & payments ---------- */
   TABS.bookings = function (filter) {
     var q = filter ? '?status=' + encodeURIComponent(filter) : '';

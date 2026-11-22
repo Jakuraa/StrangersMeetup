@@ -76,7 +76,12 @@
      Dashboard
      ===================================================================================== */
   function initDashboard(el) {
-    api('GET', '/api/organiser/context').then(function (r) {
+    Promise.all([
+      api('GET', '/api/organiser/context'),
+      api('GET', '/api/organiser/finance')
+    ]).then(function (results) {
+      var r = results[0];
+      var fin = results[1] || {};
       if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load your events.') + '</p>'; return; }
       var h = '<p><a class="btn btn-primary" href="/organiser/new?fresh=1">Create an event</a></p>';
       if (!r.checkout.available) h += '<p class="notice">' + esc(r.checkout.message) + '</p>';
@@ -88,6 +93,27 @@
         '<div class="org-kpi-card"><p class="org-kpi-num' + (totalRequests > 0 ? ' highlight' : '') + '">' + totalRequests + '</p><p class="org-kpi-lbl">Pending Requests</p></div>' +
         '<div class="org-kpi-card"><p class="org-kpi-num">' + r.drafts.length + '</p><p class="org-kpi-lbl">Active Drafts</p></div>' +
         '</div>';
+
+      if (fin.ok && fin.account) {
+        var acc = fin.account;
+        var accStatusClass = acc.outstandingBalancePaise > 0 ? 'pill-pending' : 'pill-ok';
+        var accStatusLabel = acc.outstandingBalancePaise > 0 ? 'Outstanding Fees' : 'Settled';
+        h += '<div class="org-card" style="margin:20px 0 24px;border-left:4px solid var(--neon-cyan,#00D9FF);padding:18px 20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">' +
+          '<div><h3 style="margin:0 0 2px;">NIGHTLIFEZ Finance & Infrastructure Fee</h3><p class="muted small" style="margin:0;">5% transparent platform infrastructure accounting</p></div>' +
+          '<div><span class="pill ' + accStatusClass + '">' + accStatusLabel + '</span></div>' +
+          '</div>' +
+          '<div class="org-fin-grid">' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Total Fee Payable</span><span class="org-fin-kpi-val">' + money(acc.totalFeePayablePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Fee Paid & Confirmed</span><span class="org-fin-kpi-val" style="color:var(--neon-cyan,#00D9FF);">' + money(acc.totalFeePaidPaise) + '</span></div>' +
+          '<div class="org-fin-kpi highlight"><span class="org-fin-kpi-lbl">Outstanding Balance</span><span class="org-fin-kpi-val" style="color:' + (acc.outstandingBalancePaise > 0 ? 'var(--party-pink,#FF315B)' : 'var(--neon-green,#00FF88)') + ';">' + money(acc.outstandingBalancePaise) + '</span></div>' +
+          '</div>' +
+          '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
+          '<a class="btn btn-sm btn-ghost" href="/api/organiser/finance/statement" download>📥 Download Financial Statement (CSV)</a>' +
+          '<span class="muted small">Manage and settle event fees directly from each event\'s Manage tab.</span>' +
+          '</div>' +
+          '</div>';
+      }
       h += '<h2 class="org-h2">Drafts</h2>';
       h += r.drafts.length ? '<ul class="org-list">' + r.drafts.map(function (d) {
         return '<li class="org-item"><div><p class="org-item-title">' + esc(d.data.title || 'Untitled draft') + '</p><p class="muted">Edited ' + esc(ago(d.updatedAt)) + '</p></div>' +
@@ -129,6 +155,7 @@
         ['overview', '📊 Overview & Readiness'],
         ['inventory', '🎟️ Ticket Inventory'],
         ['attendees', '👥 Attendees & Guest List'],
+        ['finance', '💰 Finance & Fees'],
         ['staff', '🛡️ Event Staff'],
         ['announcements', '📢 Announcements'],
         ['promotions', '📣 WhatsApp Promotion']
@@ -179,6 +206,8 @@
         renderInventoryTab(panel);
       } else if (activeTab === 'attendees') {
         renderAttendeesTab(panel);
+      } else if (activeTab === 'finance') {
+        renderFinanceTab(panel);
       } else if (activeTab === 'staff') {
         renderStaffTab(panel);
       } else if (activeTab === 'announcements') {
@@ -186,6 +215,152 @@
       } else if (activeTab === 'promotions') {
         renderPromotionsTab(panel);
       }
+    }
+
+    function renderFinanceTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading financial records…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/finance').then(function (r) {
+        if (!r.ok) {
+          panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load event finances.') + '</p>';
+          return;
+        }
+
+        var ev = r.event;
+        var acc = r.account || {};
+        var subs = r.submissions || [];
+        var upi = r.platformUpi || {};
+
+        var statusClass = 'pill-pending';
+        var statusLabel = ev.settlementStatus;
+        if (ev.settlementStatus === 'fully_settled') { statusClass = 'pill-ok'; statusLabel = 'Fully Settled'; }
+        else if (ev.settlementStatus === 'partially_settled') { statusClass = 'pill-info'; statusLabel = 'Partially Settled'; }
+        else if (ev.settlementStatus === 'under_admin_verification' || ev.settlementStatus === 'under_verification') { statusClass = 'pill-warn'; statusLabel = 'Under Admin Verification'; }
+        else if (ev.settlementStatus === 'payment_submitted') { statusClass = 'pill-warn'; statusLabel = 'Payment Submitted'; }
+        else if (ev.settlementStatus === 'rejected') { statusClass = 'pill-danger'; statusLabel = 'Rejected / Payment Not Found'; }
+        else if (ev.settlementStatus === 'overdue' || ev.isOverdue) { statusClass = 'pill-danger'; statusLabel = 'Overdue'; }
+
+        var h = '<div class="org-finance-wrap">' +
+          '<div class="org-card" style="margin-bottom:24px;padding:20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">' +
+          '<div><h3 style="margin:0 0 4px;">NIGHTLIFEZ Event Finance & Infrastructure Fee</h3>' +
+          '<p class="muted small" style="margin:0;">Event ID: <code>' + esc(ev.eventId) + '</code> · Payment Ref: <code>' + esc(ev.paymentReference || 'N/A') + '</code>' +
+          (ev.dueDate ? ' · Due: ' + esc(fmtInstant(ev.dueDate)) : '') + '</p></div>' +
+          '<div><span class="pill ' + statusClass + '">' + esc(statusLabel) + '</span></div>' +
+          '</div>' +
+
+          '<div class="org-fin-grid">' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Tickets Sold</span><span class="org-fin-kpi-val">' + ev.ticketsSold + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Organiser Ticket Revenue</span><span class="org-fin-kpi-val">' + money(ev.organiserRevenuePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">NIGHTLIFEZ Fee (5%)</span><span class="org-fin-kpi-val">' + money(ev.infrastructureFeePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Refunds & Adjustments</span><span class="org-fin-kpi-val">' + money(ev.refundsAdjustmentsPaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Total Fee Payable</span><span class="org-fin-kpi-val">' + money(ev.totalFeePayablePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Fee Paid & Confirmed</span><span class="org-fin-kpi-val" style="color:var(--neon-cyan,#00D9FF);">' + money(ev.amountAlreadyPaidPaise) + '</span></div>' +
+          '<div class="org-fin-kpi highlight"><span class="org-fin-kpi-lbl">Outstanding to NIGHTLIFEZ</span><span class="org-fin-kpi-val" style="color:' + (ev.outstandingPaise > 0 ? 'var(--party-pink,#FF315B)' : 'var(--neon-green,#00FF88)') + ';">' + money(ev.outstandingPaise) + '</span></div>' +
+          '</div>' +
+          '</div>';
+
+        // Settle Section
+        if (ev.outstandingPaise > 0) {
+          h += '<div class="org-card" style="margin-bottom:24px;padding:20px;">' +
+            '<h3 style="margin:0 0 8px;">💳 Pay NIGHTLIFEZ Infrastructure Fee</h3>' +
+            '<p class="muted small" style="margin:0 0 16px;">Transfer the outstanding fee to our official platform account and submit your bank transaction UTR reference below.</p>' +
+
+            '<div class="org-pay-details" style="background:var(--alt);padding:14px 16px;border-radius:8px;margin-bottom:16px;">' +
+            '<p style="margin:0 0 6px;"><strong>Official Platform UPI ID:</strong> <code style="font-size:1.05rem;">' + esc(upi.vpa) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(upi.vpa) + '">Copy UPI</button></p>' +
+            '<p style="margin:0 0 6px;"><strong>Account Name:</strong> ' + esc(upi.name) + '</p>' +
+            '<p style="margin:0 0 6px;"><strong>Unique Payment Reference:</strong> <code>' + esc(ev.paymentReference) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(ev.paymentReference) + '">Copy Ref</button></p>' +
+            '<p class="muted small" style="margin:6px 0 0;">Please include your Payment Reference in the payment remarks/notes when completing the transfer.</p>' +
+            '</div>' +
+
+            '<form id="org-fee-submit-form" class="org-fin-form">' +
+            '<input type="hidden" name="invoiceId" value="' + esc(ev.invoiceId || '') + '">' +
+            '<input type="hidden" name="paymentReference" value="' + esc(ev.paymentReference || '') + '">' +
+            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">' +
+            '<label class="fld"><span class="lbl">Bank UTR Reference (12 digits)*</span><input type="text" name="utrNumber" required placeholder="e.g. 432109876543" minlength="6" maxlength="50"></label>' +
+            '<label class="fld"><span class="lbl">Amount (₹)*</span><input type="number" step="0.01" name="amountRupees" required value="' + (ev.outstandingPaise / 100).toFixed(2) + '"></label>' +
+            '<label class="fld"><span class="lbl">Payer UPI ID / Mobile (Optional)</span><input type="text" name="payerUpiId" placeholder="yourname@okhdfcbank"></label>' +
+            '</div>' +
+            '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Transaction Notes (Optional)</span><input type="text" name="notes" placeholder="e.g. Paid via HDFC Google Pay at 2:30 PM"></label>' +
+            '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Payment Screenshot URL (Optional)</span><input type="url" name="screenshotUrl" placeholder="https://..."></label>' +
+            '<div style="margin-bottom:14px;"><p class="muted small" style="margin:0;"><strong>Notice:</strong> Organiser-submitted UTRs and screenshots are payment claims only. They must never automatically clear the outstanding balance. Balance updates only after our finance admin verifies the incoming credit with the bank.</p></div>' +
+            '<button class="btn btn-primary" type="submit">Submit Payment Claim for Verification</button>' +
+            '<span class="form-msg" id="org-fee-submit-msg" style="margin-left:12px;"></span>' +
+            '</form>' +
+            '</div>';
+        } else {
+          h += '<div class="org-card" style="margin-bottom:24px;padding:20px;border-color:rgba(0,255,136,0.3);background:rgba(0,255,136,0.05);">' +
+            '<h3 style="margin:0 0 4px;color:var(--neon-green,#00FF88);">✓ Infrastructure Fee Fully Settled</h3>' +
+            '<p class="muted small" style="margin:0;">All platform fees for this event have been settled and verified. Thank you for partnering with NIGHTLIFEZ!</p>' +
+            '</div>';
+        }
+
+        // Submissions History Table
+        h += '<div class="org-card" style="padding:20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">' +
+          '<h3 style="margin:0;">Payment Claims & History</h3>' +
+          '<a class="btn btn-sm btn-ghost" href="/api/organiser/finance/statement" download>📥 Download Financial Statement (CSV)</a>' +
+          '</div>';
+
+        if (!subs.length) {
+          h += '<p class="muted small">No payment claims submitted yet.</p>';
+        } else {
+          h += '<div class="table-wrap"><table class="org-fin-table" style="width:100%;border-collapse:collapse;">' +
+            '<thead><tr><th>Date</th><th>UTR</th><th>Amount</th><th>Status</th><th>Notes / Result</th></tr></thead>' +
+            '<tbody>' +
+            subs.map(function (s) {
+              var sClass = 'pill-pending';
+              if (s.status === 'verified') sClass = 'pill-ok';
+              else if (s.status === 'rejected') sClass = 'pill-danger';
+              else if (s.status === 'under_investigation') sClass = 'pill-warn';
+              return '<tr>' +
+                '<td>' + esc(fmtInstant(s.created_at)) + '</td>' +
+                '<td><code>' + esc(s.utr_number) + '</code></td>' +
+                '<td>' + money(s.amount_paise) + '</td>' +
+                '<td><span class="pill ' + sClass + '">' + esc(s.status) + '</span></td>' +
+                '<td>' + esc(s.rejection_reason || s.submission_notes || '—') + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>';
+        }
+
+        h += '</div></div>';
+        panel.innerHTML = h;
+
+        var form = $('#org-fee-submit-form', panel);
+        if (form) {
+          form.addEventListener('submit', function (evSub) {
+            evSub.preventDefault();
+            var utr = form.utrNumber.value.trim();
+            var amtRs = parseFloat(form.amountRupees.value);
+            var amtPaise = Math.round(amtRs * 100);
+            var msg = $('#org-fee-submit-msg', panel);
+            msg.textContent = 'Submitting claim…';
+            msg.className = 'form-msg';
+
+            api('POST', '/api/organiser/finance/submit-payment', {
+              invoiceId: form.invoiceId.value || null,
+              paymentReference: form.paymentReference.value || null,
+              amountPaise: amtPaise,
+              utrNumber: utr,
+              payerUpiId: form.payerUpiId ? form.payerUpiId.value.trim() : null,
+              notes: form.notes ? form.notes.value.trim() : '',
+              screenshotUrl: form.screenshotUrl ? form.screenshotUrl.value.trim() : null
+            }).then(function (res) {
+              if (res.ok) {
+                msg.textContent = 'Claim submitted! Pending bank verification.';
+                msg.className = 'form-msg success';
+                setTimeout(function () { renderFinanceTab(panel); }, 1500);
+              } else {
+                msg.textContent = res.message || 'Submission failed.';
+                msg.className = 'form-msg error';
+              }
+            }).catch(function (err) {
+              msg.textContent = (err && (err.message || err.error)) || 'Network error.';
+              msg.className = 'form-msg error';
+            });
+          });
+        }
+      });
     }
 
     function renderOverviewTab(panel) {
