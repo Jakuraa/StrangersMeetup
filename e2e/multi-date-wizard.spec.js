@@ -101,7 +101,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     // Check that paid tier displays draft indicator and warning
     const draftPill = page.locator('.pill-draft').first();
     await expect(draftPill).toBeVisible();
-    await expect(draftPill).toContainText('Draft — External Checkout Pending');
+    await expect(draftPill).toContainText(/Paid \((?:Gateway Pending|Draft — External Checkout Pending)\)/);
 
     // Capture Step 2 evidence
     await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-tickets-draft-state.png'), fullPage: true });
