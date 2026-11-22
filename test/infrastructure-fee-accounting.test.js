@@ -17,7 +17,9 @@ import {
   getOrganiserFinanceSummary,
   getAdminFinanceOverview,
   extendPaymentDeadline,
-  DEFAULT_FEE_PERCENTAGE
+  DEFAULT_FEE_PERCENTAGE,
+  getPlatformFinanceUpi,
+  getPlatformFinanceName
 } from '../lib/services/finance.js';
 import {
   createDraft,
@@ -821,4 +823,122 @@ test('23. State machine guards: cannot re-reject or investigate already terminal
   });
   assert.equal(verInvestigateRes.status, 409);
   assert.equal(verInvestigateRes.json.error, 'already_verified');
+});
+
+const restoreEnv = (k, v) => (v !== undefined ? process.env[k] = v : delete process.env[k]);
+
+test('24. Production UPI Fail-Closed: Development fallback cannot be used in production, placeholders return null, and legal name is not fabricated', async () => {
+  const origVercelEnv = process.env.VERCEL_ENV;
+  const origUpi = process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+  const origName = process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+  try {
+    // 1. Simulate production environment with no configured UPI ID
+    process.env.VERCEL_ENV = 'production';
+    delete process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+    delete process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+    assert.equal(getPlatformFinanceUpi(), null, 'Production must return null if NIGHTLIFEZ_FINANCE_UPI_ID is unset');
+    assert.equal(getPlatformFinanceName(), null, 'Production must not fabricate legal entity name if unset');
+
+    // 2. Setting fallback VPA in production must fail closed to null
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'nightlifez.finance@icici';
+    assert.equal(getPlatformFinanceUpi(), null, 'Fallback VPA must fail closed to null in production');
+
+    // 3. Setting test/dummy/placeholder VPA in production must fail closed to null
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'test@okhdfcbank';
+    assert.equal(getPlatformFinanceUpi(), null, 'Test VPA must fail closed to null in production');
+
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'placeholder@icici';
+    assert.equal(getPlatformFinanceUpi(), null, 'Placeholder VPA must fail closed to null in production');
+
+    // 4. Setting valid production VPA and entity name succeeds
+    process.env.NIGHTLIFEZ_FINANCE_UPI_ID = 'nightlifez.live@icici';
+    process.env.NIGHTLIFEZ_FINANCE_NAME = 'NIGHTLIFEZ Experiences Private Limited';
+    assert.equal(getPlatformFinanceUpi(), 'nightlifez.live@icici');
+    assert.equal(getPlatformFinanceName(), 'NIGHTLIFEZ Experiences Private Limited');
+
+    // 5. In non-production (dev/test), fallbacks work as expected
+    delete process.env.VERCEL_ENV;
+    delete process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+    delete process.env.NIGHTLIFEZ_FINANCE_NAME;
+    assert.equal(getPlatformFinanceUpi(), 'nightlifez.finance@icici');
+    assert.equal(getPlatformFinanceName(), 'NIGHTLIFEZ Experiences Private Limited');
+  } finally {
+    restoreEnv('VERCEL_ENV', origVercelEnv);
+    restoreEnv('NIGHTLIFEZ_FINANCE_UPI_ID', origUpi);
+    restoreEnv('NIGHTLIFEZ_FINANCE_NAME', origName);
+  }
+});
+
+test('25. Organiser payment claim submission is blocked with 503 when platform UPI is unconfigured in production', async () => {
+  const origVercelEnv = process.env.VERCEL_ENV;
+  const origUpi = process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+  const origName = process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+  try {
+    process.env.VERCEL_ENV = 'production';
+    delete process.env.NIGHTLIFEZ_FINANCE_UPI_ID;
+    delete process.env.NIGHTLIFEZ_FINANCE_NAME;
+
+    // Summary reflects unconfigured VPA, unconfigured name, and empty instructions
+    const summary = await getOrganiserFinanceSummary(organiserAClient.user.id);
+    assert.equal(summary.platformUpi.vpa, null);
+    assert.equal(summary.platformUpi.name, null);
+    assert.deepEqual(summary.platformUpi.instructions, []);
+
+    // Submission fails closed with 503
+    const invA = (await db.query(`SELECT * FROM organiser_fee_invoices WHERE organiser_id = $1 LIMIT 1`, [organiserAClient.user.id])).rows[0];
+    await assert.rejects(
+      async () => {
+        await submitFeePayment({
+          organiserId: organiserAClient.user.id,
+          invoiceId: invA.id,
+          amountPaise: 5000,
+          utrNumber: `PROD-FAIL-CLOSED-${Date.now()}`
+        });
+      },
+      (err) => {
+        assert.equal(err.status, 503);
+        assert.equal(err.code, 'platform_upi_not_configured');
+        return true;
+      }
+    );
+  } finally {
+    restoreEnv('VERCEL_ENV', origVercelEnv);
+    restoreEnv('NIGHTLIFEZ_FINANCE_UPI_ID', origUpi);
+    restoreEnv('NIGHTLIFEZ_FINANCE_NAME', origName);
+  }
+});
+
+test('26. Attendee checkout payee destination is immutable from server event data and cannot be overridden by attendee input', async () => {
+  const evRow = (await db.query(`SELECT * FROM events WHERE organiser_user_id IS NOT NULL AND status = 'published' LIMIT 1`)).rows[0];
+  const tierRow = (await db.query(`SELECT * FROM ticket_types WHERE event_id = $1 AND kind = 'paid' LIMIT 1`, [evRow.id])).rows[0];
+
+  const buyer = (await db.query(
+    `INSERT INTO users (telegram_user_id, alias, age_confirmed_21, phone)
+     VALUES ($1, $2, true, $3) RETURNING *`,
+    [Math.floor(100000 + Math.random() * 900000), 'buyer_sec_audit', `+919${Math.floor(100000000 + Math.random() * 900000000)}`]
+  )).rows[0];
+
+  // Try to pass an attendee-controlled payee UPI ID or price in intent creation
+  const intent = await createUpiPaymentIntent({
+    slug: evRow.slug,
+    ticketTypeId: tierRow.id,
+    quantity: 1,
+    deviceType: 'mobile',
+    user: buyer,
+    // Attacker attempts injection
+    paise: 100,
+    amountPaise: 100,
+    price: 1,
+    payeeUpi: 'attacker@upi',
+    organiserUpiId: 'attacker@upi'
+  });
+
+  // Intent amount must be the server-calculated price (ticket base + 5% platform fee)
+  const expectedFee = Math.round(tierRow.price_paise * 0.05);
+  const expectedTotal = tierRow.price_paise + expectedFee;
+  assert.equal(intent.amountPaise, expectedTotal, 'Attendee cannot override server-calculated amount');
+  assert.ok(intent.orderId);
 });

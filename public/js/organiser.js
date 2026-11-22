@@ -263,30 +263,36 @@
         if (ev.outstandingPaise > 0) {
           h += '<div class="org-card" style="margin-bottom:24px;padding:20px;">' +
             '<h3 style="margin:0 0 8px;">💳 Pay NIGHTLIFEZ Infrastructure Fee</h3>' +
-            '<p class="muted small" style="margin:0 0 16px;">Transfer the outstanding fee to our official platform account and submit your bank transaction UTR reference below.</p>' +
+            '<p class="muted small" style="margin:0 0 16px;">Transfer the outstanding fee to our official platform account and submit your bank transaction UTR reference below.</p>';
 
-            '<div class="org-pay-details" style="background:var(--alt);padding:14px 16px;border-radius:8px;margin-bottom:16px;">' +
-            '<p style="margin:0 0 6px;"><strong>Official Platform UPI ID:</strong> <code style="font-size:1.05rem;">' + esc(upi.vpa) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(upi.vpa) + '">Copy UPI</button></p>' +
-            '<p style="margin:0 0 6px;"><strong>Account Name:</strong> ' + esc(upi.name) + '</p>' +
-            '<p style="margin:0 0 6px;"><strong>Unique Payment Reference:</strong> <code>' + esc(ev.paymentReference) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(ev.paymentReference) + '">Copy Ref</button></p>' +
-            '<p class="muted small" style="margin:6px 0 0;">Please include your Payment Reference in the payment remarks/notes when completing the transfer.</p>' +
-            '</div>' +
-
-            '<form id="org-fee-submit-form" class="org-fin-form">' +
-            '<input type="hidden" name="invoiceId" value="' + esc(ev.invoiceId || '') + '">' +
-            '<input type="hidden" name="paymentReference" value="' + esc(ev.paymentReference || '') + '">' +
-            '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">' +
-            '<label class="fld"><span class="lbl">Bank UTR Reference (12 digits)*</span><input type="text" name="utrNumber" required placeholder="e.g. 432109876543" minlength="6" maxlength="50"></label>' +
-            '<label class="fld"><span class="lbl">Amount (₹)*</span><input type="number" step="0.01" name="amountRupees" required value="' + (ev.outstandingPaise / 100).toFixed(2) + '"></label>' +
-            '<label class="fld"><span class="lbl">Payer UPI ID / Mobile (Optional)</span><input type="text" name="payerUpiId" placeholder="yourname@okhdfcbank"></label>' +
-            '</div>' +
-            '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Transaction Notes (Optional)</span><input type="text" name="notes" placeholder="e.g. Paid via HDFC Google Pay at 2:30 PM"></label>' +
-            '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Payment Screenshot URL (Optional)</span><input type="url" name="screenshotUrl" placeholder="https://..."></label>' +
-            '<div style="margin-bottom:14px;"><p class="muted small" style="margin:0;"><strong>Notice:</strong> Organiser-submitted UTRs and screenshots are payment claims only. They must never automatically clear the outstanding balance. Balance updates only after our finance admin verifies the incoming credit with the bank.</p></div>' +
-            '<button class="btn btn-primary" type="submit">Submit Payment Claim for Verification</button>' +
-            '<span class="form-msg" id="org-fee-submit-msg" style="margin-left:12px;"></span>' +
-            '</form>' +
-            '</div>';
+          if (upi && upi.vpa) {
+            h += '<div class="org-pay-details" style="background:var(--alt);padding:14px 16px;border-radius:8px;margin-bottom:16px;">' +
+              '<p style="margin:0 0 6px;"><strong>Official Platform UPI ID:</strong> <code style="font-size:1.05rem;">' + esc(upi.vpa) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(upi.vpa) + '">Copy UPI</button></p>' +
+              (upi.name ? '<p style="margin:0 0 6px;"><strong>Account Name:</strong> ' + esc(upi.name) + '</p>' : '') +
+              '<p style="margin:0 0 6px;"><strong>Unique Payment Reference:</strong> <code>' + esc(ev.paymentReference) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(ev.paymentReference) + '">Copy Ref</button></p>' +
+              '<p class="muted small" style="margin:6px 0 0;">Please include your Payment Reference in the payment remarks/notes when completing the transfer.</p>' +
+              '</div>' +
+              '<form id="org-fee-submit-form" class="org-fin-form">' +
+              '<input type="hidden" name="invoiceId" value="' + esc(ev.invoiceId || '') + '">' +
+              '<input type="hidden" name="paymentReference" value="' + esc(ev.paymentReference || '') + '">' +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">' +
+              '<label class="fld"><span class="lbl">Bank UTR Reference (12 digits)*</span><input type="text" name="utrNumber" required placeholder="e.g. 432109876543" minlength="6" maxlength="50"></label>' +
+              '<label class="fld"><span class="lbl">Amount (₹)*</span><input type="number" step="0.01" name="amountRupees" required value="' + (ev.outstandingPaise / 100).toFixed(2) + '"></label>' +
+              '<label class="fld"><span class="lbl">Payer UPI ID / Mobile (Optional)</span><input type="text" name="payerUpiId" placeholder="yourname@okhdfcbank"></label>' +
+              '</div>' +
+              '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Transaction Notes (Optional)</span><input type="text" name="notes" placeholder="e.g. Paid via HDFC Google Pay at 2:30 PM"></label>' +
+              '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Payment Screenshot URL (Optional)</span><input type="url" name="screenshotUrl" placeholder="https://..."></label>' +
+              '<div style="margin-bottom:14px;"><p class="muted small" style="margin:0;"><strong>Notice:</strong> Organiser-submitted UTRs and screenshots are payment claims only. They must never automatically clear the outstanding balance. Balance updates only after our finance admin verifies the incoming credit with the bank.</p></div>' +
+              '<button class="btn btn-primary" type="submit">Submit Payment Claim for Verification</button>' +
+              '<span class="form-msg" id="org-fee-submit-msg" style="margin-left:12px;"></span>' +
+              '</form>';
+          } else {
+            h += '<div class="notice notice-warn" role="status" style="margin-bottom:16px;">' +
+              '<p><strong>Official platform settlement account is pending administrative configuration.</strong></p>' +
+              '<p class="small" style="margin:4px 0 0;">Direct fee collection via official UPI is temporarily inactive. Please contact NIGHTLIFEZ administration or your account manager for verified settlement instructions. Your unique payment reference is <code>' + esc(ev.paymentReference) + '</code>.</p>' +
+              '</div>';
+          }
+          h += '</div>';
         } else {
           h += '<div class="org-card" style="margin-bottom:24px;padding:20px;border-color:rgba(0,255,136,0.3);background:rgba(0,255,136,0.05);">' +
             '<h3 style="margin:0 0 4px;color:var(--neon-green,#00FF88);">✓ Infrastructure Fee Fully Settled</h3>' +
