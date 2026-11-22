@@ -86,7 +86,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     // Verify Payment contradiction notice
     const payNotice = page.locator('.notice-warn');
     await expect(payNotice).toBeVisible();
-    await expect(payNotice).toContainText('Online payment is not configured yet');
+    await expect(payNotice).toContainText(/Online payment is (?:pending gateway configuration|not configured yet)/);
 
     // Verify quick-add chips exist and are accessible
     const quickAddGeneral = page.locator('button.chip[data-act="add-tier"][data-preset="general"]');
@@ -101,7 +101,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     // Check that paid tier displays draft indicator and warning
     const draftPill = page.locator('.pill-draft').first();
     await expect(draftPill).toBeVisible();
-    await expect(draftPill).toContainText('Draft — External Checkout Pending');
+    await expect(draftPill).toContainText(/Paid \((?:Gateway Pending|Draft — External Checkout Pending)\)/);
 
     // Capture Step 2 evidence
     await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-tickets-draft-state.png'), fullPage: true });

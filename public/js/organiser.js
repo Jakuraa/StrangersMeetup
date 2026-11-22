@@ -76,7 +76,12 @@
      Dashboard
      ===================================================================================== */
   function initDashboard(el) {
-    api('GET', '/api/organiser/context').then(function (r) {
+    Promise.all([
+      api('GET', '/api/organiser/context'),
+      api('GET', '/api/organiser/finance')
+    ]).then(function (results) {
+      var r = results[0];
+      var fin = results[1] || {};
       if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load your events.') + '</p>'; return; }
       var h = '<p><a class="btn btn-primary" href="/organiser/new?fresh=1">Create an event</a></p>';
       if (!r.checkout.available) h += '<p class="notice">' + esc(r.checkout.message) + '</p>';
@@ -88,6 +93,27 @@
         '<div class="org-kpi-card"><p class="org-kpi-num' + (totalRequests > 0 ? ' highlight' : '') + '">' + totalRequests + '</p><p class="org-kpi-lbl">Pending Requests</p></div>' +
         '<div class="org-kpi-card"><p class="org-kpi-num">' + r.drafts.length + '</p><p class="org-kpi-lbl">Active Drafts</p></div>' +
         '</div>';
+
+      if (fin.ok && fin.account) {
+        var acc = fin.account;
+        var accStatusClass = acc.outstandingBalancePaise > 0 ? 'pill-pending' : 'pill-ok';
+        var accStatusLabel = acc.outstandingBalancePaise > 0 ? 'Outstanding Fees' : 'Settled';
+        h += '<div class="org-card" style="margin:20px 0 24px;border-left:4px solid var(--neon-cyan,#00D9FF);padding:18px 20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">' +
+          '<div><h3 style="margin:0 0 2px;">NIGHTLIFEZ Finance & Infrastructure Fee</h3><p class="muted small" style="margin:0;">5% transparent platform infrastructure accounting</p></div>' +
+          '<div><span class="pill ' + accStatusClass + '">' + accStatusLabel + '</span></div>' +
+          '</div>' +
+          '<div class="org-fin-grid">' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Total Fee Payable</span><span class="org-fin-kpi-val">' + money(acc.totalFeePayablePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Fee Paid & Confirmed</span><span class="org-fin-kpi-val" style="color:var(--neon-cyan,#00D9FF);">' + money(acc.totalFeePaidPaise) + '</span></div>' +
+          '<div class="org-fin-kpi highlight"><span class="org-fin-kpi-lbl">Outstanding Balance</span><span class="org-fin-kpi-val" style="color:' + (acc.outstandingBalancePaise > 0 ? 'var(--party-pink,#FF315B)' : 'var(--neon-green,#00FF88)') + ';">' + money(acc.outstandingBalancePaise) + '</span></div>' +
+          '</div>' +
+          '<div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">' +
+          '<a class="btn btn-sm btn-ghost org-fin-btn" href="/api/organiser/finance/statement" download>📥 Download Statement (CSV)</a>' +
+          '<span class="muted small">Manage and settle event fees directly from each event\'s Manage tab.</span>' +
+          '</div>' +
+          '</div>';
+      }
       h += '<h2 class="org-h2">Drafts</h2>';
       h += r.drafts.length ? '<ul class="org-list">' + r.drafts.map(function (d) {
         return '<li class="org-item"><div><p class="org-item-title">' + esc(d.data.title || 'Untitled draft') + '</p><p class="muted">Edited ' + esc(ago(d.updatedAt)) + '</p></div>' +
@@ -129,6 +155,7 @@
         ['overview', '📊 Overview & Readiness'],
         ['inventory', '🎟️ Ticket Inventory'],
         ['attendees', '👥 Attendees & Guest List'],
+        ['finance', '💰 Finance & Fees'],
         ['staff', '🛡️ Event Staff'],
         ['announcements', '📢 Announcements'],
         ['promotions', '📣 WhatsApp Promotion']
@@ -179,6 +206,8 @@
         renderInventoryTab(panel);
       } else if (activeTab === 'attendees') {
         renderAttendeesTab(panel);
+      } else if (activeTab === 'finance') {
+        renderFinanceTab(panel);
       } else if (activeTab === 'staff') {
         renderStaffTab(panel);
       } else if (activeTab === 'announcements') {
@@ -186,6 +215,158 @@
       } else if (activeTab === 'promotions') {
         renderPromotionsTab(panel);
       }
+    }
+
+    function renderFinanceTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading financial records…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/finance').then(function (r) {
+        if (!r.ok) {
+          panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load event finances.') + '</p>';
+          return;
+        }
+
+        var ev = r.event;
+        var acc = r.account || {};
+        var subs = r.submissions || [];
+        var upi = r.platformUpi || {};
+
+        var statusClass = 'pill-pending';
+        var statusLabel = ev.settlementStatus;
+        if (ev.settlementStatus === 'fully_settled') { statusClass = 'pill-ok'; statusLabel = 'Fully Settled'; }
+        else if (ev.settlementStatus === 'partially_settled') { statusClass = 'pill-info'; statusLabel = 'Partially Settled'; }
+        else if (ev.settlementStatus === 'under_admin_verification' || ev.settlementStatus === 'under_verification') { statusClass = 'pill-warn'; statusLabel = 'Under Admin Verification'; }
+        else if (ev.settlementStatus === 'payment_submitted') { statusClass = 'pill-warn'; statusLabel = 'Payment Submitted'; }
+        else if (ev.settlementStatus === 'rejected') { statusClass = 'pill-danger'; statusLabel = 'Rejected / Payment Not Found'; }
+        else if (ev.settlementStatus === 'overdue' || ev.isOverdue) { statusClass = 'pill-danger'; statusLabel = 'Overdue'; }
+
+        var h = '<div class="org-finance-wrap">' +
+          '<div class="org-card" style="margin-bottom:24px;padding:20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px;">' +
+          '<div><h3 style="margin:0 0 4px;">NIGHTLIFEZ Event Finance & Infrastructure Fee</h3>' +
+          '<p class="muted small" style="margin:0;">Event ID: <code>' + esc(ev.eventId) + '</code> · Payment Ref: <code>' + esc(ev.paymentReference || 'N/A') + '</code>' +
+          (ev.dueDate ? ' · Due: ' + esc(fmtInstant(ev.dueDate)) : '') + '</p></div>' +
+          '<div><span class="pill ' + statusClass + '">' + esc(statusLabel) + '</span></div>' +
+          '</div>' +
+
+          '<div class="org-fin-grid">' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Tickets Sold</span><span class="org-fin-kpi-val">' + ev.ticketsSold + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Organiser Ticket Revenue</span><span class="org-fin-kpi-val">' + money(ev.organiserRevenuePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">NIGHTLIFEZ Fee (5%)</span><span class="org-fin-kpi-val">' + money(ev.infrastructureFeePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Refunds & Adjustments</span><span class="org-fin-kpi-val">' + money(ev.refundsAdjustmentsPaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Total Fee Payable</span><span class="org-fin-kpi-val">' + money(ev.totalFeePayablePaise) + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Fee Paid & Confirmed</span><span class="org-fin-kpi-val" style="color:var(--neon-cyan,#00D9FF);">' + money(ev.amountAlreadyPaidPaise) + '</span></div>' +
+          '<div class="org-fin-kpi highlight"><span class="org-fin-kpi-lbl">Outstanding to NIGHTLIFEZ</span><span class="org-fin-kpi-val" style="color:' + (ev.outstandingPaise > 0 ? 'var(--party-pink,#FF315B)' : 'var(--neon-green,#00FF88)') + ';">' + money(ev.outstandingPaise) + '</span></div>' +
+          '</div>' +
+          '</div>';
+
+        // Settle Section
+        if (ev.outstandingPaise > 0) {
+          h += '<div class="org-card" style="margin-bottom:24px;padding:20px;">' +
+            '<h3 style="margin:0 0 8px;">💳 Pay NIGHTLIFEZ Infrastructure Fee</h3>' +
+            '<p class="muted small" style="margin:0 0 16px;">Transfer the outstanding fee to our official platform account and submit your bank transaction UTR reference below.</p>';
+
+          if (upi && upi.vpa) {
+            h += '<div class="org-pay-details" style="background:var(--alt);padding:14px 16px;border-radius:8px;margin-bottom:16px;">' +
+              '<p style="margin:0 0 6px;"><strong>Official Platform UPI ID:</strong> <code style="font-size:1.05rem;">' + esc(upi.vpa) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(upi.vpa) + '">Copy UPI</button></p>' +
+              (upi.name ? '<p style="margin:0 0 6px;"><strong>Account Name:</strong> ' + esc(upi.name) + '</p>' : '') +
+              '<p style="margin:0 0 6px;"><strong>Unique Payment Reference:</strong> <code>' + esc(ev.paymentReference) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(ev.paymentReference) + '">Copy Ref</button></p>' +
+              '<p class="muted small" style="margin:6px 0 0;">Please include your Payment Reference in the payment remarks/notes when completing the transfer.</p>' +
+              '</div>' +
+              '<form id="org-fee-submit-form" class="org-fin-form">' +
+              '<input type="hidden" name="invoiceId" value="' + esc(ev.invoiceId || '') + '">' +
+              '<input type="hidden" name="paymentReference" value="' + esc(ev.paymentReference || '') + '">' +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:14px;">' +
+              '<label class="fld"><span class="lbl">Bank UTR Reference (12 digits)*</span><input type="text" name="utrNumber" required placeholder="e.g. 432109876543" minlength="6" maxlength="50"></label>' +
+              '<label class="fld"><span class="lbl">Amount (₹)*</span><input type="number" step="0.01" name="amountRupees" required value="' + (ev.outstandingPaise / 100).toFixed(2) + '"></label>' +
+              '<label class="fld"><span class="lbl">Payer UPI ID / Mobile (Optional)</span><input type="text" name="payerUpiId" placeholder="yourname@okhdfcbank"></label>' +
+              '</div>' +
+              '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Transaction Notes (Optional)</span><input type="text" name="notes" placeholder="e.g. Paid via HDFC Google Pay at 2:30 PM"></label>' +
+              '<label class="fld" style="margin-bottom:14px;"><span class="lbl">Payment Screenshot URL (Optional)</span><input type="url" name="screenshotUrl" placeholder="https://..."></label>' +
+              '<div style="margin-bottom:14px;"><p class="muted small" style="margin:0;"><strong>Notice:</strong> Organiser-submitted UTRs and screenshots are payment claims only. They must never automatically clear the outstanding balance. Balance updates only after our finance admin verifies the incoming credit with the bank.</p></div>' +
+              '<button class="btn btn-primary" type="submit">Submit Payment Claim for Verification</button>' +
+              '<span class="form-msg" id="org-fee-submit-msg" style="margin-left:12px;"></span>' +
+              '</form>';
+          } else {
+            h += '<div class="notice notice-warn" role="status" style="margin-bottom:16px;">' +
+              '<p><strong>Official platform settlement account is pending administrative configuration.</strong></p>' +
+              '<p class="small" style="margin:4px 0 0;">Direct fee collection via official UPI is temporarily inactive. Please contact NIGHTLIFEZ administration or your account manager for verified settlement instructions. Your unique payment reference is <code>' + esc(ev.paymentReference) + '</code>.</p>' +
+              '</div>';
+          }
+          h += '</div>';
+        } else {
+          h += '<div class="org-card" style="margin-bottom:24px;padding:20px;border-color:rgba(0,255,136,0.3);background:rgba(0,255,136,0.05);">' +
+            '<h3 style="margin:0 0 4px;color:var(--neon-green,#00FF88);">✓ Infrastructure Fee Fully Settled</h3>' +
+            '<p class="muted small" style="margin:0;">All platform fees for this event have been settled and verified. Thank you for partnering with NIGHTLIFEZ!</p>' +
+            '</div>';
+        }
+
+        // Submissions History Table
+        h += '<div class="org-card" style="padding:20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px;">' +
+          '<h3 style="margin:0;">Payment Claims & History</h3>' +
+          '<a class="btn btn-sm btn-ghost org-fin-btn" href="/api/organiser/finance/statement" download>📥 Download Statement (CSV)</a>' +
+          '</div>';
+
+        if (!subs.length) {
+          h += '<p class="muted small">No payment claims submitted yet.</p>';
+        } else {
+          h += '<div class="table-wrap"><table class="org-fin-table" style="width:100%;border-collapse:collapse;">' +
+            '<thead><tr><th>Date</th><th>UTR</th><th>Amount</th><th>Status</th><th>Notes / Result</th></tr></thead>' +
+            '<tbody>' +
+            subs.map(function (s) {
+              var sClass = 'pill-pending';
+              if (s.status === 'verified') sClass = 'pill-ok';
+              else if (s.status === 'rejected') sClass = 'pill-danger';
+              else if (s.status === 'under_investigation') sClass = 'pill-warn';
+              return '<tr>' +
+                '<td>' + esc(fmtInstant(s.created_at)) + '</td>' +
+                '<td><code>' + esc(s.utr_number) + '</code></td>' +
+                '<td>' + money(s.amount_paise) + '</td>' +
+                '<td><span class="pill ' + sClass + '">' + esc(s.status) + '</span></td>' +
+                '<td>' + esc(s.rejection_reason || s.submission_notes || '—') + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>';
+        }
+
+        h += '</div></div>';
+        panel.innerHTML = h;
+
+        var form = $('#org-fee-submit-form', panel);
+        if (form) {
+          form.addEventListener('submit', function (evSub) {
+            evSub.preventDefault();
+            var utr = form.utrNumber.value.trim();
+            var amtRs = parseFloat(form.amountRupees.value);
+            var amtPaise = Math.round(amtRs * 100);
+            var msg = $('#org-fee-submit-msg', panel);
+            msg.textContent = 'Submitting claim…';
+            msg.className = 'form-msg';
+
+            api('POST', '/api/organiser/finance/submit-payment', {
+              invoiceId: form.invoiceId.value || null,
+              paymentReference: form.paymentReference.value || null,
+              amountPaise: amtPaise,
+              utrNumber: utr,
+              payerUpiId: form.payerUpiId ? form.payerUpiId.value.trim() : null,
+              notes: form.notes ? form.notes.value.trim() : '',
+              screenshotUrl: form.screenshotUrl ? form.screenshotUrl.value.trim() : null
+            }).then(function (res) {
+              if (res.ok) {
+                msg.textContent = 'Claim submitted! Pending bank verification.';
+                msg.className = 'form-msg success';
+                setTimeout(function () { renderFinanceTab(panel); }, 1500);
+              } else {
+                msg.textContent = res.message || 'Submission failed.';
+                msg.className = 'form-msg error';
+              }
+            }).catch(function (err) {
+              msg.textContent = (err && (err.message || err.error)) || 'Network error.';
+              msg.className = 'form-msg error';
+            });
+          });
+        }
+      });
     }
 
     function renderOverviewTab(panel) {
@@ -1468,7 +1649,13 @@
             date: ymd,
             startLocal: ymd + 'T' + startTime,
             endLocal: ymd + 'T' + endTime,
-            label: 'Session ' + count
+            label: 'Session ' + count,
+            venueId: null,
+            venueName: sched.venueArrangement === 'same' ? (d.venue || '') : '',
+            venueAddress: sched.venueArrangement === 'same' ? (d.venue || '') : '',
+            city: d.city || '',
+            mapsUrl: sched.venueArrangement === 'same' ? (d.mapsUrl || '') : '',
+            timezone: d.timezone || 'Asia/Kolkata'
           });
         }
         current.setUTCDate(current.getUTCDate() + 1);
@@ -1514,11 +1701,32 @@
           '<p class="help">Attendees will see the full multi-day dates on the event page. In the Tickets step, you can sell passes for all days or specific individual dates.</p>';
       } else if (curType === 'custom_dates' || curType === 'recurring') {
         var dates = sched.dates || [];
+        var va = sched.venueArrangement || 'same';
+        var venueArrangementHtml = '<div class="venue-arrangement-section" style="margin:14px 0;padding:14px;border:1px solid var(--border-strong, #6670B0);border-radius:var(--radius-sm);background:var(--surface-input, #0B0E1E);">' +
+          '<h4 style="margin:0 0 6px 0;font-size:0.95rem;color:var(--fg-primary, #FFFFFF);">Venue arrangement</h4>' +
+          '<p class="help" style="margin-bottom:10px;color:var(--fg-muted, #A3ABC9);">Does every session take place at the same venue, or does each session have its own location?</p>' +
+          '<div class="chips">' +
+          '<button type="button" class="chip' + (va === 'same' ? ' is-active' : '') + '" data-act="set-venue-arrangement" data-val="same">' + (va === 'same' ? '✓ ' : '') + 'Use the same venue for every session</button>' +
+          '<button type="button" class="chip' + (va === 'different' ? ' is-active' : '') + '" data-act="set-venue-arrangement" data-val="different">' + (va === 'different' ? '✓ ' : '') + 'Set a different venue for each session</button>' +
+          '</div></div>';
+
         var rows = dates.map(function (item, idx) {
           var p = 'schedule.dates.' + idx;
-          return '<li class="schedule-session-card" style="padding:12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:10px;">' +
+          var venueFields = va === 'different'
+            ? '<div class="session-venue-fields" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-strong, #6670B0);">' +
+              '<div class="row2">' +
+              text(p + '.venueName', 'Session venue name', { required: true, placeholder: 'e.g. Club Cubana, Venue B', max: 120 }) +
+              text(p + '.city', 'City', { required: true, placeholder: 'e.g. Bengaluru, Coimbatore', max: 80, def: d.city || '' }) +
+              '</div>' +
+              '<div class="row2">' +
+              text(p + '.venueAddress', 'Address / Locality (optional)', { placeholder: 'Street address or landmark', max: 255 }) +
+              text(p + '.mapsUrl', 'Google Maps link (optional)', { placeholder: 'https://maps.app.goo.gl/...', max: 500 }) +
+              '</div></div>'
+            : '<p class="muted small" style="margin-top:6px;color:var(--fg-muted, #A3ABC9);">📍 Shares primary venue: <strong>' + esc(d.venue || 'Venue to be set below') + '</strong> (' + esc(d.city || 'City') + ').</p>';
+
+          return '<li class="schedule-session-card" style="padding:14px;border:1px solid var(--border-strong, #6670B0);border-radius:var(--radius-sm);background:var(--surface-card, #171B34);margin-bottom:12px;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
-            '<strong style="font-size:0.92rem;color:var(--ink);">Session ' + (idx + 1) + (item.date ? ' · ' + esc(dayLabel(item.date)) : '') + '</strong>' +
+            '<strong style="font-size:0.95rem;color:var(--fg-primary, #FFFFFF);">Session ' + (idx + 1) + (item.date ? ' · ' + esc(dayLabel(item.date)) : '') + '</strong>' +
             (dates.length > 1 ? '<button class="btn btn-sm btn-ghost" type="button" data-act="del-schedule-date" data-i="' + idx + '" style="color:var(--party-pink);">Remove</button>' : '') +
             '</div>' +
             '<div class="row3">' +
@@ -1527,6 +1735,7 @@
             text(p + '.endLocal', 'End time', { type: 'datetime-local', required: true }) +
             '</div>' +
             text(p + '.label', 'Session label (optional)', { optional: true, placeholder: 'e.g. Opening Night, Semi-Final, Grand Finale', max: 80 }) +
+            venueFields +
             '</li>';
         }).join('');
 
@@ -1557,7 +1766,7 @@
             '</div>';
         }
 
-        content += recurringGenerator +
+        content += venueArrangementHtml + recurringGenerator +
           '<p class="lbl" style="margin-bottom:8px;">Scheduled sessions (' + dates.length + '):</p>' +
           (rows ? '<ul style="list-style:none;padding:0;margin:0 0 12px;">' + rows + '</ul>' : '<p class="muted">No sessions configured yet.</p>') +
           '<button class="btn btn-ghost btn-sm" type="button" data-act="add-schedule-date">+ Add another date / session</button>' +
@@ -1701,36 +1910,64 @@
         dlist.forEach(function (x) { validOptions.push([x, dayLabel(x)]); });
       }
       var balance = d.features && d.features.balance && d.features.balance.enabled;
+      var catOptions = [
+        ['general', 'General admission'],
+        ['men', "Men's Pass"],
+        ['women', "Women's Pass"],
+        ['couple', 'Couple Pass (Admits 2)'],
+        ['group', 'Group Pass (Admits 4)'],
+        ['vip', 'VIP Pass'],
+        ['early_bird', 'Early Bird'],
+        ['custom', 'Custom Category']
+      ];
+
       var tiers = (d.tickets || []).map(function (t, i) {
         var p = 'tickets.' + i;
         var statusPill = t.kind === 'free'
           ? '<span class="pill pill-free">Free</span>'
           : (co.available
-            ? '<span class="pill pill-paid">Paid</span>'
-            : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Draft — External Checkout Pending)</span>');
+            ? (co.isSandbox
+              ? '<span class="pill pill-test" style="background:rgba(251,191,36,0.18);color:#FBBF24;border:1px solid rgba(251,191,36,0.35);">Paid (Sandbox Test Mode)</span>'
+              : '<span class="pill pill-paid">Paid</span>')
+            : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Gateway Pending)</span>');
 
         var checkoutWarning = (t.kind === 'paid' && !co.available)
-          ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is not configured yet. This ticket will be saved as a draft and displayed to attendees with the badge <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable by attendees.</p>'
+          ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is pending gateway activation. This ticket will be saved as a draft and displayed to attendees with the notice <em>“Online payment pending gateway configuration”</em>. Free tickets are fully bookable.</p>'
           : '';
+
+        var defaultAdmit = t.category === 'couple' ? 2 : (t.category === 'group' ? 4 : 1);
 
         return '<li class="tier-card"><div class="tier-card-head"><h4>' + esc(t.name || 'Untitled ticket') + '</h4>' + statusPill + '</div>' +
           checkoutWarning +
-          '<div class="row2">' + text(p + '.name', 'Ticket name', { max: 60 }) +
+          '<div class="row2">' +
+          select(p + '.category', 'Ticket category', catOptions, { def: 'general' }) +
+          text(p + '.name', 'Ticket display name', { max: 60 }) +
+          '</div>' +
+          '<div class="row2">' +
           '<fieldset class="fld seg"><legend>Type</legend>' +
           '<label><input type="radio" name="kind-' + esc(t.id) + '" value="free"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'free' ? ' checked' : '') + '> Free</label>' +
-          '<label><input type="radio" name="kind-' + esc(t.id) + '" value="paid"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'paid' ? ' checked' : '') + '> Paid</label></fieldset></div>' +
-          '<div class="row3">' + (t.kind === 'paid' ? text(p + '.pricePaise', 'Price (₹)', { type: 'number', min: 0, inputmode: 'decimal', kind: 'rupees', display: function (v) { return Number.isInteger(v) ? v / 100 : ''; } }) : '<div class="fld"><p class="lbl">Price</p><p class="free-note">Free — no payment is ever collected.</p></div>') +
+          '<label><input type="radio" name="kind-' + esc(t.id) + '" value="paid"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'paid' ? ' checked' : '') + '> Paid</label></fieldset>' +
+          text(p + '.admitCount', 'Admits (guests per ticket)', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: defaultAdmit, help: 'E.g. Couple = 2 guests, Group = 4 guests' }) +
+          '</div>' +
+          '<div class="row3">' +
+          (t.kind === 'paid' ? text(p + '.pricePaise', 'Price (₹)', { type: 'number', min: 0, inputmode: 'decimal', kind: 'rupees', display: function (v) { return Number.isInteger(v) ? v / 100 : ''; } }) : '<div class="fld"><p class="lbl">Price</p><p class="free-note">Free — no payment is ever collected.</p></div>') +
           text(p + '.quantity', 'Quantity available', { type: 'number', min: 0, inputmode: 'numeric', kind: 'int' }) +
-          text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, inputmode: 'numeric', kind: 'int' }) + '</div>' +
-          (isMulti ? select(p + '.validOn', 'Valid for', validOptions, { def: 'all' }) : '') +
-          (balance ? text(p + '.eligibility', 'Who is this ticket for?', { max: 120, optional: true, placeholder: 'e.g. Women, Men, Couples', help: 'Guests confirm they meet this when booking.' }) : '') +
+          text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, inputmode: 'numeric', kind: 'int', def: t.category === 'couple' ? 1 : 4 }) +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.minPerBooking', 'Min per booking', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: 1 }) +
+          (isMulti ? select(p + '.validOn', 'Valid for session/date', validOptions, { def: 'all' }) : '<div class="fld"></div>') +
+          '</div>' +
+          text(p + '.eligibility', 'Eligibility description', { max: 120, optional: true, placeholder: 'e.g. One pass admits 1 couple arriving together', help: 'Shown on the event page and ticket rules before booking.' }) +
           '<div class="org-item-actions"><button class="btn btn-sm btn-ghost" type="button" data-act="dup-tier" data-i="' + i + '">Duplicate</button>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-act="del-tier" data-i="' + i + '">Delete</button></div></li>';
       }).join('');
       var payCard = co.available
-        ? '<p class="notice">Paid tickets use a hosted checkout' + (co.testMode ? ' in <strong>test mode</strong> (no real money)' : '') + '. A booking is confirmed only after the payment provider confirms payment.</p>'
-        : '<div class="notice notice-warn" role="status"><p><strong>Online payment is not configured yet.</strong> ' + esc(co.message) + '</p>' +
-          '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets will be created as <strong>Drafts</strong> and shown to attendees as <em>“Paid ticket — external checkout not configured”</em>. Only Free tickets are currently purchasable/bookable by attendees.</p></div>';
+        ? (co.isSandbox
+          ? '<div class="notice notice-info" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.35);color:#38BDF8;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>🧪 Sandbox UPI Testing Active:</strong> Paid tickets use simulated provider verification for non-production testing. Live gateway checkout is disabled until merchant onboarding is complete.</p></div>'
+          : '<div class="notice notice-success" style="background:rgba(6,214,160,0.12);border:1px solid rgba(6,214,160,0.35);color:#06D6A0;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>Online Checkout Active:</strong> Paid tickets use verified payment gateway checkout.</p></div>')
+        : '<div class="notice notice-warn" role="status"><p><strong>Online payment is pending gateway configuration.</strong> ' + esc(co.message) + '</p>' +
+          '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets can be configured and priced in draft mode. Free tickets are live and bookable by attendees.</p></div>';
       return card('Payment', payCard) +
         card('Ticket types', '<p class="help">Quick add:</p><div class="chips">' + Object.keys(CFG.ticketPresets).map(function (k) {
           return '<button type="button" class="chip" data-act="add-tier" data-preset="' + esc(k) + '">+ ' + esc(CFG.ticketPresets[k].name) + '</button>';
@@ -1963,6 +2200,10 @@
     function presetTier(key) {
       var p = clone(CFG.ticketPresets[key] || CFG.ticketPresets.general);
       p.id = uid();
+      p.category = p.category || key || 'general';
+      p.admitCount = p.admitCount || (p.category === 'couple' ? 2 : p.category === 'group' ? 4 : 1);
+      p.minPerBooking = p.minPerBooking || 1;
+      p.maxPerBooking = p.maxPerBooking || (p.category === 'couple' ? 1 : 4);
       if (p.kind === 'free') p.pricePaise = 0;
       return p;
     }
@@ -2107,6 +2348,14 @@
             label: 'Session ' + (sarr.length + 1)
           });
           syncScheduleBounds();
+          touch(); return render();
+        case 'set-venue-arrangement':
+          var vaVal = b.getAttribute('data-val') || 'same';
+          if (!S.data.schedule) S.data.schedule = {};
+          S.data.schedule.venueArrangement = vaVal;
+          if (S.data.schedule.recurring) {
+            S.data.schedule.recurring.venueArrangement = vaVal;
+          }
           touch(); return render();
         case 'del-schedule-date':
           var didx = Number(b.getAttribute('data-i'));

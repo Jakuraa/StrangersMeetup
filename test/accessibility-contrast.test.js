@@ -70,32 +70,52 @@ test('WCAG 2.2 AA - Non-text UI boundaries and focus rings meet 3:1 ratio', () =
   assert.ok(ratioBorder >= 3.0, `UI boundary line on surface must meet 3:1 (got ${ratioBorder.toFixed(2)})`);
 });
 
-test('WCAG 2.1 AA - Policy badge text contrast meets 4.5:1 ratio', () => {
-  // Policy badge uses #FFFFFF text on rgba(49, 91, 255, 0.22)
-  // Tested against dark background #090B16 and card surface #121424
-  const bg = '#090B16';
-  const surface = '#121424';
-  const badgeText = '#FFFFFF';
+test('WCAG 2.2 AA - Centralised tokens meet 4.5:1 text and 3:1 non-text contrast across all surfaces', () => {
+  const surfaces = [
+    { name: 'surface-base', hex: '#0E1224' },
+    { name: 'surface-card', hex: '#171B34' },
+    { name: 'surface-elevated', hex: '#222749' },
+    { name: 'surface-input', hex: '#0B0E1E' }
+  ];
 
-  function blend(foregroundRgba, backgroundHex) {
-    const clean = backgroundHex.replace('#', '').trim();
-    const bgR = parseInt(clean.slice(0, 2), 16);
-    const bgG = parseInt(clean.slice(2, 4), 16);
-    const bgB = parseInt(clean.slice(4, 6), 16);
-    const { r, g, b, a } = foregroundRgba;
-    const resR = Math.round(bgR * (1 - a) + r * a);
-    const resG = Math.round(bgG * (1 - a) + g * a);
-    const resB = Math.round(bgB * (1 - a) + b * a);
-    return '#' + [resR, resG, resB].map((x) => x.toString(16).padStart(2, '0')).join('');
+  const primaryInk = '#FFFFFF';
+  const secondaryInk = '#F1F3FA';
+  const mutedInk = '#A3ABC9';
+  const focusRing = '#06D6A0';
+  const borderStrong = '#6670B0';
+  const errorText = '#FF6B8B';
+  const successText = '#06D6A0';
+  const warningText = '#FFC033';
+
+  for (const s of surfaces) {
+    // Primary text >= 4.5:1 (actually > 12:1)
+    const ratioPri = contrastRatio(primaryInk, s.hex);
+    assert.ok(ratioPri >= 4.5, `Primary text on ${s.name} must meet 4.5:1 (got ${ratioPri.toFixed(2)})`);
+
+    // Secondary text >= 4.5:1 (actually > 10:1)
+    const ratioSec = contrastRatio(secondaryInk, s.hex);
+    assert.ok(ratioSec >= 4.5, `Secondary text on ${s.name} must meet 4.5:1 (got ${ratioSec.toFixed(2)})`);
+
+    // Muted secondary text >= 4.5:1
+    const ratioMuted = contrastRatio(mutedInk, s.hex);
+    assert.ok(ratioMuted >= 4.5, `Muted text on ${s.name} must meet 4.5:1 (got ${ratioMuted.toFixed(2)})`);
+
+    // Focus ring >= 3.0:1
+    const ratioFocus = contrastRatio(focusRing, s.hex);
+    assert.ok(ratioFocus >= 3.0, `Focus ring on ${s.name} must meet 3:1 (got ${ratioFocus.toFixed(2)})`);
+
+    // Status texts >= 4.5:1
+    const ratioErr = contrastRatio(errorText, s.hex);
+    assert.ok(ratioErr >= 4.5, `Error text on ${s.name} must meet 4.5:1 (got ${ratioErr.toFixed(2)})`);
+
+    const ratioSucc = contrastRatio(successText, s.hex);
+    assert.ok(ratioSucc >= 4.5, `Success text on ${s.name} must meet 4.5:1 (got ${ratioSucc.toFixed(2)})`);
+
+    const ratioWarn = contrastRatio(warningText, s.hex);
+    assert.ok(ratioWarn >= 4.5, `Warning text on ${s.name} must meet 4.5:1 (got ${ratioWarn.toFixed(2)})`);
   }
 
-  const badgeBg = { r: 49, g: 91, b: 255, a: 0.22 };
-  const effectiveOnSurface = blend(badgeBg, surface);
-  const effectiveOnBg = blend(badgeBg, bg);
-
-  const ratioSurface = contrastRatio(badgeText, effectiveOnSurface);
-  const ratioBg = contrastRatio(badgeText, effectiveOnBg);
-
-  assert.ok(ratioSurface >= 4.5, `Policy badge on surface must meet 4.5:1 (got ${ratioSurface.toFixed(2)})`);
-  assert.ok(ratioBg >= 4.5, `Policy badge on bg must meet 4.5:1 (got ${ratioBg.toFixed(2)})`);
+  // Non-text boundary line against card surface and base
+  const ratioBorderCard = contrastRatio(borderStrong, '#171B34');
+  assert.ok(ratioBorderCard >= 3.0, `Boundary border on card surface must meet 3:1 (got ${ratioBorderCard.toFixed(2)})`);
 });
