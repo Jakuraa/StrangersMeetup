@@ -309,7 +309,7 @@ test('admin: denied — demoting themselves, writes without CSRF', async () => {
 test('admin console renders only the tabs each role can load', async () => {
   const tabs = async (p) => [...(await (await as(p)).get('/admin')).text.matchAll(/data-tab="(\w+)"/g)].map((m) => m[1]);
   assert.deepEqual(await tabs('admin'),
-    ['overview', 'insights', 'discovery', 'events', 'bookings', 'orders', 'memberships', 'leads', 'media', 'tiers', 'integrations', 'admins']);
+    ['overview', 'insights', 'discovery', 'events', 'finance', 'bookings', 'orders', 'memberships', 'leads', 'media', 'tiers', 'integrations', 'admins']);
   assert.deepEqual(await tabs('staff'), ['overview', 'events', 'bookings', 'orders', 'memberships', 'leads', 'tiers']);
   assert.deepEqual(await tabs('organiser'), [], 'not an admin: no console');
 });
