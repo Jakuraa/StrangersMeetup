@@ -3,7 +3,11 @@
 // Covers Attendee, Organiser, Venue Operator, Admin, Security, Mobile, and Regression/Concurrency.
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { db, resetDb, startServer, stopServer, signedInClient, Client } from './helpers.js';
+import { checkoutForEvent } from '../lib/payments/availability.js';
+import { createCheckoutIntent } from '../lib/services/checkout.js';
 
 function istLocal(days, hh = '19:00') {
   const d = new Date(Date.now() + days * 864e5 + 5.5 * 3600e3).toISOString().slice(0, 10);
@@ -258,9 +262,24 @@ test('B3. Create Event Draft with Venue ID Linkage: pre-populates venue details'
   });
   assert.equal(vRes.status, 201);
   const venueId = vRes.json.venue.id;
+  const orgId = vRes.json.venue.org_id;
 
-  // Organiser initializes draft passing venueId
+  // Unrelated organiser tries to link venueId -> rejected with 403
+  const strangerOrg = await organiserClient({ tgId: 810000099 });
+  const rejectedRes = await strangerOrg.post('/api/organiser/drafts', { template: 'social', venueId });
+  assert.equal(rejectedRes.status, 403);
+  assert.equal(rejectedRes.json.error, 'not_authorized_for_venue');
+
+  // Authorize organiser in venue's organisation
   const org = await organiserClient({ tgId: 810000001 });
+  await db.query(
+    `INSERT INTO org_memberships (user_id, org_id, role, status)
+     VALUES ($1, $2, 'manager', 'active')
+     ON CONFLICT (user_id, org_id) DO UPDATE SET role = 'manager', status = 'active'`,
+    [org.userId, orgId]
+  );
+
+  // Authorized organiser initializes draft passing venueId
   const draftRes = await org.post('/api/organiser/drafts', { template: 'social', venueId });
   assert.equal(draftRes.status, 201);
   assert.equal(draftRes.json.draft.data.venueId, venueId);
@@ -564,13 +583,39 @@ test('C10. Invalid Capacity Validation: negative capacity is rejected', async ()
   assert.equal(res.status, 400);
 });
 
-test('C11. Direct Venue Photo Upload: valid PNG file uploads with 201', async () => {
+test('C11. Direct Venue Photo Upload: valid PNG file uploads with 201 and stays strictly private in draft state', async () => {
   const user = await signedInClient({ tgId: 820000001 });
   // Real PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A ...
   const pngBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
   const upRes = await user.req('POST', '/api/venue/photos', pngBuf, { 'content-type': 'image/png' });
   assert.equal(upRes.status, 201);
   assert.ok(upRes.json.url);
+  assert.ok(upRes.json.imageId);
+
+  // Assert image is marked private in DB
+  const imgRow = (await db.query(`SELECT is_public, owner_user_id FROM event_images WHERE id = $1`, [upRes.json.imageId])).rows[0];
+  assert.equal(imgRow.is_public, false);
+  assert.equal(imgRow.owner_user_id, user.userId);
+
+  // Unauthenticated visitor CANNOT access private draft image (404)
+  const anon = new Client();
+  const anonRes = await anon.get(upRes.json.url);
+  assert.equal(anonRes.status, 404);
+
+  // Authenticated owner CAN access private draft image (200)
+  const ownerRes = await user.get(upRes.json.url);
+  assert.equal(ownerRes.status, 200);
+
+  // Intruder from another account CANNOT attach this image ID to their venue (tampering guard)
+  const intruder = await signedInClient({ tgId: 820000099 });
+  const tamperRes = await intruder.post('/api/venue/onboard', {
+    name: 'Tamperer Lounge',
+    city: 'Bengaluru',
+    photos: [upRes.json.url],
+    is_draft: true
+  });
+  assert.equal(tamperRes.status, 403);
+  assert.equal(tamperRes.json.error, 'image_ownership_violation');
 });
 
 test('C12. Venue Photo Upload Rejection: invalid file type rejected with 415', async () => {
@@ -593,6 +638,10 @@ test('C14. Complete Onboarding: publishing transitions venue to active and onboa
   const ctx = (await user.get('/api/venue/context')).json.context;
   const dId = ctx.draftVenue.id;
 
+  // Retrieve user's uploaded photo from C11
+  const userImg = (await db.query(`SELECT id FROM event_images WHERE owner_user_id = $1 LIMIT 1`, [user.userId])).rows[0];
+  const photoUrl = `/media/event-images/${userImg.id}`;
+
   const pubRes = await user.post('/api/venue/onboard', {
     venue_id: dId,
     name: 'The Artisan Cellar',
@@ -605,12 +654,22 @@ test('C14. Complete Onboarding: publishing transitions venue to active and onboa
     facilities: ['bar_license', 'sound_system', 'air_conditioning'],
     operating_hours: { general: 'Wed–Sun 6pm–1am' },
     rules: '21+ only, smart casual dress code',
+    photos: [photoUrl],
     is_draft: false
   });
   assert.ok([200, 201].includes(pubRes.status));
   assert.equal(pubRes.json.isDraft, false);
   assert.equal(pubRes.json.venue.status, 'active');
   assert.equal(pubRes.json.venue.onboarding_completed, true);
+
+  // Assert photo is now transitioned to public upon publication
+  const imgRow = (await db.query(`SELECT is_public FROM event_images WHERE id = $1`, [userImg.id])).rows[0];
+  assert.equal(imgRow.is_public, true);
+
+  // Unauthenticated visitor can now access the published venue photo
+  const anon = new Client();
+  const anonRes = await anon.get(photoUrl);
+  assert.equal(anonRes.status, 200);
 });
 
 test('C15. Post-Launch Context: hasVenue is now true and activeVenue is accessible', async () => {
@@ -1300,10 +1359,51 @@ test('H2. Optimistic Locking: Concurrent draft updates with stale version are re
   assert.equal(save2.json.error, 'version_conflict');
 });
 
-test('H3. Payment Fail-Closed Protection: ENABLE_LIVE_PAYMENTS=false blocks checkout redirect', async () => {
+test('H3. Payment Fail-Closed Protection: ENABLE_LIVE_PAYMENTS=false blocks checkout redirect and paid bookings', async () => {
+  // 1. Setup real published event with a paid ticket tier
+  const ev = (await db.query(`SELECT id, slug, checkout_mode, superprofile_url FROM events WHERE title = 'Neon Rooftop Groove'`)).rows[0];
+  assert.ok(ev);
+  const paidTier = (await db.query(
+    `INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking, active)
+     VALUES ($1, 'VIP Live Pass', 'paid', 250000, 10, 2, true) RETURNING id`,
+    [ev.id]
+  )).rows[0];
+
+  // 2. Assert checkout availability returns disabled state
+  const availability = checkoutForEvent(ev);
+  assert.equal(availability.available, false);
+  assert.ok(['live_payments_disabled', 'upi_checkout_disabled', 'preview_paid_checkout_disabled'].includes(availability.reason));
+
+  // 3. Assert createCheckoutIntent returns null (no provider checkout session created)
+  const intent = await createCheckoutIntent({
+    slug: ev.slug,
+    ticketTypeId: paidTier.id,
+    qty: 1
+  });
+  assert.equal(intent, null);
+
+  // 4. Assert GET /checkout/:slug does NOT redirect to any external payment provider
   const c = new Client();
-  const res = await c.get('/checkout/race-capacity-test');
-  assert.ok(res.status === 403 || res.status === 404 || res.status === 302);
+  const res = await c.get(`/checkout/${ev.slug}?tier=${paidTier.id}`);
+  assert.equal(res.status, 302);
+  // Redirects safely back to the event page, NEVER to a payment gateway
+  assert.equal(res.headers.get('location'), `/events/${ev.slug}`);
+
+  // 5. Assert direct booking API rejects paid tickets and never creates confirmed bookings
+  const attendee = await signedInClient({ tgId: 870000010 });
+  const bookRes = await attendee.post(`/api/events/${ev.id}/book`, {
+    ticketTypeId: paidTier.id,
+    quantity: 1
+  });
+  assert.equal(bookRes.status, 409);
+  assert.equal(bookRes.json.error, 'paid_on_superprofile');
+
+  // 6. Assert no paid booking or ticket was marked confirmed
+  const confirmedCount = (await db.query(
+    `SELECT count(*)::int AS cnt FROM bookings WHERE event_id = $1 AND user_id = (SELECT id FROM users WHERE telegram_user_id = 870000010) AND status = 'confirmed'`,
+    [ev.id]
+  )).rows[0].cnt;
+  assert.equal(confirmedCount, 0);
 });
 
 test('H4. Draft Venue Privacy Isolation: draft venue never appears in active search or counts', async () => {
@@ -1328,11 +1428,54 @@ test('H5. Completed Venue Discovery: completed venue appears with status active 
   assert.equal(v.onboarding_completed, true);
 });
 
-test('H6. Idempotency of Migration 031: pre-existing venues retained compatibility and active discovery', async () => {
-  const count = (await db.query(
-    `SELECT count(*)::int AS cnt FROM venues WHERE status = 'active' AND onboarding_completed = true`
-  )).rows[0].cnt;
-  assert.ok(count > 0, 'Active venues must exist and be discoverable');
+test('H6. Migration 031 Idempotency: legacy records remain compatible, draft isolation holds, and repeated runs cause zero data loss', async () => {
+  const migrationSql = fs.readFileSync(path.resolve('migrations/031_venue_self_service_onboarding.sql'), 'utf8');
+
+  // 1. Create a legacy venue record (simulating pre-031 venue)
+  const org = (await db.query(`SELECT id FROM organisations LIMIT 1`)).rows[0];
+  const legacyVenue = (await db.query(
+    `INSERT INTO venues (org_id, name, address_public, capacity, status, onboarding_completed, onboarding_step)
+     VALUES ($1, 'Vintage Heritage Club', 'MG Road, Bengaluru', 120, 'active', true, 4)
+     RETURNING id, name, status, onboarding_completed`,
+    [org.id]
+  )).rows[0];
+  assert.equal(legacyVenue.status, 'active');
+  assert.equal(legacyVenue.onboarding_completed, true);
+
+  // 2. Re-apply migration 031 SQL
+  await db.query(migrationSql);
+
+  // 3. Verify legacy venue record remains active, compatible, and discoverable
+  const postMigLegacy = (await db.query(`SELECT * FROM venues WHERE id = $1`, [legacyVenue.id])).rows[0];
+  assert.ok(postMigLegacy);
+  assert.equal(postMigLegacy.status, 'active');
+  assert.equal(postMigLegacy.onboarding_completed, true);
+  assert.equal(postMigLegacy.name, 'Vintage Heritage Club');
+
+  // 4. Create an uncompleted draft venue and verify it is excluded from active public discovery
+  const draftVenue = (await db.query(
+    `INSERT INTO venues (org_id, name, address_public, capacity, status, onboarding_completed, onboarding_step)
+     VALUES ($1, 'Under Construction Speakeasy', 'Lavelle Road', 50, 'draft', false, 1)
+     RETURNING id, status, onboarding_completed`,
+    [org.id]
+  )).rows[0];
+
+  const discoverable = (await db.query(
+    `SELECT id FROM venues WHERE status = 'active' AND onboarding_completed = true AND id = $1`,
+    [draftVenue.id]
+  )).rows;
+  assert.equal(discoverable.length, 0, 'Draft venue must not be discoverable');
+
+  // 5. Run the migration SQL AGAIN (asserting strict idempotency)
+  await db.query(migrationSql);
+
+  // 6. Assert zero data loss, exact state preservation, and no schema collisions
+  const checkLegacyAgain = (await db.query(`SELECT * FROM venues WHERE id = $1`, [legacyVenue.id])).rows[0];
+  const checkDraftAgain = (await db.query(`SELECT * FROM venues WHERE id = $1`, [draftVenue.id])).rows[0];
+  assert.equal(checkLegacyAgain.name, 'Vintage Heritage Club');
+  assert.equal(checkLegacyAgain.status, 'active');
+  assert.equal(checkDraftAgain.status, 'draft');
+  assert.equal(checkDraftAgain.onboarding_completed, false);
 });
 
 test('H7. Cross-Organisation Mutation Block: Organisation B cannot PATCH Organisation A venue', async () => {
@@ -1376,8 +1519,17 @@ test('H9. Door Ticket Check-In: ticket marked checked_in and cannot be re-admitt
 
 test('H10. Re-check-in Idempotency / Duplicate Scan: scanning already admitted ticket returns already checked in', async () => {
   const ev = (await db.query(`SELECT id FROM events WHERE title = 'Neon Rooftop Groove'`)).rows[0];
-  const tk = (await db.query(`SELECT booking_id, ticket_code FROM tickets WHERE status = 'checked_in' LIMIT 1`)).rows[0];
-  assert.ok(tk);
+  // Guarantee ticket belongs to ev.id
+  const tk = (await db.query(
+    `SELECT tk.id, tk.ticket_code, b.event_id
+       FROM tickets tk
+       JOIN bookings b ON b.id = tk.booking_id
+      WHERE b.event_id = $1 AND tk.status = 'checked_in'
+      LIMIT 1`,
+    [ev.id]
+  )).rows[0];
+  assert.ok(tk, 'Admitted ticket belonging to this event must exist from H9');
+  assert.equal(tk.event_id, ev.id);
 
   const org = await organiserClient({ tgId: 800000001 });
   const checkInRes = await org.post(`/api/organiser/events/${ev.id}/check-in`, {
