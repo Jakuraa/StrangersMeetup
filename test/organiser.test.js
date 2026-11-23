@@ -168,15 +168,25 @@ test('ticket tiers: multiple tiers and price / quantity / booking-limit validati
   assert.equal(r.json.error, 'not_ready');
   assert.equal(await db.one('SELECT 1 FROM events WHERE draft_id = $1', [d.id]), null);
 
+  // Attempting to publish paid tickets is rejected by backend validation
+  const paidDraft = await newDraft(c, validData({
+    tickets: [
+      { id: 'f', name: 'Free entry', kind: 'free', pricePaise: 0, quantity: 10, maxPerBooking: 2 },
+      { id: 'g', name: 'General', kind: 'paid', pricePaise: 49900, quantity: 20, maxPerBooking: 4 }
+    ]
+  }));
+  const rejectPaid = await c.post(`/api/organiser/drafts/${paidDraft.id}/publish`, { version: paidDraft.version, confirm: true });
+  assert.equal(rejectPaid.status, 422);
+
   const good = await publish(c, validData({
     refundPolicy: 'Full refund up to 48 hours before the event.',
     tickets: [
       { id: 'f', name: 'Free entry', kind: 'free', pricePaise: 0, quantity: 10, maxPerBooking: 2 },
-      { id: 'g', name: 'General', kind: 'paid', pricePaise: 49900, quantity: 20, maxPerBooking: 4 },
-      { id: 'h', name: 'VIP', kind: 'paid', pricePaise: 150000, quantity: 5, maxPerBooking: 2 }
+      { id: 'g', name: 'General RSVP', kind: 'free', pricePaise: 0, quantity: 20, maxPerBooking: 4 },
+      { id: 'h', name: 'VIP Guestlist', kind: 'free', pricePaise: 0, quantity: 5, maxPerBooking: 2 }
     ]
   }));
-  assert.deepEqual(good.tiers.map((t) => [t.name, t.kind, t.price_paise, t.quantity]), [['Free entry', 'free', 0, 10], ['General', 'paid', 49900, 20], ['VIP', 'paid', 150000, 5]]);
+  assert.deepEqual(good.tiers.map((t) => [t.name, t.kind, t.price_paise, t.quantity]), [['Free entry', 'free', 0, 10], ['General RSVP', 'free', 0, 20], ['VIP Guestlist', 'free', 0, 5]]);
   assert.equal(good.event.capacity, 35);
   assert.equal(good.event.ticketing, 'tiers');
 });
@@ -220,13 +230,16 @@ test('paid tiers with no payment provider: honest UI, no checkout, all-paid even
 
   const { event, tiers } = await publish(c, validData({
     refundPolicy: 'No refunds within 24 hours.',
-    tickets: [{ id: 'f', name: 'Free entry', kind: 'free', pricePaise: 0, quantity: 10, maxPerBooking: 2 }, { id: 'p', name: 'Supporter', kind: 'paid', pricePaise: 49900, quantity: 10, maxPerBooking: 2 }]
+    tickets: [{ id: 'f', name: 'Free entry', kind: 'free', pricePaise: 0, quantity: 10, maxPerBooking: 2 }]
   }));
+  // Insert legacy / existing paid tier in database to verify event page and booking behavior
+  const paidTier = await db.one(`INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking) VALUES ($1, 'Supporter', 'paid', 49900, 10, 2) RETURNING *`, [event.id]);
+  const allTiers = [...tiers, paidTier];
   const page = await new Client().get(`/events/${event.slug}`);
   assert.match(page.text, /Online payment isn’t available yet/);
   assert.match(page.text, /Online payment not available yet/);
   const guest = await signedInClient();
-  const paid = await guest.post(`/api/events/${event.id}/book`, { ticketTypeId: tiers[1].id, quantity: 1 });
+  const paid = await guest.post(`/api/events/${event.id}/book`, { ticketTypeId: allTiers[1].id, quantity: 1 });
   assert.equal(paid.status, 409);
   assert.equal(paid.json.error, 'paid_on_superprofile');
   assert.equal((await db.query('SELECT 1 FROM bookings WHERE event_id = $1', [event.id])).rowCount, 0);
@@ -272,10 +285,10 @@ test('guest approval on: requests wait for the host; decline blocks; approve con
 
 test('a paid ticket can never be booked or approved inside the app, with or without approval', async () => {
   const host = await organiserClient();
-  const { event, tiers } = await publish(host, validData({ refundPolicy: 'Refund until 2 days before.', features: { approval: { enabled: true } },
-    tickets: [{ id: 'f', name: 'Free', kind: 'free', pricePaise: 0, quantity: 5, maxPerBooking: 1 }, { id: 'p', name: 'General', kind: 'paid', pricePaise: 30000, quantity: 5, maxPerBooking: 1 }] }));
+  const { event } = await publish(host, validData({ refundPolicy: 'Refund until 2 days before.', features: { approval: { enabled: true } },
+    tickets: [{ id: 'f', name: 'Free', kind: 'free', pricePaise: 0, quantity: 5, maxPerBooking: 1 }] }));
+  const paid = await db.one(`INSERT INTO ticket_types (event_id, name, kind, price_paise, quantity, max_per_booking) VALUES ($1, 'General', 'paid', 30000, 5, 1) RETURNING *`, [event.id]);
   const g = await signedInClient();
-  const paid = tiers.find((t) => t.kind === 'paid');
   const req = await g.post(`/api/events/${event.id}/book`, { ticketTypeId: paid.id });
   assert.equal(req.status, 409);
   assert.equal(req.json.error, 'paid_on_superprofile');

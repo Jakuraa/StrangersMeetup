@@ -37,7 +37,7 @@ test('signed-out /admin: branded access-required screen, keyboard reachable, 401
   await expectAccessible(page);
   await expectNoHorizontalOverflow(page);
   await screenshot(page, testInfo, 'admin-signed-out');
-  const cta = page.getByRole('link', { name: 'Continue with Telegram' }).last();
+  const cta = page.getByRole('link', { name: /Sign in|Continue with Telegram/ }).last();
   await cta.focus();
   await expect(cta).toBeFocused();
   await expect(cta).toHaveAttribute('href', '/signin?next=/admin');

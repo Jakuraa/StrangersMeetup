@@ -141,8 +141,8 @@ test.describe('Phase 3H Organiser Onboarding, Wizard & Dashboard Journey', () =>
     await page.screenshot({ path: path.join(SHOT_DIR, 'phase3h-wizard-preflight-review.png'), fullPage: true });
 
     // Publish event
-    await page.getByRole('button', { name: 'Publish event' }).click();
-    await page.getByRole('button', { name: 'Publish now' }).click();
+    await page.getByRole('button', { name: /Publish (Free )?Event/i }).click();
+    await page.getByRole('button', { name: /Publish.*Now/i }).click();
     await expect(page.getByRole('heading', { name: 'Your event is live' })).toBeVisible({ timeout: 15_000 });
 
     const publicUrl = await page.locator('.share-url').inputValue();

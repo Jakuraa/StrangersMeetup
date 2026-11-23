@@ -191,6 +191,8 @@ test('Group pass (admit_count=4) consumes 4 venue seats per ticket and respects 
 });
 
 test('Paid ticket categories: Server-authoritative price calculation and minimum per booking', async () => {
+  process.env.ALLOW_PAID_PUBLISH = 'true';
+  try {
   const host = await createHost('host_paid_categories');
   const attendee = await createAttendee('paid_buyer');
 
@@ -253,4 +255,7 @@ test('Paid ticket categories: Server-authoritative price calculation and minimum
   // 3. Active payment hold accounting: 2 tickets are held while payment intent is active
   const held = await activePaymentHolds(db, ev.id);
   assert.equal(held, 2);
+  } finally {
+    delete process.env.ALLOW_PAID_PUBLISH;
+  }
 });

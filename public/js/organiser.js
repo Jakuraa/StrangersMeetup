@@ -83,8 +83,46 @@
       var r = results[0];
       var fin = results[1] || {};
       if (!r.ok) { el.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load your events.') + '</p>'; return; }
-      var h = '<p><a class="btn btn-primary" href="/organiser/new?fresh=1">Create an event</a></p>';
-      if (!r.checkout.available) h += '<p class="notice">' + esc(r.checkout.message) + '</p>';
+
+      var navBar = '<div class="org-nav-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:20px;padding:12px;background:var(--surface-card,#171B34);border:1px solid var(--border-soft,#333B6A);border-radius:10px;">' +
+        '<a class="btn btn-primary btn-sm" href="/organiser/new?fresh=1">✨ Create Event</a>' +
+        '<a class="btn btn-ghost btn-sm" href="#drafts">📝 Draft Events (' + r.drafts.length + ')</a>' +
+        '<a class="btn btn-ghost btn-sm" href="#published">🎉 Published Events (' + r.events.length + ')</a>' +
+        '<a class="btn btn-ghost btn-sm" href="/venue">📍 Venue Management</a>' +
+        '<a class="btn btn-ghost btn-sm" href="/business#overview">⚙️ Business Settings</a>' +
+        '<a class="btn btn-ghost btn-sm" href="/business#payments">💳 Payment Details</a>' +
+        '<a class="btn btn-ghost btn-sm" href="/community-guidelines" target="_blank" rel="noopener">❓ Help &amp; Support</a>' +
+        '</div>';
+
+      var h = navBar;
+
+      if (!r.events.length && !r.drafts.length) {
+        h += '<div class="org-welcome-card" style="margin-bottom:24px;padding:24px;background:var(--surface-card,#171B34);border:1px solid var(--neon-cyan,#00D9FF);border-radius:12px;">' +
+          '<span class="pill pill-ok" style="margin-bottom:8px;display:inline-block;">Free Event Listings Active</span>' +
+          '<h2 style="margin:8px 0 6px;font-size:1.4rem;">Welcome to NIGHTLIFEZ Organiser Hub</h2>' +
+          '<p class="muted" style="margin-bottom:18px;">Publish your free event in 4 simple guided steps. No upfront fees, no complex merchant verification required.</p>' +
+          '<div class="org-steps-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-bottom:20px;">' +
+          '<div style="padding:14px;background:var(--surface-input,#0B0E1E);border-radius:8px;border:1px solid var(--border-soft,#333B6A);">' +
+          '<strong style="color:var(--neon-cyan,#00D9FF);">Step 1 · Basics</strong>' +
+          '<p class="small muted" style="margin:4px 0 0;">Event title, category, city, venue location, date, time and poster.</p>' +
+          '</div>' +
+          '<div style="padding:14px;background:var(--surface-input,#0B0E1E);border-radius:8px;border:1px solid var(--border-soft,#333B6A);">' +
+          '<strong style="color:var(--neon-cyan,#00D9FF);">Step 2 · Free Tickets</strong>' +
+          '<p class="small muted" style="margin:4px 0 0;">Default ₹0 tickets with sensible capacity limits (e.g. 50 spots).</p>' +
+          '</div>' +
+          '<div style="padding:14px;background:var(--surface-input,#0B0E1E);border-radius:8px;border:1px solid var(--border-soft,#333B6A);">' +
+          '<strong style="color:var(--neon-cyan,#00D9FF);">Step 3 · Features</strong>' +
+          '<p class="small muted" style="margin:4px 0 0;">21+ entry policy, dress code, inclusions, and attendee approvals.</p>' +
+          '</div>' +
+          '<div style="padding:14px;background:var(--surface-input,#0B0E1E);border-radius:8px;border:1px solid var(--border-soft,#333B6A);">' +
+          '<strong style="color:var(--neon-cyan,#00D9FF);">Step 4 · Preview &amp; Publish</strong>' +
+          '<p class="small muted" style="margin:4px 0 0;">Inspect attendee view, check completion list, and publish free event.</p>' +
+          '</div>' +
+          '</div>' +
+          '<a class="btn btn-primary btn-lg" href="/organiser/new?fresh=1">Create your first free event →</a>' +
+          '</div>';
+      }
+
       var totalConfirmed = 0, totalRequests = 0;
       r.events.forEach(function (e) { totalConfirmed += (e.confirmed || 0); totalRequests += (e.requests || 0); });
       h += '<div class="org-kpis">' +
@@ -100,7 +138,7 @@
         var accStatusLabel = acc.outstandingBalancePaise > 0 ? 'Outstanding Fees' : 'Settled';
         h += '<div class="org-card" style="margin:20px 0 24px;border-left:4px solid var(--neon-cyan,#00D9FF);padding:18px 20px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">' +
-          '<div><h3 style="margin:0 0 2px;">NIGHTLIFEZ Finance & Infrastructure Fee</h3><p class="muted small" style="margin:0;">5% transparent platform infrastructure accounting</p></div>' +
+          '<div><h3 style="margin:0 0 2px;">NIGHTLIFEZ Finance & Infrastructure Fee</h3><p class="muted small" style="margin:0;">Transparent platform infrastructure accounting</p></div>' +
           '<div><span class="pill ' + accStatusClass + '">' + accStatusLabel + '</span></div>' +
           '</div>' +
           '<div class="org-fin-grid">' +
@@ -114,13 +152,19 @@
           '</div>' +
           '</div>';
       }
-      h += '<h2 class="org-h2">Drafts</h2>';
+      h += '<h2 class="org-h2" id="drafts">Draft Events</h2>';
       h += r.drafts.length ? '<ul class="org-list">' + r.drafts.map(function (d) {
-        return '<li class="org-item"><div><p class="org-item-title">' + esc(d.data.title || 'Untitled draft') + '</p><p class="muted">Edited ' + esc(ago(d.updatedAt)) + '</p></div>' +
-          '<div class="org-item-actions"><a class="btn btn-sm btn-primary" href="/organiser/new?draft=' + esc(d.id) + '">Continue</a>' +
+        var errs = (d.issues || []).filter(function (i) { return i.severity === 'error'; });
+        var statusBadge = errs.length
+          ? '<span class="pill pill-warn" style="margin-left:8px;">' + errs.length + ' action' + (errs.length > 1 ? 's' : '') + ' required</span>'
+          : '<span class="pill pill-ok" style="margin-left:8px;">Ready to publish</span>';
+        var btnLabel = errs.length ? 'Continue (' + esc(d.step || 'basics') + ')' : 'Review &amp; Publish';
+        return '<li class="org-item"><div><p class="org-item-title">' + esc(d.data.title || 'Untitled draft') + statusBadge + '</p>' +
+          '<p class="muted">Edited ' + esc(ago(d.updatedAt)) + ' · Step: ' + esc(d.step || 'basics') + '</p></div>' +
+          '<div class="org-item-actions"><a class="btn btn-sm btn-primary" href="/organiser/new?draft=' + esc(d.id) + '">' + btnLabel + '</a>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-discard="' + esc(d.id) + '" data-title="' + esc(d.data.title || 'Untitled draft') + '">Discard</button></div></li>';
       }).join('') + '</ul>' : '<p class="muted">No unfinished drafts.</p>';
-      h += '<h2 class="org-h2">Published events</h2>';
+      h += '<h2 class="org-h2" id="published">Published Events</h2>';
       h += r.events.length ? '<ul class="org-list">' + r.events.map(function (e) {
         return '<li class="org-item"><div><p class="org-item-title">' + esc(e.title) + '</p><p class="muted">' + esc(fmtInstant(e.startAt)) + ' · ' + esc(e.city) + ' · ' + esc(e.status) +
           ' · ' + esc(e.confirmed) + '/' + esc(e.capacity) + ' booked' + (e.requests ? ' · <strong>' + esc(e.requests) + ' request' + (e.requests === 1 ? '' : 's') + '</strong>' : '') + '</p></div>' +
@@ -1373,7 +1417,7 @@
     var CAT = {}; CFG.categories.forEach(function (c) { CAT[c[0]] = c[1]; });
     var S = {
       draft: null, data: null, version: 0, step: 'basics', dirty: false, saving: false, again: false, status: 'idle', statusMsg: '',
-      issues: [], touched: {}, shown: {}, conflict: null, published: null, uploading: '', choosingTemplate: false, flash: ''
+      issues: [], touched: {}, shown: {}, conflict: null, published: null, uploading: '', choosingTemplate: false, flash: '', publishing: false
     };
     var params = new URLSearchParams(location.search);
     var saveTimer = null, retryTimer = null;
@@ -1402,11 +1446,22 @@
       S.status = st; S.statusMsg = msg || '';
       var chip = $('[data-save-status]', el);
       if (!chip) return;
-      var text = { idle: '', saving: 'Saving…', saved: 'All changes saved', error: 'Couldn’t save', offline: 'Offline — changes kept on this device', conflict: 'Changed elsewhere — choose a version' }[st];
+      var text = {
+        idle: '',
+        saving: 'Saving…',
+        saved: 'Saved',
+        dirty: 'Changes not saved',
+        ready: 'Ready to publish',
+        published: 'Published',
+        action_required: 'Action required',
+        error: 'Couldn’t save',
+        offline: 'Offline — changes kept on this device',
+        conflict: 'Changed elsewhere — choose a version'
+      }[st] || (st ? st.charAt(0).toUpperCase() + st.slice(1) : '');
       chip.className = 'wz-status wz-status-' + st;
       chip.innerHTML = esc(text) + (S.statusMsg ? ' — ' + esc(S.statusMsg) : '') + (st === 'error' || st === 'offline' ? ' <button class="linkish" type="button" data-act="retry-save">Retry</button>' : '');
     }
-    function touch() { S.dirty = true; backup(); clearTimeout(saveTimer); saveTimer = setTimeout(save, 900); }
+    function touch() { S.dirty = true; setStatus('dirty'); backup(); clearTimeout(saveTimer); saveTimer = setTimeout(save, 900); }
     function save() {
       clearTimeout(saveTimer);
       if (!S.draft || !S.dirty || S.conflict) return Promise.resolve(true);
@@ -1420,8 +1475,14 @@
           S.issues = r.draft.issues || [];
           S.issuesData = JSON.parse(snapshot);
           if (JSON.stringify(S.data) === snapshot) { S.dirty = false; store(localKey(), null); } else backup();
-          setStatus('saved');
+          var errCount = (S.issues || []).filter(function (i) { return i.severity === 'error'; }).length;
+          if (errCount === 0) {
+            setStatus('ready', 'All changes saved');
+          } else {
+            setStatus('saved');
+          }
           showErrors();
+          if (S.step === 'preview') render();
           if (S.again) { S.again = false; return save(); }
           return true;
         }
@@ -1431,7 +1492,18 @@
           clearTimeout(retryTimer); retryTimer = setTimeout(save, 8000);
           return false;
         }
-        setStatus('error', r.message || '');
+        var msg = r.message || 'Please check the highlighted fields.';
+        if (r.fields && Array.isArray(r.fields) && r.fields.length) {
+          msg = 'Check: ' + r.fields.join(', ');
+          r.fields.forEach(function (f) {
+            S.touched[f] = true;
+            var inp = $('[data-path="' + f + '"]', el);
+            if (inp) inp.setAttribute('aria-invalid', 'true');
+            var errEl = $('[data-err-for="' + f + '"]', el);
+            if (errEl && !errEl.textContent) errEl.textContent = 'Please check this field.';
+          });
+        }
+        setStatus('error', msg);
         return false;
       });
       return S.saving;
@@ -1896,7 +1968,6 @@
 
     function stepTickets() {
       var d = S.data;
-      var co = CFG.checkout;
       var schedDates = (d.schedule && d.schedule.dates && d.schedule.dates.length) ? d.schedule.dates : null;
       var isMulti = Boolean(d.multiDay) || Boolean(schedDates && schedDates.length > 1);
       var validOptions = [['all', 'All event dates']];
@@ -1909,7 +1980,6 @@
         var dlist = datesBetween(d.startLocal, d.endLocal, CFG.limits.days);
         dlist.forEach(function (x) { validOptions.push([x, dayLabel(x)]); });
       }
-      var balance = d.features && d.features.balance && d.features.balance.enabled;
       var catOptions = [
         ['general', 'General admission'],
         ['men', "Men's Pass"],
@@ -1921,54 +1991,55 @@
         ['custom', 'Custom Category']
       ];
 
+      var freeNotice = '<div class="notice notice-info" style="margin-bottom:16px;background:rgba(0,217,255,0.08);border:1px solid rgba(0,217,255,0.25);border-radius:10px;padding:12px 16px;">' +
+        '<p style="margin:0;font-weight:600;color:var(--neon-cyan,#00D9FF);">🎟️ Free Event Listings Only</p>' +
+        '<p class="small muted" style="margin:4px 0 0;">All tickets on NIGHTLIFEZ are currently free for attendees. Paid ticket sales and live payment collection are disabled during this phase.</p>' +
+        '</div>';
+
+      var hasPaid = (d.tickets || []).some(function (t) { return t.kind === 'paid' || (t.pricePaise || 0) > 0; });
+      var paidNotice = hasPaid
+        ? '<div class="wz-alert" style="margin-bottom:16px;border-color:var(--party-pink,#FF315B);"><p><strong>Paid tickets cannot be published:</strong> NIGHTLIFEZ is currently free-listing only. Convert paid tickets to Free (₹0) to publish this event.</p>' +
+          '<button class="btn btn-sm btn-primary" type="button" data-act="convert-all-free">Convert all tickets to Free (₹0)</button></div>'
+        : '';
+
       var tiers = (d.tickets || []).map(function (t, i) {
         var p = 'tickets.' + i;
-        var statusPill = t.kind === 'free'
-          ? '<span class="pill pill-free">Free</span>'
-          : (co.available
-            ? (co.isSandbox
-              ? '<span class="pill pill-test" style="background:rgba(251,191,36,0.18);color:#FBBF24;border:1px solid rgba(251,191,36,0.35);">Paid (Sandbox Test Mode)</span>'
-              : '<span class="pill pill-paid">Paid</span>')
-            : '<span class="pill pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Gateway Pending)</span>');
+        var isPaid = t.kind === 'paid' || (t.pricePaise || 0) > 0;
+        var statusPill = isPaid
+          ? '<span class="pill pill-warn" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Unavailable)</span>'
+          : '<span class="pill pill-free">Free RSVP (₹0)</span>';
 
-        var checkoutWarning = (t.kind === 'paid' && !co.available)
-          ? '<p class="help small" style="color:#FFB800;margin-top:6px;"><span aria-hidden="true">⚠️</span> Online checkout is pending gateway activation. This ticket will be saved as a draft and displayed to attendees with the notice <em>“Online payment pending gateway configuration”</em>. Free tickets are fully bookable.</p>'
+        var paidWarning = isPaid
+          ? '<p class="help small" style="color:#FFB800;margin-top:6px;">⚠️ Paid tickets are preserved but cannot be published. <button class="linkish" type="button" data-act="convert-tier-free" data-i="' + i + '">Convert to Free (₹0)</button></p>'
           : '';
 
         var defaultAdmit = t.category === 'couple' ? 2 : (t.category === 'group' ? 4 : 1);
 
         return '<li class="tier-card"><div class="tier-card-head"><h4>' + esc(t.name || 'Untitled ticket') + '</h4>' + statusPill + '</div>' +
-          checkoutWarning +
+          paidWarning +
           '<div class="row2">' +
           select(p + '.category', 'Ticket category', catOptions, { def: 'general' }) +
-          text(p + '.name', 'Ticket display name', { max: 60 }) +
+          text(p + '.name', 'Ticket display name', { max: 60, placeholder: 'e.g. Free RSVP / General Admission' }) +
           '</div>' +
           '<div class="row2">' +
-          '<fieldset class="fld seg"><legend>Type</legend>' +
-          '<label><input type="radio" name="kind-' + esc(t.id) + '" value="free"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'free' ? ' checked' : '') + '> Free</label>' +
-          '<label><input type="radio" name="kind-' + esc(t.id) + '" value="paid"' + attrs(p + '.kind') + ' data-rerender' + (t.kind === 'paid' ? ' checked' : '') + '> Paid</label></fieldset>' +
+          '<div class="fld"><p class="lbl">Ticket Type</p><p class="free-note" style="margin:6px 0 0;color:var(--neon-cyan,#00D9FF);font-weight:600;">' + (isPaid ? 'Paid Pass (₹' + ((t.pricePaise || 0) / 100) + ')' : 'Free Pass (₹0)') + '</p></div>' +
           text(p + '.admitCount', 'Admits (guests per ticket)', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: defaultAdmit, help: 'E.g. Couple = 2 guests, Group = 4 guests' }) +
           '</div>' +
           '<div class="row3">' +
-          (t.kind === 'paid' ? text(p + '.pricePaise', 'Price (₹)', { type: 'number', min: 0, inputmode: 'decimal', kind: 'rupees', display: function (v) { return Number.isInteger(v) ? v / 100 : ''; } }) : '<div class="fld"><p class="lbl">Price</p><p class="free-note">Free — no payment is ever collected.</p></div>') +
-          text(p + '.quantity', 'Quantity available', { type: 'number', min: 0, inputmode: 'numeric', kind: 'int' }) +
-          text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, inputmode: 'numeric', kind: 'int', def: t.category === 'couple' ? 1 : 4 }) +
+          '<div class="fld"><p class="lbl">Price</p><p class="free-note">' + (isPaid ? '₹' + ((t.pricePaise || 0) / 100) : 'Free — ₹0') + '</p></div>' +
+          text(p + '.quantity', 'Quantity available', { type: 'number', min: 1, max: 5000, inputmode: 'numeric', kind: 'int', placeholder: '50' }) +
+          text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: t.category === 'couple' ? 1 : 4 }) +
           '</div>' +
           '<div class="row2">' +
-          text(p + '.minPerBooking', 'Min per booking', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: 1 }) +
+          text(p + '.minPerBooking', 'Min per booking (optional)', { type: 'number', min: 1, max: 20, optional: true, inputmode: 'numeric', kind: 'int', def: 1 }) +
           (isMulti ? select(p + '.validOn', 'Valid for session/date', validOptions, { def: 'all' }) : '<div class="fld"></div>') +
           '</div>' +
           text(p + '.eligibility', 'Eligibility description', { max: 120, optional: true, placeholder: 'e.g. One pass admits 1 couple arriving together', help: 'Shown on the event page and ticket rules before booking.' }) +
           '<div class="org-item-actions"><button class="btn btn-sm btn-ghost" type="button" data-act="dup-tier" data-i="' + i + '">Duplicate</button>' +
           '<button class="btn btn-sm btn-ghost" type="button" data-act="del-tier" data-i="' + i + '">Delete</button></div></li>';
       }).join('');
-      var payCard = co.available
-        ? (co.isSandbox
-          ? '<div class="notice notice-info" style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.35);color:#38BDF8;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>🧪 Sandbox UPI Testing Active:</strong> Paid tickets use simulated provider verification for non-production testing. Live gateway checkout is disabled until merchant onboarding is complete.</p></div>'
-          : '<div class="notice notice-success" style="background:rgba(6,214,160,0.12);border:1px solid rgba(6,214,160,0.35);color:#06D6A0;padding:12px 16px;border-radius:10px;"><p style="margin:0;"><strong>Online Checkout Active:</strong> Paid tickets use verified payment gateway checkout.</p></div>')
-        : '<div class="notice notice-warn" role="status"><p><strong>Online payment is pending gateway configuration.</strong> ' + esc(co.message) + '</p>' +
-          '<p class="small" style="margin-top:6px;margin-bottom:0;">Paid tickets can be configured and priced in draft mode. Free tickets are live and bookable by attendees.</p></div>';
-      return card('Payment', payCard) +
+
+      return card('Payment', freeNotice + paidNotice) +
         card('Ticket types', '<p class="help">Quick add:</p><div class="chips">' + Object.keys(CFG.ticketPresets).map(function (k) {
           return '<button type="button" class="chip" data-act="add-tier" data-preset="' + esc(k) + '">+ ' + esc(CFG.ticketPresets[k].name) + '</button>';
         }).join('') + '</div>' + errSlot('tickets') +
@@ -1976,7 +2047,7 @@
           ((d.tickets || []).length < CFG.limits.tiers ? '<button class="btn btn-ghost btn-sm" type="button" data-act="add-tier" data-preset="general">+ Add another ticket type</button>' : '')) +
         card('Inventory', '<div data-live="inventory"></div>') +
         policyCardHtml() +
-        card('Coming later', '<ul class="later"><li>Advance + balance payments</li><li>Promo codes</li><li>Complimentary passes</li></ul><p class="help">These aren’t available yet, so they can’t be switched on.</p>', { cls: 'wz-card-muted' }) +
+        card('Coming later', '<ul class="later"><li>Paid ticket sales &amp; instant payouts</li><li>Promo codes</li><li>Complimentary passes</li></ul><p class="help">These features will be enabled in a future release.</p>', { cls: 'wz-card-muted' }) +
         nav('basics', 'features', 'Next: Features');
     }
 
@@ -2071,20 +2142,26 @@
           return '<li><span class="pill">' + esc(label[i.step] || i.step) + '</span> ' + esc(i.message) + ' <button class="linkish" type="button" data-act="fix" data-step="' + esc(i.step) + '" data-field="' + esc(i.field) + '">Fix</button></li>';
         }).join('') + '</ul>';
       };
-      return card('Before you publish', errs.length ? '<p>' + errs.length + ' thing' + (errs.length === 1 ? '' : 's') + ' to finish:</p>' + list(errs) : '<p class="ok-line">Everything needed is in place.</p>' +
-        (warns.length ? '<p class="help">Worth a look:</p>' + list(warns) : '')) +
-        card('What guests will see', attendeePreview()) +
+      var editNav = '<div class="preview-edit-links" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-act="go" data-step="basics">✏️ Edit Basics</button>' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-act="go" data-step="tickets">✏️ Edit Tickets</button>' +
+        '<button class="btn btn-ghost btn-sm" type="button" data-act="go" data-step="features">✏️ Edit Features</button>' +
+        '</div>';
+
+      return card('Before you publish', (errs.length ? '<p><strong>' + errs.length + ' item' + (errs.length === 1 ? '' : 's') + ' to complete before publishing:</strong></p>' + list(errs) : '<p class="ok-line" style="color:var(--neon-green,#00FF88);font-weight:600;">✓ Everything needed is in place. Your free event is ready to publish.</p>') +
+        (warns.length ? '<p class="help" style="margin-top:12px;">Suggested tips:</p>' + list(warns) : '')) +
+        card('What attendees will see', editNav + attendeePreview()) +
         '<div class="wz-nav wz-nav-final">' +
         '<button class="btn btn-ghost" type="button" data-act="go" data-step="features">Back to edit</button>' +
         '<button class="btn btn-ghost" type="button" data-act="save-now">Save draft</button>' +
         '<a class="btn btn-ghost" href="/organiser/drafts/' + esc(S.draft.id) + '/preview" target="_blank" rel="noopener" data-act="journey">Preview booking journey</a>' +
-        '<button class="btn btn-primary" type="button" data-act="publish"' + (errs.length ? ' disabled aria-describedby="pub-why"' : '') + '>Publish event</button></div>' +
-        (errs.length ? '<p class="help" id="pub-why">Finish the items above to publish. Your draft is saved.</p>' : '') +
-        '<dialog class="wz-dialog" data-publish-dialog aria-labelledby="pub-title"><h2 id="pub-title">Publish “' + esc(S.data.title || 'this event') + '”?</h2>' +
-        '<p>It will appear on NIGHTLIFEZ for everyone to see' + ((S.data.features || {}).approval && S.data.features.approval.enabled ? ', and guests can send requests to join.' : ', and guests can start booking.') + '</p>' +
-        ((S.data.tickets || []).some(function (t) { return t.kind === 'paid'; }) && !CFG.checkout.available ? '<p class="notice notice-warn">Paid tickets will show as “not available yet” until online payment is configured. Only free tickets can be booked.</p>' : '') +
+        '<button class="btn btn-primary" type="button" data-act="publish"' + (errs.length ? ' disabled aria-describedby="pub-why"' : '') + '>Publish Free Event</button></div>' +
+        (errs.length ? '<p class="help" id="pub-why">Complete the items above to publish. Your draft is automatically saved.</p>' : '') +
+        '<dialog class="wz-dialog" data-publish-dialog aria-labelledby="pub-title"><h2 id="pub-title">Publish free event “' + esc(S.data.title || 'this event') + '”?</h2>' +
+        '<p>This free event will be published on NIGHTLIFEZ for attendees to discover and book passes' + ((S.data.features || {}).approval && S.data.features.approval.enabled ? ', and guests can send requests to join.' : '.') + '</p>' +
+        '<p class="notice notice-info">This is a free event listing. All tickets are ₹0 and no payment collection will occur.</p>' +
         '<p class="form-msg error" data-publish-msg role="alert"></p>' +
-        '<div class="org-item-actions"><button class="btn btn-ghost" type="button" data-act="publish-cancel">Not yet</button><button class="btn btn-primary" type="button" data-act="publish-confirm">Publish now</button></div></dialog>';
+        '<div class="org-item-actions"><button class="btn btn-ghost" type="button" data-act="publish-cancel">Not yet</button><button class="btn btn-primary" type="button" data-act="publish-confirm">Publish Free Event Now</button></div></dialog>';
     }
 
     function screenPublished() {
@@ -2201,21 +2278,24 @@
       var p = clone(CFG.ticketPresets[key] || CFG.ticketPresets.general);
       p.id = uid();
       p.category = p.category || key || 'general';
+      p.kind = 'free';
+      p.pricePaise = 0;
       p.admitCount = p.admitCount || (p.category === 'couple' ? 2 : p.category === 'group' ? 4 : 1);
+      p.quantity = (Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 5000) ? p.quantity : 50;
       p.minPerBooking = p.minPerBooking || 1;
-      p.maxPerBooking = p.maxPerBooking || (p.category === 'couple' ? 1 : 4);
-      if (p.kind === 'free') p.pricePaise = 0;
+      p.maxPerBooking = p.maxPerBooking || (p.category === 'couple' ? 1 : Math.min(4, p.quantity));
       return p;
     }
     function goStep(step) {
       S.step = step; S.flash = ''; S.dirty = true; backup();
-      save().then(function () { if (step === 'preview') refreshIssues(); });
       render('[data-step-heading]');
       window.scrollTo(0, 0);
+      save().then(function () { if (step === 'preview') refreshIssues(); });
     }
     function refreshIssues() {
+      if (!S.draft) return;
       api('GET', '/api/organiser/drafts/' + encodeURIComponent(S.draft.id) + '/check').then(function (r) {
-        if (r.ok) { S.issues = r.issues; CFG.checkout = r.checkout; if (S.step === 'preview') render(); }
+        if (r.ok) { S.issues = r.issues || []; CFG.checkout = r.checkout || CFG.checkout; if (S.step === 'preview') render(); }
       });
     }
     function startDraft(template) {
@@ -2377,6 +2457,15 @@
           else if (daylist.length > 1) daylist.splice(daypos, 1);
           S.data.schedule.recurring.daysOfWeek = daylist;
           touch(); return render();
+        case 'convert-all-free':
+          (S.data.tickets || []).forEach(function (x) { x.kind = 'free'; x.pricePaise = 0; });
+          touch(); return render();
+        case 'convert-tier-free':
+          if (S.data.tickets && S.data.tickets[i]) {
+            S.data.tickets[i].kind = 'free';
+            S.data.tickets[i].pricePaise = 0;
+          }
+          touch(); return render();
         case 'add-tier':
           S.data.tickets = (t || []).concat(presetTier(b.getAttribute('data-preset'))); touch(); return render('.tier-card:last-child input');
         case 'dup-tier':
@@ -2415,7 +2504,7 @@
           return save().then(function (ok) {
             if (ok === false) return;
             var dlg = $('[data-publish-dialog]', el);
-            if (dlg && dlg.showModal) dlg.showModal(); else if (window.confirm('Publish this event now? It becomes visible to everyone.')) publishNow();
+            if (dlg && dlg.showModal) dlg.showModal(); else if (window.confirm('Publish this free event now? It becomes visible to everyone.')) publishNow();
           });
         case 'publish-cancel': return $('[data-publish-dialog]', el).close();
         case 'publish-confirm': return publishNow(b);
@@ -2425,12 +2514,16 @@
     });
 
     function publishNow(btn) {
-      if (btn) btn.disabled = true;
+      if (S.publishing) return;
+      S.publishing = true;
+      if (btn) { btn.disabled = true; btn.setAttribute('data-orig-text', btn.textContent); btn.textContent = 'Publishing free event…'; }
       var msg = $('[data-publish-msg]', el);
       api('POST', '/api/organiser/drafts/' + encodeURIComponent(S.draft.id) + '/publish', { version: S.version, confirm: true }).then(function (r) {
-        if (btn) btn.disabled = false;
+        S.publishing = false;
+        if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-orig-text') || 'Publish Free Event Now'; }
         if (r.ok) {
           store(localKey(), null); S.dirty = false; S.published = r;
+          setStatus('published');
           var dlg = $('[data-publish-dialog]', el); if (dlg && dlg.open) dlg.close();
           history.replaceState(null, '', '/organiser/new');
           render('[data-focus]'); window.scrollTo(0, 0);
@@ -2439,6 +2532,10 @@
         if (r.status === 422 && r.issues) { S.issues = r.issues; var dl = $('[data-publish-dialog]', el); if (dl) dl.close(); render(); return; }
         if (r.error === 'version_conflict') { S.conflict = r.draft; var d2 = $('[data-publish-dialog]', el); if (d2) d2.close(); render(); return; }
         if (msg) msg.textContent = r.message || 'Could not publish. Please try again.';
+      }).catch(function () {
+        S.publishing = false;
+        if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-orig-text') || 'Publish Free Event Now'; }
+        if (msg) msg.textContent = 'A network error occurred. Please try again.';
       });
     }
 
