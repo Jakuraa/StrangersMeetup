@@ -93,12 +93,12 @@ test('GET /venue: unauthenticated request renders sign-in gate with Telegram but
   assert.ok(res.text.includes('/signin?next=%2Fvenue'));
 });
 
-test('GET /venue: authenticated user without venue org renders onboarding and application form', async () => {
+test('GET /venue: authenticated user without venue org renders direct onboarding wizard', async () => {
   const nonVenue = await signedInClient();
   const res = await nonVenue.get('/venue');
   assert.equal(res.status, 200);
-  assert.ok(res.text.includes('Submit Venue Application'));
-  assert.ok(res.text.includes('venueApplyForm'));
+  assert.ok(res.text.includes('Launch Your Venue on NIGHTLIFEZ'));
+  assert.ok(res.text.includes('venueOnboardForm'));
 });
 
 test('GET /venue: venue operator owner renders Venue Command Centre shell and assets', async () => {
@@ -389,7 +389,7 @@ test('GET /api/venue/reports: outsider gets 404', async () => {
 
 // ---------- 9. Venue Application Flow ----------
 
-test('POST /api/venue/apply: signed-in user submits venue application', async () => {
+test('POST /api/venue/apply: signed-in user directly onboards venue via legacy/alias route', async () => {
   const applicant = await signedInClient();
   const appData = {
     name: 'Vikram Seth',
@@ -404,15 +404,14 @@ test('POST /api/venue/apply: signed-in user submits venue application', async ()
   const res = await applicant.post('/api/venue/apply', appData);
   assert.equal(res.status, 201);
   assert.equal(res.json.ok, true);
-  assert.ok(res.json.leadId);
+  assert.ok(res.json.venueId);
 
-  // Context now includes pending application
+  // User is now an active venue operator with immediate dashboard access
   const ctxRes = await applicant.get('/api/venue/context');
   assert.equal(ctxRes.status, 200);
-  assert.equal(ctxRes.json.context.hasVenue, false);
-  assert.ok(ctxRes.json.context.applications.length >= 1);
-  assert.equal(ctxRes.json.context.applications[0].venueName, 'The Glasshouse Studio');
-  assert.equal(ctxRes.json.context.applications[0].status, 'new');
+  assert.equal(ctxRes.json.context.hasVenue, true);
+  assert.ok(ctxRes.json.context.venues.length >= 1);
+  assert.equal(ctxRes.json.context.venues[0].name, 'The Glasshouse Studio');
 });
 
 // ---------- 10. Super Admin & Zero-Venues Resilience ----------

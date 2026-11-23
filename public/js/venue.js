@@ -79,6 +79,17 @@
     { id: 'wifi_highspeed', label: 'High-Speed Wi-Fi', icon: '📶' }
   ];
 
+  var ALL_CATEGORIES = [
+    { id: 'rooftop_lounge', label: 'Rooftop Lounge & Skybar' },
+    { id: 'cocktail_speakeasy', label: 'Cocktail Bar & Speakeasy' },
+    { id: 'nightclub', label: 'Nightclub & Dance Venue' },
+    { id: 'cafe_bistro', label: 'Café & Intimate Bistro' },
+    { id: 'studio_loft', label: 'Art Studio & Creative Loft' },
+    { id: 'resort_farmhouse', label: 'Resort, Villa & Farmhouse' },
+    { id: 'brewery_pub', label: 'Microbrewery & Social Pub' },
+    { id: 'event_space', label: 'Boutique Event Space' }
+  ];
+
   var DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
   // ---------- Initialization ----------
@@ -89,9 +100,9 @@
     state.csrf = appRoot.getAttribute('data-csrf') || '';
 
     // If onboarding form exists
-    var applyForm = $('#venueApplyForm');
-    if (applyForm) {
-      initOnboarding(applyForm);
+    var onboardForm = $('#venueOnboardForm') || $('#venueApplyForm');
+    if (onboardForm) {
+      initSelfServiceOnboarding(onboardForm);
       return;
     }
 
@@ -117,51 +128,301 @@
     });
   }
 
-  // ---------- Onboarding Flow ----------
-  function initOnboarding(form) {
-    // Check if user has past applications
+  // ---------- Self-Service Direct Onboarding Flow ----------
+  function initSelfServiceOnboarding(form) {
+    var updateStrength = function () {
+      var fd = new FormData(form);
+      var name = (fd.get('name') || fd.get('venue_name') || '').toString().trim();
+      var category = (fd.get('category') || '').toString().trim();
+      var city = (fd.get('city') || '').toString().trim();
+      var desc = (fd.get('description') || fd.get('message') || '').toString().trim();
+      var cap = Number(fd.get('capacity')) || 0;
+      var facs = $$('input[name="facilities"]:checked', form);
+      var photo1 = (fd.get('photo_url_1') || '').toString().trim();
+      var photo2 = (fd.get('photo_url_2') || '').toString().trim();
+      var hoursNote = (fd.get('operating_hours_note') || '').toString().trim();
+      var rules = (fd.get('rules') || '').toString().trim();
+
+      var score = 0;
+      if (name) score += 15;
+      if (category) score += 15;
+      if (city) score += 20;
+      if (desc) score += 10;
+      if (cap > 0) score += 10;
+      if (facs.length > 0) score += 10;
+      if (photo1 || photo2) score += 10;
+      if (hoursNote || rules) score += 10;
+
+      var percentEl = $('#strengthPercent');
+      var barEl = $('#strengthProgressBar');
+      var pillEl = $('#onboardStatusPill');
+      var hintEl = $('#strengthHint');
+
+      if (percentEl) percentEl.textContent = score + '%';
+      if (barEl) {
+        barEl.style.width = score + '%';
+        if (barEl.parentElement) barEl.parentElement.setAttribute('aria-valuenow', score);
+      }
+      if (pillEl) {
+        if (score >= 70) {
+          pillEl.textContent = 'Ready to Launch';
+          pillEl.className = 'venue-pill venue-pill-status';
+        } else if (score >= 40) {
+          pillEl.textContent = 'In Progress';
+          pillEl.className = 'venue-pill venue-pill-pending';
+        } else {
+          pillEl.textContent = 'Incomplete (Draft)';
+          pillEl.className = 'venue-pill venue-pill-pending';
+        }
+      }
+      if (hintEl) {
+        if (!name) hintEl.textContent = 'Add venue name to begin';
+        else if (!category) hintEl.textContent = 'Choose space category';
+        else if (!city) hintEl.textContent = 'Specify city and address';
+        else if (score < 70) hintEl.textContent = 'Add capacity, description and amenities';
+        else hintEl.textContent = 'Profile ready! Click Launch to activate immediately';
+      }
+      return score;
+    };
+
+    // Live strength calculation on input changes
+    form.addEventListener('input', updateStrength);
+    form.addEventListener('change', updateStrength);
+    updateStrength();
+
+    // Check if user has an existing draft venue to prefill
     api('GET', '/api/venue/context').then(function (res) {
-      if (res.ok && res.context && res.context.applications && res.context.applications.length > 0) {
-        var box = $('#applicationStatusBox');
-        if (box) {
-          var app = res.context.applications[0];
-          box.hidden = false;
-          box.innerHTML = '<h3>Recent Application: ' + esc(app.venueName) + '</h3>' +
-            '<p>Status: <span class="venue-pill venue-pill-pending">' + esc(app.status.toUpperCase()) + '</span> — Submitted on ' +
-            new Date(app.submittedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + '</p>' +
-            '<p class="muted small" style="margin-top:6px;">Our venue team is reviewing your space details. You will receive an update once verified.</p>';
+      if (res.ok && res.context) {
+        var existing = res.context.draftVenue || (res.context.venues && res.context.venues[0]);
+        if (existing) {
+          var setVal = function (name, val) {
+            var inp = form.elements[name];
+            if (inp && val != null) inp.value = val;
+          };
+          setVal('venue_id', existing.id);
+          setVal('name', existing.name);
+          setVal('category', existing.category);
+          setVal('city', existing.cityName || existing.city);
+          setVal('neighbourhood', existing.neighbourhood);
+          setVal('address_public', existing.addressPublic);
+          setVal('address_private', existing.addressPrivate);
+          setVal('capacity', existing.capacity);
+          setVal('contact_name', existing.contactName);
+          setVal('contact_phone', existing.contactPhone);
+          setVal('contact_email', existing.contactEmail);
+          setVal('description', existing.description);
+          setVal('rules', existing.rules);
+          if (existing.facilities && Array.isArray(existing.facilities)) {
+            existing.facilities.forEach(function (f) {
+              var cb = $('input[name="facilities"][value="' + f + '"]', form);
+              if (cb) cb.checked = true;
+            });
+          }
+          if (existing.photos && Array.isArray(existing.photos)) {
+            if (existing.photos[0]) setVal('photo_url_1', typeof existing.photos[0] === 'string' ? existing.photos[0] : existing.photos[0].url);
+            if (existing.photos[1]) setVal('photo_url_2', typeof existing.photos[1] === 'string' ? existing.photos[1] : existing.photos[1].url);
+          }
+          if (existing.operatingHours) {
+            if (typeof existing.operatingHours === 'string') setVal('operating_hours_note', existing.operatingHours);
+            else if (existing.operatingHours.general) setVal('operating_hours_note', existing.operatingHours.general);
+            else if (existing.operatingHours.friday) setVal('operating_hours_note', existing.operatingHours.friday);
+          }
+          updateStrength();
         }
       }
     }).catch(function () {});
 
+    var collectData = function (isDraft) {
+      var fd = new FormData(form);
+      var facs = $$('input[name="facilities"]:checked', form).map(function (cb) { return cb.value; });
+      var photos = [];
+      var p1 = (fd.get('photo_url_1') || '').toString().trim();
+      var p2 = (fd.get('photo_url_2') || '').toString().trim();
+      if (p1) photos.push(p1);
+      if (p2) photos.push(p2);
+
+      var operatingHours = {};
+      var hoursNote = (fd.get('operating_hours_note') || '').toString().trim();
+      if (hoursNote) {
+        DAYS.forEach(function (d) { operatingHours[d] = hoursNote; });
+      }
+
+      var venueIdVal = (fd.get('venue_id') || '').toString().trim() || undefined;
+
+      return {
+        venue_id: venueIdVal,
+        name: (fd.get('name') || fd.get('venue_name') || '').toString().trim(),
+        category: (fd.get('category') || undefined),
+        description: (fd.get('description') || fd.get('message') || undefined),
+        city: (fd.get('city') || '').toString().trim(),
+        neighbourhood: (fd.get('neighbourhood') || fd.get('area') || undefined),
+        address_public: (fd.get('address_public') || undefined),
+        address_private: (fd.get('address_private') || undefined),
+        capacity: fd.get('capacity') ? Number(fd.get('capacity')) : 50,
+        contact_name: (fd.get('contact_name') || undefined),
+        contact_phone: (fd.get('contact_phone') || undefined),
+        contact_email: (fd.get('contact_email') || fd.get('email') || undefined),
+        facilities: facs,
+        operating_hours: Object.keys(operatingHours).length > 0 ? operatingHours : undefined,
+        rules: (fd.get('rules') || undefined),
+        photos: photos,
+        is_draft: Boolean(isDraft)
+      };
+    };
+
+    // Save Progress (Draft) button
+    var btnDraft = $('#btnSaveVenueDraft');
+    if (btnDraft) {
+      btnDraft.addEventListener('click', async function (e) {
+        e.preventDefault();
+        var msg = $('#onboardMsg') || $('#applyMsg');
+        if (msg) {
+          msg.textContent = 'Saving progress…';
+          msg.className = 'form-msg';
+        }
+
+        var payload = collectData(true);
+        if (!payload.name) {
+          if (msg) {
+            msg.textContent = 'Please enter a venue name to save your draft.';
+            msg.className = 'form-msg error';
+          }
+          return;
+        }
+
+        try {
+          var res = await api('POST', '/api/venue/onboard', payload);
+          if (msg) {
+            msg.textContent = 'Progress saved! Profile is at ' + (res.completionPercentage || 0) + '%. You can resume anytime.';
+            msg.className = 'form-msg ok';
+          }
+          if (res.venue && res.venue.id) {
+            var vInp = form.elements['venue_id'];
+            if (vInp) vInp.value = res.venue.id;
+          }
+          updateStrength();
+        } catch (err) {
+          if (msg) {
+            if (err.data && err.data.error === 'duplicate_venue') {
+              msg.innerHTML = esc(err.message) + '<br><button type="button" class="btn btn-outline-cyan btn-sm" id="btnTriggerClaimDraft" style="margin-top:8px">Submit Ownership Claim</button>';
+              var btnClaim = $('#btnTriggerClaimDraft');
+              if (btnClaim) {
+                btnClaim.addEventListener('click', function () {
+                  var modalClaim = $('#modalClaimVenue');
+                  if (modalClaim && err.data.existingVenueId) {
+                    var vInp = $('#claimVenueId');
+                    if (vInp) vInp.value = err.data.existingVenueId;
+                    modalClaim.showModal();
+                  }
+                });
+              }
+            } else {
+              msg.textContent = err.message || 'Error saving progress.';
+            }
+            msg.className = 'form-msg error';
+          }
+        }
+      });
+    }
+
+    // Submit / Launch form
     form.addEventListener('submit', async function (ev) {
       ev.preventDefault();
-      var msg = $('#applyMsg');
-      msg.textContent = 'Submitting application…';
-      msg.className = 'form-msg';
+      var msg = $('#onboardMsg') || $('#applyMsg');
+      if (msg) {
+        msg.textContent = 'Launching venue profile…';
+        msg.className = 'form-msg';
+      }
 
-      var fd = new FormData(form);
-      var payload = {
-        name: fd.get('name'),
-        venue_name: fd.get('venue_name'),
-        email: fd.get('email'),
-        phone: fd.get('phone') || undefined,
-        city: fd.get('city'),
-        area: fd.get('area') || undefined,
-        capacity: fd.get('capacity') ? Number(fd.get('capacity')) : undefined,
-        message: fd.get('message') || undefined
-      };
+      var payload = collectData(false);
+
+      if (!payload.name || !payload.category || !payload.city) {
+        if (msg) {
+          msg.textContent = 'Please fill in required fields: Venue Name, Category, and City.';
+          msg.className = 'form-msg error';
+        }
+        return;
+      }
 
       try {
-        var res = await api('POST', '/api/venue/apply', payload);
-        msg.textContent = 'Application submitted successfully! Our team will contact you shortly.';
-        msg.className = 'form-msg ok';
-        form.reset();
+        var res = await api('POST', '/api/venue/onboard', payload);
+        if (msg) {
+          msg.textContent = 'Venue profile activated successfully! Redirecting to command centre…';
+          msg.className = 'form-msg ok';
+        }
+        setTimeout(function () {
+          window.location.href = res.redirect || '/venue';
+        }, 500);
       } catch (err) {
-        msg.textContent = err.message || 'Could not submit application.';
-        msg.className = 'form-msg error';
+        if (msg) {
+          if (err.data && err.data.error === 'duplicate_venue') {
+            msg.innerHTML = esc(err.message) + '<br><button type="button" class="btn btn-outline-cyan btn-sm" id="btnTriggerClaim" style="margin-top:8px">Submit Ownership Claim</button>';
+            var btnClaim = $('#btnTriggerClaim');
+            if (btnClaim) {
+              btnClaim.addEventListener('click', function () {
+                var modalClaim = $('#modalClaimVenue');
+                if (modalClaim && err.data.existingVenueId) {
+                  var vInp = $('#claimVenueId');
+                  if (vInp) vInp.value = err.data.existingVenueId;
+                  modalClaim.showModal();
+                }
+              });
+            }
+          } else {
+            msg.textContent = err.message || 'Error launching venue profile.';
+          }
+          msg.className = 'form-msg error';
+        }
       }
     });
+
+    // Wire up dialog close handlers inside onboarding state
+    $$('[data-close-dialog]', form.parentElement).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var dlg = btn.closest('dialog');
+        if (dlg) dlg.close();
+      });
+    });
+
+    // Wire up ownership claim submission
+    var formClaim = $('#formClaimVenue');
+    if (formClaim) {
+      formClaim.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var cMsg = $('#claimMsg');
+        if (cMsg) {
+          cMsg.textContent = 'Submitting ownership claim…';
+          cMsg.className = 'form-msg';
+        }
+        var fd = new FormData(formClaim);
+        try {
+          var payload = {
+            venue_id: fd.get('venue_id'),
+            claimant_role: fd.get('claimant_role'),
+            business_proof_type: fd.get('business_proof_type'),
+            business_proof_ref: fd.get('business_proof_ref'),
+            contact_name: fd.get('contact_name'),
+            contact_email: fd.get('contact_email'),
+            contact_phone: fd.get('contact_phone') || undefined,
+            notes: fd.get('notes') || undefined
+          };
+          var res = await api('POST', '/api/venue/claim', payload);
+          if (cMsg) {
+            cMsg.textContent = res.message || 'Ownership claim submitted. Verification challenge recorded.';
+            cMsg.className = 'form-msg success';
+          }
+          setTimeout(function () {
+            var modal = $('#modalClaimVenue');
+            if (modal) modal.close();
+          }, 3000);
+        } catch (err) {
+          if (cMsg) {
+            cMsg.textContent = err.message || 'Failed to submit ownership claim';
+            cMsg.className = 'form-msg error';
+          }
+        }
+      });
+    }
   }
 
   // ---------- Tab Navigation ----------
@@ -672,16 +933,21 @@
     var el = $('#profileDetailsView');
     if (!el) return;
 
+    var catObj = ALL_CATEGORIES.find(function (c) { return c.id === p.category; });
+    var catLabel = catObj ? catObj.label : (p.category ? esc(p.category) : 'Not specified');
+
     el.innerHTML = [
       '<div class="profile-item"><dt>Venue Display Name</dt><dd>' + esc(p.name) + '</dd></div>',
+      '<div class="profile-item"><dt>Space Category</dt><dd><span class="venue-pill venue-pill-verified">' + catLabel + '</span></dd></div>',
       '<div class="profile-item"><dt>Operating Organisation</dt><dd>' + esc(p.orgName) + (p.orgVerified ? ' (Verified)' : '') + '</dd></div>',
       '<div class="profile-item"><dt>Maximum Capacity</dt><dd>' + esc(p.capacity || 'Not specified') + ' guests</dd></div>',
-      '<div class="profile-item"><dt>City & Locality</dt><dd>' + esc((p.cityName || '') + (p.localityName ? ', ' + p.localityName : '')) + '</dd></div>',
-      '<div class="profile-item"><dt>Public Area</dt><dd>' + esc(p.addressPublic || 'Not specified') + '</dd></div>',
+      '<div class="profile-item"><dt>City &amp; Locality</dt><dd>' + esc((p.cityName || '') + (p.localityName ? ', ' + p.localityName : '')) + '</dd></div>',
+      '<div class="profile-item"><dt>Neighbourhood / Area</dt><dd>' + esc(p.neighbourhood || p.localityName || 'Not specified') + '</dd></div>',
+      '<div class="profile-item"><dt>Public Street Address</dt><dd>' + esc(p.addressPublic || 'Not specified') + '</dd></div>',
       '<div class="profile-item"><dt>Private Gate / Exact Entry</dt><dd>' + esc(p.addressPrivate || 'Private address shared only with confirmed attendees') + '</dd></div>',
       '<div class="profile-item"><dt>Primary Contact</dt><dd>' + esc((p.contactName || '') + (p.contactPhone ? ' (' + p.contactPhone + ')' : '') + (p.contactEmail ? ' · ' + p.contactEmail : '')) + '</dd></div>',
-      '<div class="profile-item" style="grid-column: 1 / -1;"><dt>About & Ambiance</dt><dd>' + esc(p.description || 'No description provided yet.') + '</dd></div>',
-      '<div class="profile-item" style="grid-column: 1 / -1;"><dt>House Rules & Entry Policy</dt><dd>' + esc(p.rules || 'Standard NIGHTLIFEZ community and safety guidelines apply.') + '</dd></div>'
+      '<div class="profile-item" style="grid-column: 1 / -1;"><dt>About &amp; Ambiance</dt><dd>' + esc(p.description || 'No description provided yet.') + '</dd></div>',
+      '<div class="profile-item" style="grid-column: 1 / -1;"><dt>House Rules &amp; Entry Policy</dt><dd>' + esc(p.rules || 'Standard NIGHTLIFEZ community and safety guidelines apply.') + '</dd></div>'
     ].join('');
 
     // Facilities
@@ -707,11 +973,51 @@
         return '<div class="hour-card"><span class="hour-day">' + d + '</span><span>' + esc(val) + '</span></div>';
       }).join('');
     }
+
+    // Photo Gallery
+    renderGalleryView(p);
+  }
+
+  function renderGalleryView(p) {
+    var gEl = $('#profileGalleryView');
+    if (!gEl) return;
+    var photos = Array.isArray(p.photos) ? p.photos : [];
+    if (photos.length === 0) {
+      gEl.innerHTML = '<p class="muted">No photos uploaded yet. Add photos showcasing your interior, seating, bar, and rooftop.</p>';
+      return;
+    }
+    gEl.innerHTML = photos.map(function (item, idx) {
+      var url = typeof item === 'string' ? item : (item && item.url ? item.url : '');
+      if (!url) return '';
+      return '<div class="venue-gallery-item">' +
+        '<img src="' + esc(url) + '" alt="Venue photo ' + (idx + 1) + '" class="venue-gallery-thumb" loading="lazy">' +
+        '<button type="button" class="venue-gallery-remove" data-remove-photo="' + idx + '" title="Remove photo" aria-label="Remove photo">&times;</button>' +
+      '</div>';
+    }).join('');
+
+    $$('[data-remove-photo]', gEl).forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        var idx = Number(btn.getAttribute('data-remove-photo'));
+        var updated = photos.slice();
+        updated.splice(idx, 1);
+        try {
+          await api('PATCH', '/api/venue/profile?venueId=' + state.venueId, { photos: updated });
+          p.photos = updated;
+          renderGalleryView(p);
+          showAlert('Photo removed.');
+        } catch (err) {
+          showAlert(err.message || 'Error removing photo', true);
+        }
+      });
+    });
   }
 
   function renderEventsList(events, container) {
     if (!events || events.length === 0) {
-      container.innerHTML = '<p class="muted" style="padding:20px 0;">No events matching this filter.</p>';
+      container.innerHTML = '<div class="venue-empty-state">' +
+        '<p class="muted">No events matching this filter.</p>' +
+        '<a href="/organiser/new" class="btn btn-primary btn-sm" style="margin-top:12px; display:inline-block;">+ Create Event at Venue</a>' +
+      '</div>';
       return;
     }
 
@@ -738,12 +1044,13 @@
           '</div>' +
         '</td>' +
         '<td><span class="venue-pill venue-pill-status">' + esc(e.status.toUpperCase()) + '</span></td>' +
+        '<td><div class="event-action-cell"><a href="/events/' + esc(e.slug) + '" class="btn btn-ghost btn-sm" target="_blank" rel="noopener">View</a> <a href="/organiser/new?draft=' + esc(e.id) + '" class="btn btn-outline-cyan btn-sm">Edit</a></div></td>' +
       '</tr>';
     }).join('');
 
     container.innerHTML = '<div class="venue-data-table-wrap">' +
       '<table class="venue-table">' +
-        '<thead><tr><th>Event</th><th>Date &amp; Time (IST)</th><th>Host / Organiser</th><th>Attendance / Capacity</th><th>Status</th></tr></thead>' +
+        '<thead><tr><th>Event</th><th>Date &amp; Time (IST)</th><th>Host / Organiser</th><th>Attendance / Capacity</th><th>Status</th><th>Actions</th></tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
       '</table>' +
     '</div>';
@@ -877,8 +1184,13 @@
           if (val) hours[d] = val;
         });
 
+        var photosText = fd.get('photos_text') || '';
+        var photosArr = photosText.split(/[\r\n,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+
         var payload = {
           name: fd.get('name'),
+          category: fd.get('category') || undefined,
+          neighbourhood: fd.get('neighbourhood') || null,
           capacity: fd.get('capacity') ? Number(fd.get('capacity')) : null,
           contact_name: fd.get('contact_name') || null,
           contact_phone: fd.get('contact_phone') || null,
@@ -888,7 +1200,8 @@
           description: fd.get('description') || null,
           rules: fd.get('rules') || null,
           facilities: selectedFacs,
-          operating_hours: hours
+          operating_hours: hours,
+          photos: photosArr.length > 0 ? photosArr : undefined
         };
 
         try {
@@ -904,6 +1217,30 @@
         } catch (err) {
           msg.textContent = err.message || 'Error updating profile.';
           msg.className = 'form-msg error';
+        }
+      });
+    }
+
+    // 1b. Add Photo Form
+    var formAddPhoto = $('#formAddPhoto');
+    if (formAddPhoto) {
+      formAddPhoto.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var inp = $('#newPhotoUrl');
+        var url = inp ? inp.value.trim() : '';
+        if (!url || !state.venueId) return;
+
+        var photos = Array.isArray(state.profile.photos) ? state.profile.photos.slice() : [];
+        photos.push(url);
+
+        try {
+          await api('PATCH', '/api/venue/profile?venueId=' + state.venueId, { photos: photos });
+          state.profile.photos = photos;
+          renderGalleryView(state.profile);
+          if (inp) inp.value = '';
+          showAlert('Photo added to gallery.');
+        } catch (err) {
+          showAlert(err.message || 'Error adding photo', true);
         }
       });
     }
@@ -1150,6 +1487,8 @@
     };
 
     setVal('name', p.name);
+    setVal('category', p.category);
+    setVal('neighbourhood', p.neighbourhood);
     setVal('capacity', p.capacity);
     setVal('contact_name', p.contactName);
     setVal('contact_phone', p.contactPhone);
@@ -1158,6 +1497,12 @@
     setVal('address_private', p.addressPrivate);
     setVal('description', p.description);
     setVal('rules', p.rules);
+
+    var photosEl = $('#editProfilePhotos');
+    if (photosEl) {
+      var photosList = Array.isArray(p.photos) ? p.photos.map(function (x) { return typeof x === 'string' ? x : (x && x.url ? x.url : ''); }).filter(Boolean) : [];
+      photosEl.value = photosList.join('\n');
+    }
 
     // Facilities checkboxes
     var facsContainer = $('#modalFacilitiesCheckboxes');

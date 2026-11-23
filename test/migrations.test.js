@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 28 migrations currently exist: 003 through 030
-  assert.equal(files.length, 28, `expected 28 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 29 migrations currently exist: 003 through 031
+  assert.equal(files.length, 29, `expected 29 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_', '029_', '030_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_', '029_', '030_', '031_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 28 migrations in correct order', async () => {
+test('schema_migrations table records all 29 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 28);
+  assert.equal(rows.length, 29);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 28
+  // Total count in schema_migrations must remain exactly 29
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 28);
+  assert.equal(countRes.n, 29);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -540,4 +540,22 @@ test('migration 030: infrastructure fee accounting schema integrity and default 
   assert.ok(bookingCols.includes('base_price_paise'), 'bookings must have base_price_paise');
   assert.ok(bookingCols.includes('infrastructure_fee_paise'), 'bookings must have infrastructure_fee_paise');
   assert.ok(bookingCols.includes('fee_calculation_snapshot'), 'bookings must have fee_calculation_snapshot');
+});
+
+test('migration 031: venue self-service onboarding schema objects exist', async () => {
+  const venueCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'venues'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(venueCols.includes('category'), 'venues must have category column');
+  assert.ok(venueCols.includes('neighbourhood'), 'venues must have neighbourhood column');
+  assert.ok(venueCols.includes('onboarding_completed'), 'venues must have onboarding_completed column');
+  assert.ok(venueCols.includes('onboarding_step'), 'venues must have onboarding_step column');
+
+  const claimsCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'venue_claims'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(claimsCols.includes('venue_id'), 'venue_claims must have venue_id');
+  assert.ok(claimsCols.includes('claimant_user_id'), 'venue_claims must have claimant_user_id');
+  assert.ok(claimsCols.includes('business_proof_type'), 'venue_claims must have business_proof_type');
+  assert.ok(claimsCols.includes('status'), 'venue_claims must have status');
 });

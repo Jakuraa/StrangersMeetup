@@ -152,9 +152,9 @@ test.describe('NIGHTLIFEZ Venue Owner Dashboard Full-Stack E2E Suite', () => {
     await signInAs(page, 'guest');
     await page.goto('/venue');
 
-    // 3. Must render onboarding application form, NOT venue command centre
-    await expect(page.locator('#venueApplyForm')).toBeVisible();
-    await expect(page.locator('.venue-onboarding-intro')).toContainText('Turn quiet nights into curated, high-margin experiences');
+    // 3. Must render self-service onboarding wizard, NOT venue command centre
+    await expect(page.locator('#venueOnboardForm')).toBeVisible();
+    await expect(page.locator('.venue-onboard-title')).toContainText('Launch Your Venue on NIGHTLIFEZ');
     await expect(page.locator('.venue-header')).not.toBeVisible();
   });
 
