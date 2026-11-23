@@ -614,6 +614,12 @@
       var btnNewEnquiry = $('#btnNewEnquiry');
       if (btnNewEnquiry) btnNewEnquiry.hidden = false;
 
+      var btnCreateVenueEvent = $('#btnCreateVenueEvent');
+      if (btnCreateVenueEvent) btnCreateVenueEvent.href = '/organiser/new?venue_id=' + encodeURIComponent(state.venueId);
+
+      var btnScheduleEvent = $('#btnScheduleEvent');
+      if (btnScheduleEvent) btnScheduleEvent.href = '/organiser/new?venue_id=' + encodeURIComponent(state.venueId);
+
       // Venue selector
       var select = $('#venueSelect');
       var wrap = $('#venueSelectorWrap');
@@ -1016,7 +1022,7 @@
     if (!events || events.length === 0) {
       container.innerHTML = '<div class="venue-empty-state">' +
         '<p class="muted">No events matching this filter.</p>' +
-        '<a href="/organiser/new" class="btn btn-primary btn-sm" style="margin-top:12px; display:inline-block;">+ Create Event at Venue</a>' +
+        '<a href="/organiser/new' + (state.venueId ? '?venue_id=' + encodeURIComponent(state.venueId) : '') + '" class="btn btn-primary btn-sm" style="margin-top:12px; display:inline-block;">+ Create Event at Venue</a>' +
       '</div>';
       return;
     }

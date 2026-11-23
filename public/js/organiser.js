@@ -2444,12 +2444,22 @@
 
     /* ---------- boot ---------- */
     var draftId = CFG.draftId || params.get('draft');
+    var venueIdParam = CFG.venueId || params.get('venue_id');
     if (draftId) {
       api('GET', '/api/organiser/drafts/' + encodeURIComponent(draftId)).then(function (r) {
         if (!r.ok) { el.innerHTML = '<div class="wrap wz-wrap"><p class="form-msg error">' + esc(r.message || 'Draft not found.') + '</p><p><a class="link-arrow" href="/organiser">Your events</a></p></div>'; return; }
         if (r.draft.status === 'published') { el.innerHTML = '<div class="wrap wz-wrap"><p>This draft is already published.</p><p><a class="link-arrow" href="/organiser/events/' + esc(r.draft.eventId) + '">Manage the event</a></p></div>'; return; }
         if (r.draft.status !== 'active') { el.innerHTML = '<div class="wrap wz-wrap"><p>This draft was discarded.</p><p><a class="btn btn-primary" href="/organiser/new?fresh=1">Create an event</a></p></div>'; return; }
         adopt(r.draft); render();
+      });
+    } else if (venueIdParam) {
+      api('POST', '/api/organiser/drafts', { template: 'party', venueId: venueIdParam }).then(function (r) {
+        if (r.ok && r.draft) {
+          adopt(r.draft);
+          render();
+        } else {
+          S.startDrafts = []; render();
+        }
       });
     } else if (params.get('fresh')) {
       S.startDrafts = []; render();

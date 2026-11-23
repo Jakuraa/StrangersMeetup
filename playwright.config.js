@@ -30,7 +30,7 @@ export default defineConfig({
     command: 'node server.js',
     url: `${E2E_BASE}/api/health`,
     env: serverEnv,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 30_000
   }
 });
