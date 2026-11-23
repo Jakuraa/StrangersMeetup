@@ -192,22 +192,41 @@
 
     // Check if user has an existing draft venue to prefill
     api('GET', '/api/venue/context').then(function (res) {
-      if (res.ok && res.context && res.context.venues && res.context.venues.length > 0) {
-        var existing = res.context.venues[0];
+      if (res.ok && res.context) {
+        var existing = res.context.draftVenue || (res.context.venues && res.context.venues[0]);
         if (existing) {
           var setVal = function (name, val) {
             var inp = form.elements[name];
             if (inp && val != null) inp.value = val;
           };
+          setVal('venue_id', existing.id);
           setVal('name', existing.name);
           setVal('category', existing.category);
-          setVal('city', existing.cityName);
+          setVal('city', existing.cityName || existing.city);
           setVal('neighbourhood', existing.neighbourhood);
           setVal('address_public', existing.addressPublic);
           setVal('address_private', existing.addressPrivate);
           setVal('capacity', existing.capacity);
+          setVal('contact_name', existing.contactName);
+          setVal('contact_phone', existing.contactPhone);
+          setVal('contact_email', existing.contactEmail);
           setVal('description', existing.description);
           setVal('rules', existing.rules);
+          if (existing.facilities && Array.isArray(existing.facilities)) {
+            existing.facilities.forEach(function (f) {
+              var cb = $('input[name="facilities"][value="' + f + '"]', form);
+              if (cb) cb.checked = true;
+            });
+          }
+          if (existing.photos && Array.isArray(existing.photos)) {
+            if (existing.photos[0]) setVal('photo_url_1', typeof existing.photos[0] === 'string' ? existing.photos[0] : existing.photos[0].url);
+            if (existing.photos[1]) setVal('photo_url_2', typeof existing.photos[1] === 'string' ? existing.photos[1] : existing.photos[1].url);
+          }
+          if (existing.operatingHours) {
+            if (typeof existing.operatingHours === 'string') setVal('operating_hours_note', existing.operatingHours);
+            else if (existing.operatingHours.general) setVal('operating_hours_note', existing.operatingHours.general);
+            else if (existing.operatingHours.friday) setVal('operating_hours_note', existing.operatingHours.friday);
+          }
           updateStrength();
         }
       }
@@ -228,7 +247,10 @@
         DAYS.forEach(function (d) { operatingHours[d] = hoursNote; });
       }
 
+      var venueIdVal = (fd.get('venue_id') || '').toString().trim() || undefined;
+
       return {
+        venue_id: venueIdVal,
         name: (fd.get('name') || fd.get('venue_name') || '').toString().trim(),
         category: (fd.get('category') || undefined),
         description: (fd.get('description') || fd.get('message') || undefined),
@@ -274,10 +296,29 @@
             msg.textContent = 'Progress saved! Profile is at ' + (res.completionPercentage || 0) + '%. You can resume anytime.';
             msg.className = 'form-msg ok';
           }
+          if (res.venue && res.venue.id) {
+            var vInp = form.elements['venue_id'];
+            if (vInp) vInp.value = res.venue.id;
+          }
           updateStrength();
         } catch (err) {
           if (msg) {
-            msg.textContent = err.message || 'Error saving progress.';
+            if (err.data && err.data.error === 'duplicate_venue') {
+              msg.innerHTML = esc(err.message) + '<br><button type="button" class="btn btn-outline-cyan btn-sm" id="btnTriggerClaimDraft" style="margin-top:8px">Submit Ownership Claim</button>';
+              var btnClaim = $('#btnTriggerClaimDraft');
+              if (btnClaim) {
+                btnClaim.addEventListener('click', function () {
+                  var modalClaim = $('#modalClaimVenue');
+                  if (modalClaim && err.data.existingVenueId) {
+                    var vInp = $('#claimVenueId');
+                    if (vInp) vInp.value = err.data.existingVenueId;
+                    modalClaim.showModal();
+                  }
+                });
+              }
+            } else {
+              msg.textContent = err.message || 'Error saving progress.';
+            }
             msg.className = 'form-msg error';
           }
         }
@@ -314,11 +355,74 @@
         }, 500);
       } catch (err) {
         if (msg) {
-          msg.textContent = err.message || 'Error launching venue profile.';
+          if (err.data && err.data.error === 'duplicate_venue') {
+            msg.innerHTML = esc(err.message) + '<br><button type="button" class="btn btn-outline-cyan btn-sm" id="btnTriggerClaim" style="margin-top:8px">Submit Ownership Claim</button>';
+            var btnClaim = $('#btnTriggerClaim');
+            if (btnClaim) {
+              btnClaim.addEventListener('click', function () {
+                var modalClaim = $('#modalClaimVenue');
+                if (modalClaim && err.data.existingVenueId) {
+                  var vInp = $('#claimVenueId');
+                  if (vInp) vInp.value = err.data.existingVenueId;
+                  modalClaim.showModal();
+                }
+              });
+            }
+          } else {
+            msg.textContent = err.message || 'Error launching venue profile.';
+          }
           msg.className = 'form-msg error';
         }
       }
     });
+
+    // Wire up dialog close handlers inside onboarding state
+    $$('[data-close-dialog]', form.parentElement).forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var dlg = btn.closest('dialog');
+        if (dlg) dlg.close();
+      });
+    });
+
+    // Wire up ownership claim submission
+    var formClaim = $('#formClaimVenue');
+    if (formClaim) {
+      formClaim.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var cMsg = $('#claimMsg');
+        if (cMsg) {
+          cMsg.textContent = 'Submitting ownership claim…';
+          cMsg.className = 'form-msg';
+        }
+        var fd = new FormData(formClaim);
+        try {
+          var payload = {
+            venue_id: fd.get('venue_id'),
+            claimant_role: fd.get('claimant_role'),
+            business_proof_type: fd.get('business_proof_type'),
+            business_proof_ref: fd.get('business_proof_ref'),
+            contact_name: fd.get('contact_name'),
+            contact_email: fd.get('contact_email'),
+            contact_phone: fd.get('contact_phone') || undefined,
+            notes: fd.get('notes') || undefined
+          };
+          var res = await api('POST', '/api/venue/claim', payload);
+          if (cMsg) {
+            cMsg.textContent = res.message || 'Ownership claim submitted. Verification challenge recorded.';
+            cMsg.className = 'form-msg success';
+          }
+          setTimeout(function () {
+            var modal = $('#modalClaimVenue');
+            if (modal) modal.close();
+          }, 3000);
+        } catch (err) {
+          if (cMsg) {
+            cMsg.textContent = err.message || 'Failed to submit ownership claim';
+            cMsg.className = 'form-msg error';
+          }
+        }
+      });
+    }
   }
 
   // ---------- Tab Navigation ----------

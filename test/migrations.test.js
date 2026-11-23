@@ -550,4 +550,12 @@ test('migration 031: venue self-service onboarding schema objects exist', async 
   assert.ok(venueCols.includes('neighbourhood'), 'venues must have neighbourhood column');
   assert.ok(venueCols.includes('onboarding_completed'), 'venues must have onboarding_completed column');
   assert.ok(venueCols.includes('onboarding_step'), 'venues must have onboarding_step column');
+
+  const claimsCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'venue_claims'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(claimsCols.includes('venue_id'), 'venue_claims must have venue_id');
+  assert.ok(claimsCols.includes('claimant_user_id'), 'venue_claims must have claimant_user_id');
+  assert.ok(claimsCols.includes('business_proof_type'), 'venue_claims must have business_proof_type');
+  assert.ok(claimsCols.includes('status'), 'venue_claims must have status');
 });
