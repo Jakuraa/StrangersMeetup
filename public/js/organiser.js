@@ -1991,14 +1991,14 @@
         ['custom', 'Custom Category']
       ];
 
-      var freeNotice = '<div class="notice notice-info" style="margin-bottom:16px;background:rgba(0,217,255,0.08);border:1px solid rgba(0,217,255,0.25);border-radius:10px;padding:12px 16px;">' +
-        '<p style="margin:0;font-weight:600;color:var(--neon-cyan,#00D9FF);">🎟️ Free Event Listings Only</p>' +
-        '<p class="small muted" style="margin:4px 0 0;">All tickets on NIGHTLIFEZ are currently free for attendees. Paid ticket sales and live payment collection are disabled during this phase.</p>' +
+      var freeNotice = '<div class="notice notice-warn" role="status" style="margin-bottom:16px;">' +
+        '<p><strong>Online payment is pending gateway configuration.</strong> NIGHTLIFEZ is currently in free-listing only mode.</p>' +
+        '<p class="small" style="margin:6px 0 0;">Paid ticket sales and live payment collection are disabled during this phase. All published listings must be free for attendees.</p>' +
         '</div>';
 
       var hasPaid = (d.tickets || []).some(function (t) { return t.kind === 'paid' || (t.pricePaise || 0) > 0; });
       var paidNotice = hasPaid
-        ? '<div class="wz-alert" style="margin-bottom:16px;border-color:var(--party-pink,#FF315B);"><p><strong>Paid tickets cannot be published:</strong> NIGHTLIFEZ is currently free-listing only. Convert paid tickets to Free (₹0) to publish this event.</p>' +
+        ? '<div class="wz-alert" style="margin-bottom:16px;border-color:var(--party-pink,#FF315B);"><p><strong>Paid tickets cannot be published:</strong> Convert paid tickets to Free (₹0) to publish this event.</p>' +
           '<button class="btn btn-sm btn-primary" type="button" data-act="convert-all-free">Convert all tickets to Free (₹0)</button></div>'
         : '';
 
@@ -2006,7 +2006,7 @@
         var p = 'tickets.' + i;
         var isPaid = t.kind === 'paid' || (t.pricePaise || 0) > 0;
         var statusPill = isPaid
-          ? '<span class="pill pill-warn" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Unavailable)</span>'
+          ? '<span class="pill pill-warn pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Gateway Pending)</span>'
           : '<span class="pill pill-free">Free RSVP (₹0)</span>';
 
         var paidWarning = isPaid
@@ -2044,7 +2044,7 @@
           return '<button type="button" class="chip" data-act="add-tier" data-preset="' + esc(k) + '">+ ' + esc(CFG.ticketPresets[k].name) + '</button>';
         }).join('') + '</div>' + errSlot('tickets') +
           (tiers ? '<ul class="tier-list">' + tiers + '</ul>' : '<p class="muted">No tickets yet. Add one above.</p>') +
-          ((d.tickets || []).length < CFG.limits.tiers ? '<button class="btn btn-ghost btn-sm" type="button" data-act="add-tier" data-preset="general">+ Add another ticket type</button>' : '')) +
+          ((d.tickets || []).length < CFG.limits.tiers ? '<button class="btn btn-ghost btn-sm" type="button" data-act="add-tier" data-preset="free">+ Add another ticket type</button>' : '')) +
         card('Inventory', '<div data-live="inventory"></div>') +
         policyCardHtml() +
         card('Coming later', '<ul class="later"><li>Paid ticket sales &amp; instant payouts</li><li>Promo codes</li><li>Complimentary passes</li></ul><p class="help">These features will be enabled in a future release.</p>', { cls: 'wz-card-muted' }) +
@@ -2150,7 +2150,7 @@
 
       return card('Before you publish', (errs.length ? '<p><strong>' + errs.length + ' item' + (errs.length === 1 ? '' : 's') + ' to complete before publishing:</strong></p>' + list(errs) : '<p class="ok-line" style="color:var(--neon-green,#00FF88);font-weight:600;">✓ Everything needed is in place. Your free event is ready to publish.</p>') +
         (warns.length ? '<p class="help" style="margin-top:12px;">Suggested tips:</p>' + list(warns) : '')) +
-        card('What attendees will see', editNav + attendeePreview()) +
+        card('What guests will see', editNav + attendeePreview()) +
         '<div class="wz-nav wz-nav-final">' +
         '<button class="btn btn-ghost" type="button" data-act="go" data-step="features">Back to edit</button>' +
         '<button class="btn btn-ghost" type="button" data-act="save-now">Save draft</button>' +
@@ -2275,11 +2275,12 @@
 
     /* ---------- actions ---------- */
     function presetTier(key) {
-      var p = clone(CFG.ticketPresets[key] || CFG.ticketPresets.general);
+      var preset = CFG.ticketPresets[key] || CFG.ticketPresets.free || CFG.ticketPresets.general;
+      var p = clone(preset);
       p.id = uid();
       p.category = p.category || key || 'general';
-      p.kind = 'free';
-      p.pricePaise = 0;
+      p.kind = preset.kind || 'free';
+      p.pricePaise = p.kind === 'free' ? 0 : (p.pricePaise || 49900);
       p.admitCount = p.admitCount || (p.category === 'couple' ? 2 : p.category === 'group' ? 4 : 1);
       p.quantity = (Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 5000) ? p.quantity : 50;
       p.minPerBooking = p.minPerBooking || 1;

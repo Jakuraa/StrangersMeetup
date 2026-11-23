@@ -49,7 +49,7 @@ test('complete end-to-end product workflow verification', async ({ page, browser
     await tiers.first().getByRole('button', { name: 'Delete' }).click();
     await expect(tiers).toHaveCount(n - 1);
   }
-  await page.getByRole('button', { name: /\+ General|\+ Add another ticket type/i }).first().click();
+  await page.getByRole('button', { name: '+ Free entry' }).click();
   await expect(tiers).toHaveCount(1);
   await tiers.first().getByLabel(/Ticket display name|Ticket name/i).fill('General RSVP');
   await tiers.first().getByLabel('Quantity available').fill('30');
