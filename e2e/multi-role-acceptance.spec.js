@@ -158,29 +158,25 @@ test.describe('Milestone 9 Multi-Role E2E Acceptance Suite', () => {
   // ===================================================================================
   // 4. Venue / Business Owner Journey
   // ===================================================================================
-  test('Role 4: Venue Owner - listing submission, org isolation, and venue data protection', async ({ page }, testInfo) => {
-    // A. Visit /list-your-venue
+  test('Role 4: Venue Owner - self-service entry, org isolation, and venue data protection', async ({ page }, testInfo) => {
+    // A. Visit /list-your-venue self-service landing page
     await page.goto('/list-your-venue');
     await expectNoHorizontalOverflow(page);
     await expectAccessible(page);
     await expect(page.getByRole('heading', { name: /List Your Venue/i })).toBeVisible();
 
-    // B. Submit Venue Lead Form (AJAX submission)
-    await page.fill('input[name="name"]', 'Deepak Verma');
-    await page.fill('input[name="venue_name"]', 'Skyline Terrace Lounge');
-    await page.fill('input[name="email"]', 'deepak@skyline.in');
-    await page.fill('input[name="city"]', 'Hyderabad');
-    await page.fill('textarea[name="message"]', 'Premium rooftop lounge with 150 capacity, sound system, and cocktail bar.');
-    await page.check('input[name="consent"]');
+    // Verify self-service CTAs exist and old manual lead form is removed
+    await expect(page.locator('#ctaGetStarted')).toBeVisible();
+    await expect(page.locator('#ctaSignIn')).toBeVisible();
+    await expect(page.locator('form[action="/api/leads/venue"]')).toHaveCount(0);
+    await expect(page.locator('input[name="consent"]')).toHaveCount(0);
 
-    await page.locator('form[action="/api/leads/venue"] button[type="submit"]').click();
-    await expect(page.locator('form[action="/api/leads/venue"] .form-msg')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('form[action="/api/leads/venue"] .form-msg')).toContainText(/thank you|details/i);
-
-    // Test Venue Received Confirmation Screen
-    await page.goto('/list-your-venue?sent=1');
-    await expectNoHorizontalOverflow(page);
-    await expect(page.getByRole('heading', { name: /Thank you/i })).toBeVisible();
+    // B. Direct Onboarding Entry for Authenticated User without Venue
+    await signInAs(page, 'guest');
+    await page.goto('/venue');
+    await expect(page.locator('#venueOnboardForm')).toBeVisible();
+    await expect(page.locator('.venue-onboard-title')).toContainText('Launch Your Venue on NIGHTLIFEZ');
+    await expect(page.locator('#btnLaunchVenue')).toBeVisible();
 
     // C. Sign In as Venue Owner Jai and Verify Multi-Org Boundary Isolation
     await signInAs(page, 'venue');

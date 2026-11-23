@@ -97,14 +97,15 @@ test('2. Role-Specific Empty States: Organiser with 0 events renders clear call 
   assert.deepEqual(orgEventsRes.json.events, []);
 });
 
-test('3. Post-Submission Lifecycle: Venue Owner 3-step expectation timeline', async () => {
+test('3. Self-Service Venue Partner Entry: /list-your-venue delivers direct onboarding and timeline', async () => {
   const client = new Client();
-  const res = await client.get('/list-your-venue?sent=1');
+  const res = await client.get('/list-your-venue');
   assert.equal(res.status, 200);
-  assert.match(res.text, /Venue &amp; Safety Review|Venue & Safety Review/i);
-  assert.match(res.text, /Organiser &amp; Format Matching|Organiser & Format Matching/i);
-  assert.match(res.text, /Guaranteed Headcounts/i);
-  assert.match(res.text, /24 to 48 hours/i);
+  assert.match(res.text, /Get Started|Complete Venue Onboarding/i);
+  assert.match(res.text, /Sign In|Dashboard/i);
+  assert.match(res.text, /Sign In &amp; Create Profile|Sign In & Create Profile/i);
+  assert.match(res.text, /Set Operating Rules/i);
+  assert.match(res.text, /Activate &amp; Host|Activate & Host/i);
 });
 
 test('4. Post-Submission Lifecycle: Partner / Service Provider 3-step expectation timeline', async () => {
