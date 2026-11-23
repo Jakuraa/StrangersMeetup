@@ -5,9 +5,11 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import pg from 'pg';
 import { db, resetDb, startServer, stopServer, signedInClient, Client } from './helpers.js';
 import { checkoutForEvent } from '../lib/payments/availability.js';
 import { createCheckoutIntent } from '../lib/services/checkout.js';
+import { migrate } from '../lib/db.js';
 
 function istLocal(days, hh = '19:00') {
   const d = new Date(Date.now() + days * 864e5 + 5.5 * 3600e3).toISOString().slice(0, 10);
@@ -616,6 +618,137 @@ test('C11. Direct Venue Photo Upload: valid PNG file uploads with 201 and stays 
   });
   assert.equal(tamperRes.status, 403);
   assert.equal(tamperRes.json.error, 'image_ownership_violation');
+});
+
+test('C11b. Venue Photo Integrity: nonexistent UUID rejected with 400 invalid_image_reference', async () => {
+  const user = await signedInClient({ tgId: 820000001 });
+  const fakeId = '00000000-0000-0000-0000-000000000099';
+  const res = await user.post('/api/venue/onboard', {
+    name: 'Phantom Lounge',
+    city: 'Bengaluru',
+    photos: [`/media/event-images/${fakeId}`],
+    is_draft: true
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.json.error, 'invalid_image_reference');
+});
+
+test('C11c. Venue Photo Integrity: malformed image reference string rejected with 400 invalid_image_reference or validation error', async () => {
+  const user = await signedInClient({ tgId: 820000001 });
+  const res1 = await user.post('/api/venue/onboard', {
+    name: 'Malformed Lounge 1',
+    city: 'Bengaluru',
+    photos: ['/media/event-images/not-a-valid-uuid'],
+    is_draft: true
+  });
+  assert.equal(res1.status, 400);
+  assert.ok(['validation', 'invalid_image_reference'].includes(res1.json.error));
+
+  const res2 = await user.post('/api/venue/onboard', {
+    name: 'Malformed Lounge 2',
+    city: 'Bengaluru',
+    photos: ['completely-invalid-photo-token'],
+    is_draft: true
+  });
+  assert.equal(res2.status, 400);
+  assert.ok(['validation', 'invalid_image_reference'].includes(res2.json.error));
+});
+
+test('C11d. Venue Photo Integrity: cross-account UUID rejected on profile PATCH with 403 and never exposed', async () => {
+  const ownerA = await signedInClient({ tgId: 820000001 });
+  const pngBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+  const upA = await ownerA.req('POST', '/api/venue/photos', pngBuf, { 'content-type': 'image/png' });
+  assert.equal(upA.status, 201);
+
+  const ownerB = await signedInClient({ tgId: 820000077 });
+  const onboardB = await ownerB.post('/api/venue/onboard', {
+    name: 'Owner B Lounge',
+    city: 'Bengaluru',
+    capacity: 70,
+    is_draft: false
+  });
+  assert.ok([200, 201].includes(onboardB.status));
+  const venueBId = onboardB.json.venue.id;
+
+  // Owner B attempts to attach Owner A's photo to their venue profile
+  const patchRes = await ownerB.patch(`/api/venue/profile?venueId=${venueBId}`, {
+    photos: [upA.json.url]
+  });
+  assert.equal(patchRes.status, 403);
+  assert.equal(patchRes.json.error, 'image_ownership_violation');
+
+  // Verify Owner A's image was not made public
+  const imgRow = (await db.query(`SELECT is_public FROM event_images WHERE id = $1`, [upA.json.imageId])).rows[0];
+  assert.equal(imgRow.is_public, false);
+});
+
+test('C11e. Venue Photo Integrity: legitimate same-organisation colleague image sharing succeeds', async () => {
+  const owner = await signedInClient({ tgId: 820000010 });
+  const onboard = await owner.post('/api/venue/onboard', {
+    name: 'Colleague Shared Club',
+    city: 'Hyderabad',
+    capacity: 150,
+    is_draft: true
+  });
+  const venueId = onboard.json.venue.id;
+  const orgId = onboard.json.venue.orgId || onboard.json.venue.org_id;
+
+  // Create colleague user and add to the same organisation
+  const colleague = await signedInClient({ tgId: 820000011 });
+  await db.query(
+    `INSERT INTO org_memberships (user_id, org_id, role, status) VALUES ($1, $2, 'staff', 'active') ON CONFLICT (user_id, org_id) DO NOTHING`,
+    [colleague.userId, orgId]
+  );
+
+  // Colleague uploads a photo
+  const pngBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+  const colleagueUp = await colleague.req('POST', `/api/venue/photos?venueId=${venueId}`, pngBuf, { 'content-type': 'image/png' });
+  assert.equal(colleagueUp.status, 201);
+
+  // Owner attaches colleague's photo to the shared venue
+  const attachRes = await owner.post('/api/venue/onboard', {
+    venue_id: venueId,
+    name: 'Colleague Shared Club',
+    city: 'Hyderabad',
+    photos: [colleagueUp.json.url],
+    is_draft: true
+  });
+  assert.ok([200, 201].includes(attachRes.status));
+
+  // Also verify duplicate IDs deduplication works cleanly
+  const dupRes = await owner.post('/api/venue/onboard', {
+    venue_id: venueId,
+    name: 'Colleague Shared Club',
+    city: 'Hyderabad',
+    photos: [colleagueUp.json.url, colleagueUp.json.url],
+    is_draft: true
+  });
+  assert.ok([200, 201].includes(dupRes.status));
+});
+
+test('C11f. Venue Photo Integrity: failed requests do not publish or expose images', async () => {
+  const user = await signedInClient({ tgId: 820000020 });
+  const pngBuf = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+  const up = await user.req('POST', '/api/venue/photos', pngBuf, { 'content-type': 'image/png' });
+  assert.equal(up.status, 201);
+
+  // Try to publish with one valid upload and one nonexistent UUID
+  const failPublish = await user.post('/api/venue/onboard', {
+    name: 'Fail Publish Lounge',
+    city: 'Chennai',
+    photos: [up.json.url, '/media/event-images/00000000-0000-0000-0000-000000000099'],
+    is_draft: false
+  });
+  assert.equal(failPublish.status, 400);
+
+  // Verify the valid upload in event_images was NOT published
+  const imgRow = (await db.query(`SELECT is_public FROM event_images WHERE id = $1`, [up.json.imageId])).rows[0];
+  assert.equal(imgRow.is_public, false);
+
+  // Verify anonymous visitor cannot access the photo
+  const anon = new Client();
+  const anonRes = await anon.get(up.json.url);
+  assert.equal(anonRes.status, 404);
 });
 
 test('C12. Venue Photo Upload Rejection: invalid file type rejected with 415', async () => {
@@ -1428,54 +1561,122 @@ test('H5. Completed Venue Discovery: completed venue appears with status active 
   assert.equal(v.onboarding_completed, true);
 });
 
-test('H6. Migration 031 Idempotency: legacy records remain compatible, draft isolation holds, and repeated runs cause zero data loss', async () => {
-  const migrationSql = fs.readFileSync(path.resolve('migrations/031_venue_self_service_onboarding.sql'), 'utf8');
+test('H6. Migration 031 Pre-Migration State & Idempotency: isolated schema seeded pre-031, migrated via runner, preserves legacy status, isolates drafts, and second run applies 0 migrations', async () => {
+  const client = new pg.Client({
+    connectionString: process.env.TEST_DATABASE_URL || 'postgres://localhost:5432/sm_test'
+  });
+  await client.connect();
 
-  // 1. Create a legacy venue record (simulating pre-031 venue)
-  const org = (await db.query(`SELECT id FROM organisations LIMIT 1`)).rows[0];
-  const legacyVenue = (await db.query(
-    `INSERT INTO venues (org_id, name, address_public, capacity, status, onboarding_completed, onboarding_step)
-     VALUES ($1, 'Vintage Heritage Club', 'MG Road, Bengaluru', 120, 'active', true, 4)
-     RETURNING id, name, status, onboarding_completed`,
-    [org.id]
-  )).rows[0];
-  assert.equal(legacyVenue.status, 'active');
-  assert.equal(legacyVenue.onboarding_completed, true);
+  const isoSchema = 'iso_mig031_matrix_test';
+  try {
+    // 1. Create a genuinely isolated PostgreSQL schema at pre-031 schema state
+    await client.query(`DROP SCHEMA IF EXISTS ${isoSchema} CASCADE; CREATE SCHEMA ${isoSchema};`);
+    await client.query(`SET search_path TO ${isoSchema}, public;`);
 
-  // 2. Re-apply migration 031 SQL
-  await db.query(migrationSql);
+    // Run actual migration runner up through 030
+    const preRan = await migrate({
+      client,
+      target: '030_infrastructure_fee_accounting.sql',
+      log: false
+    });
+    assert.ok(preRan.length >= 25, `Expected pre-031 migrations to run, ran ${preRan.length}`);
 
-  // 3. Verify legacy venue record remains active, compatible, and discoverable
-  const postMigLegacy = (await db.query(`SELECT * FROM venues WHERE id = $1`, [legacyVenue.id])).rows[0];
-  assert.ok(postMigLegacy);
-  assert.equal(postMigLegacy.status, 'active');
-  assert.equal(postMigLegacy.onboarding_completed, true);
-  assert.equal(postMigLegacy.name, 'Vintage Heritage Club');
+    // Verify pre-031 schema state: venues table has NO onboarding_completed or onboarding_step columns
+    const preCols = (await client.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'venues'`,
+      [isoSchema]
+    )).rows.map((r) => r.column_name);
+    assert.equal(preCols.includes('onboarding_completed'), false, 'pre-031 venues must not have onboarding_completed');
+    assert.equal(preCols.includes('onboarding_step'), false, 'pre-031 venues must not have onboarding_step');
 
-  // 4. Create an uncompleted draft venue and verify it is excluded from active public discovery
-  const draftVenue = (await db.query(
-    `INSERT INTO venues (org_id, name, address_public, capacity, status, onboarding_completed, onboarding_step)
-     VALUES ($1, 'Under Construction Speakeasy', 'Lavelle Road', 50, 'draft', false, 1)
-     RETURNING id, status, onboarding_completed`,
-    [org.id]
-  )).rows[0];
+    // Verify pre-031 schema state: venue_claims table does NOT exist
+    const claimsTable = (await client.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'venue_claims'`,
+      [isoSchema]
+    )).rows;
+    assert.equal(claimsTable.length, 0, 'pre-031 schema must not have venue_claims table');
 
-  const discoverable = (await db.query(
-    `SELECT id FROM venues WHERE status = 'active' AND onboarding_completed = true AND id = $1`,
-    [draftVenue.id]
-  )).rows;
-  assert.equal(discoverable.length, 0, 'Draft venue must not be discoverable');
+    // 2. Seed legacy organisation and venue records before applying migration 031
+    const org = (await client.query(
+      `INSERT INTO organisations (name, kind, status) VALUES ('Vintage Heritage Hospitality', 'venue_operator', 'active') RETURNING id`
+    )).rows[0];
 
-  // 5. Run the migration SQL AGAIN (asserting strict idempotency)
-  await db.query(migrationSql);
+    const legacyVenue = (await client.query(
+      `INSERT INTO venues (org_id, name, address_public, capacity, status)
+       VALUES ($1, 'Royal Heritage Ballroom', 'MG Road, Bengaluru', 250, 'active')
+       RETURNING id, name, status`,
+      [org.id]
+    )).rows[0];
+    assert.equal(legacyVenue.status, 'active');
+    assert.equal(legacyVenue.name, 'Royal Heritage Ballroom');
 
-  // 6. Assert zero data loss, exact state preservation, and no schema collisions
-  const checkLegacyAgain = (await db.query(`SELECT * FROM venues WHERE id = $1`, [legacyVenue.id])).rows[0];
-  const checkDraftAgain = (await db.query(`SELECT * FROM venues WHERE id = $1`, [draftVenue.id])).rows[0];
-  assert.equal(checkLegacyAgain.name, 'Vintage Heritage Club');
-  assert.equal(checkLegacyAgain.status, 'active');
-  assert.equal(checkDraftAgain.status, 'draft');
-  assert.equal(checkDraftAgain.onboarding_completed, false);
+    // 3. Apply migration 031 using the actual migration runner (not executing SQL directly)
+    const mig031Ran = await migrate({ client, log: false });
+    assert.deepEqual(mig031Ran, ['031_venue_self_service_onboarding.sql'], 'Migration runner must apply only 031');
+
+    // 4. Verify legacy venues retain their intended status and visibility
+    const postCols = (await client.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'venues'`,
+      [isoSchema]
+    )).rows.map((r) => r.column_name);
+    assert.equal(postCols.includes('onboarding_completed'), true, 'post-031 venues must have onboarding_completed');
+    assert.equal(postCols.includes('onboarding_step'), true, 'post-031 venues must have onboarding_step');
+
+    const postVenue = (await client.query(
+      `SELECT id, name, status, onboarding_completed, onboarding_step FROM venues WHERE id = $1`,
+      [legacyVenue.id]
+    )).rows[0];
+    assert.equal(postVenue.status, 'active', 'Legacy venue status must remain active');
+    assert.equal(postVenue.onboarding_completed, true, 'Legacy venue onboarding_completed must default to true');
+    assert.equal(postVenue.onboarding_step, 1, 'Legacy venue onboarding_step must default to 1');
+    assert.equal(postVenue.name, 'Royal Heritage Ballroom');
+
+    // Verify discoverability: legacy venue is visible in active discovery queries
+    const discovered = (await client.query(
+      `SELECT id, name FROM venues WHERE status = 'active' AND onboarding_completed = true AND id = $1`,
+      [legacyVenue.id]
+    )).rows;
+    assert.equal(discovered.length, 1, 'Legacy venue must be visible in discovery');
+
+    // 5. Verify new draft venues remain private and excluded from discovery
+    const draftVenue = (await client.query(
+      `INSERT INTO venues (org_id, name, address_public, capacity, status, onboarding_completed, onboarding_step)
+       VALUES ($1, 'Secret Speakeasy Under Construction', 'Lavelle Road', 50, 'draft', false, 1)
+       RETURNING id, status, onboarding_completed`,
+      [org.id]
+    )).rows[0];
+    assert.equal(draftVenue.status, 'draft');
+    assert.equal(draftVenue.onboarding_completed, false);
+
+    const draftDiscovery = (await client.query(
+      `SELECT id FROM venues WHERE status = 'active' AND onboarding_completed = true AND id = $1`,
+      [draftVenue.id]
+    )).rows;
+    assert.equal(draftDiscovery.length, 0, 'New draft venue must be excluded from public discovery');
+
+    // 6. Run the migration runner a second time and verify it reports no pending migration and causes no schema/data changes
+    const secondRan = await migrate({ client, log: false });
+    assert.deepEqual(secondRan, [], 'Second migration run must report zero pending migrations');
+
+    // Verify data and schema remain identical after second run
+    const checkLegacyAgain = (await client.query(
+      `SELECT id, name, status, onboarding_completed, onboarding_step FROM venues WHERE id = $1`,
+      [legacyVenue.id]
+    )).rows[0];
+    assert.equal(checkLegacyAgain.status, 'active');
+    assert.equal(checkLegacyAgain.onboarding_completed, true);
+    assert.equal(checkLegacyAgain.name, 'Royal Heritage Ballroom');
+
+    const checkDraftAgain = (await client.query(
+      `SELECT id, status, onboarding_completed FROM venues WHERE id = $1`,
+      [draftVenue.id]
+    )).rows[0];
+    assert.equal(checkDraftAgain.status, 'draft');
+    assert.equal(checkDraftAgain.onboarding_completed, false);
+  } finally {
+    await client.query(`DROP SCHEMA IF EXISTS ${isoSchema} CASCADE;`);
+    await client.end();
+  }
 });
 
 test('H7. Cross-Organisation Mutation Block: Organisation B cannot PATCH Organisation A venue', async () => {
