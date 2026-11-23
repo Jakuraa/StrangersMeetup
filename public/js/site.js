@@ -2743,6 +2743,7 @@
   function initBusinessHub() {
     var hub = $('[data-business-hub]');
     if (!hub) return;
+    if (hub.getAttribute('data-csrf')) state.csrf = hub.getAttribute('data-csrf');
 
     var msgEl = $('[data-biz-msg]', hub);
     function showBizMsg(text, type) {
