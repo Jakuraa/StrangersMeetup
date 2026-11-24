@@ -199,6 +199,7 @@
         ['overview', '📊 Overview & Readiness'],
         ['inventory', '🎟️ Ticket Inventory'],
         ['attendees', '👥 Attendees & Guest List'],
+        ['payments', '💳 Direct UPI Payments'],
         ['finance', '💰 Finance & Fees'],
         ['staff', '🛡️ Event Staff'],
         ['announcements', '📢 Announcements'],
@@ -250,6 +251,8 @@
         renderInventoryTab(panel);
       } else if (activeTab === 'attendees') {
         renderAttendeesTab(panel);
+      } else if (activeTab === 'payments') {
+        renderPaymentsTab(panel);
       } else if (activeTab === 'finance') {
         renderFinanceTab(panel);
       } else if (activeTab === 'staff') {
@@ -259,6 +262,141 @@
       } else if (activeTab === 'promotions') {
         renderPromotionsTab(panel);
       }
+    }
+
+    function renderPaymentsTab(panel) {
+      panel.innerHTML = '<p class="muted">Loading direct UPI payments…</p>';
+      api('GET', '/api/organiser/events/' + encodeURIComponent(id) + '/payments').then(function (r) {
+        if (!r.ok) {
+          panel.innerHTML = '<p class="form-msg error">' + esc(r.message || 'Could not load payment records.') + '</p>';
+          return;
+        }
+
+        var dest = r.organiserDestination || {};
+        var bookings = r.bookings || [];
+
+        var pendingCount = 0;
+        var reportedCount = 0;
+        var confirmedCount = 0;
+        var confirmedTotalPaise = 0;
+
+        bookings.forEach(function (b) {
+          if (b.paymentStatus === 'payment_reported') reportedCount++;
+          if (b.paymentStatus === 'awaiting_payment' || b.paymentStatus === 'payment_under_review') pendingCount++;
+          if (b.bookingStatus === 'confirmed') {
+            confirmedCount++;
+            confirmedTotalPaise += (b.amountPaise || 0);
+          }
+        });
+
+        var pendingBookings = bookings.filter(function (b) {
+          return b.bookingStatus === 'pending_payment' && b.paymentStatus !== 'payment_rejected';
+        });
+
+        var historyBookings = bookings.filter(function (b) {
+          return b.bookingStatus !== 'pending_payment' || b.paymentStatus === 'payment_rejected';
+        });
+
+        var h = '<div class="org-payments-wrap">' +
+          '<div class="org-card" style="margin-bottom:20px;padding:20px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">' +
+          '<div><h3 style="margin:0 0 4px;">💳 Direct Organiser UPI Payments</h3>' +
+          '<p class="muted small" style="margin:0;">Payments go directly to your bank account via UPI. NIGHTLIFEZ does not hold funds. Verify incoming credit independently before confirming tickets.</p></div>' +
+          '<div><span class="pill pill-info">Peer-to-Peer Direct</span></div>' +
+          '</div>' +
+
+          '<div class="org-pay-destination" style="background:var(--alt);padding:14px 16px;border-radius:8px;margin-top:12px;">' +
+          '<p style="margin:0 0 6px;"><strong>Configured Payee Name:</strong> ' + esc(dest.payeeName || 'Not configured') + '</p>' +
+          '<p style="margin:0 0 6px;"><strong>Configured UPI ID:</strong> <code style="font-size:1.05rem;">' + esc(dest.upiId || 'Not configured') + '</code> ' +
+          (dest.upiId ? '<button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(dest.upiId) + '">Copy UPI</button>' : '') + '</p>' +
+          '<p class="muted small" style="margin:6px 0 0;">⚠️ <em>Ensure your UPI ID is active and can receive payments. Only confirm bookings after seeing credit in your bank app.</em></p>' +
+          '</div>' +
+
+          '<div class="org-fin-grid" style="margin-top:16px;">' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">UTR Reported</span><span class="org-fin-kpi-val" style="color:var(--neon-cyan,#00D9FF);">' + reportedCount + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Awaiting Transfer</span><span class="org-fin-kpi-val">' + pendingCount + '</span></div>' +
+          '<div class="org-fin-kpi"><span class="org-fin-kpi-lbl">Confirmed Bookings</span><span class="org-fin-kpi-val" style="color:var(--neon-green,#00FF88);">' + confirmedCount + '</span></div>' +
+          '<div class="org-fin-kpi highlight"><span class="org-fin-kpi-lbl">Total Received</span><span class="org-fin-kpi-val">' + money(confirmedTotalPaise) + '</span></div>' +
+          '</div>' +
+          '</div>';
+
+        // Section 1: Pending & Reported Payments
+        h += '<div class="org-card" style="margin-bottom:24px;padding:20px;">' +
+          '<h3 style="margin:0 0 12px;">⏳ Pending Payment Verification (' + pendingBookings.length + ')</h3>' +
+          '<p class="muted small" style="margin:0 0 16px;">Review attendee transfers. Compare the UTR and amount against your UPI or bank statement.</p>';
+
+        if (!pendingBookings.length) {
+          h += '<div class="empty-state org-empty-state"><p class="empty-state-title">No pending payments</p><p class="muted">When attendees initiate direct UPI payments, they will appear here for verification.</p></div>';
+        } else {
+          h += '<div class="org-table-wrap"><table class="org-data-table">' +
+            '<thead><tr><th>Ref &amp; Attendee</th><th>Ticket</th><th>Expected Amount</th><th>Submitted UTR</th><th>Status</th><th>Actions</th></tr></thead>' +
+            '<tbody>' +
+            pendingBookings.map(function (b) {
+              var statusPill = '<span class="pill pill-pending">Awaiting Payment</span>';
+              if (b.paymentStatus === 'payment_reported') {
+                statusPill = '<span class="pill pill-warn">UTR Reported</span>';
+              } else if (b.paymentStatus === 'payment_under_review') {
+                statusPill = '<span class="pill pill-info">Under Review</span>';
+              }
+              var utrDisplay = b.utrReference
+                ? '<code>' + esc(b.utrReference) + '</code> <button class="btn btn-sm btn-ghost" type="button" data-copy="' + esc(b.utrReference) + '">Copy</button>' +
+                  '<br><small class="muted">' + esc(fmtInstant(b.paymentReportedAt)) + '</small>'
+                : '<span class="muted">Not submitted yet</span>';
+
+              var countdown = b.isExpired
+                ? '<span style="color:var(--party-pink);">Hold expired</span>'
+                : '<small class="muted">Hold expires: ' + esc(fmtInstant(b.expiresAt)) + '</small>';
+
+              return '<tr>' +
+                '<td><strong>' + esc(b.bookingRef) + '</strong><br><small class="muted">' + esc(b.attendeeAlias) + '</small></td>' +
+                '<td>' + esc(b.ticketName) + ' × ' + esc(b.quantity) + '</td>' +
+                '<td><strong style="color:var(--neon-green,#00FF88); font-size:1.05rem;">' + money(b.amountPaise) + '</strong></td>' +
+                '<td>' + utrDisplay + '</td>' +
+                '<td>' + statusPill + '<br>' + countdown + '</td>' +
+                '<td><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                '<button class="btn btn-sm btn-primary" type="button" data-action="confirm-upi-payment" data-id="' + esc(b.id) + '" data-ref="' + esc(b.bookingRef) + '" data-amt="' + esc(b.amountRupees) + '" data-utr="' + esc(b.utrReference || '') + '">Verify &amp; Confirm</button>' +
+                '<button class="btn btn-sm btn-ghost" style="color:var(--party-pink);" type="button" data-action="reject-upi-payment" data-id="' + esc(b.id) + '" data-ref="' + esc(b.bookingRef) + '">Reject</button>' +
+                '</div></td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>';
+        }
+        h += '</div>';
+
+        // Section 2: Audit History
+        h += '<div class="org-card" style="padding:20px;">' +
+          '<h3 style="margin:0 0 12px;">📜 Payment Verification History (' + historyBookings.length + ')</h3>';
+
+        if (!historyBookings.length) {
+          h += '<p class="muted">No historical payments recorded yet.</p>';
+        } else {
+          h += '<div class="org-table-wrap"><table class="org-data-table">' +
+            '<thead><tr><th>Ref &amp; Attendee</th><th>Ticket</th><th>Amount</th><th>Submitted UTR</th><th>Result</th><th>Audit Details</th></tr></thead>' +
+            '<tbody>' +
+            historyBookings.map(function (b) {
+              var resPill = b.bookingStatus === 'confirmed'
+                ? '<span class="pill pill-ok">Confirmed</span>'
+                : '<span class="pill pill-danger">' + esc(b.paymentStatus === 'payment_rejected' ? 'Rejected' : b.bookingStatus) + '</span>';
+
+              var auditNote = b.bookingStatus === 'confirmed'
+                ? '<small class="muted">Verified by ' + esc(b.verifiedBy || 'Host') + (b.verifiedAt ? ' on ' + esc(fmtInstant(b.verifiedAt)) : '') + (b.verificationNote ? '<br><em>' + esc(b.verificationNote) + '</em>' : '') + '</small>'
+                : '<small class="muted" style="color:var(--party-pink);">' + esc(b.rejectionReason || 'Hold expired / Cancelled') + '</small>';
+
+              return '<tr>' +
+                '<td><strong>' + esc(b.bookingRef) + '</strong><br><small class="muted">' + esc(b.attendeeAlias) + '</small></td>' +
+                '<td>' + esc(b.ticketName) + ' × ' + esc(b.quantity) + '</td>' +
+                '<td>' + money(b.amountPaise) + '</td>' +
+                '<td>' + (b.utrReference ? '<code>' + esc(b.utrReference) + '</code>' : '<span class="muted">—</span>') + '</td>' +
+                '<td>' + resPill + '</td>' +
+                '<td>' + auditNote + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table></div>';
+        }
+        h += '</div></div>';
+
+        panel.innerHTML = h;
+      });
     }
 
     function renderFinanceTab(panel) {
@@ -1098,6 +1236,101 @@
         api('POST', '/api/organiser/bookings/' + encodeURIComponent(bkId) + '/cancel', { reason: reason }).then(function (cr) {
           if (!cr.ok) alert(cr.message || 'Could not cancel booking.');
           renderCurrentTab();
+        });
+        return;
+      }
+
+      if (b.getAttribute('data-action') === 'confirm-upi-payment') {
+        var bkId = b.getAttribute('data-id');
+        var bkRef = b.getAttribute('data-ref');
+        var bkAmt = b.getAttribute('data-amt');
+        var bkUtr = b.getAttribute('data-utr');
+
+        var modal = document.createElement('div');
+        modal.className = 'org-modal-backdrop';
+        modal.innerHTML = '<div class="org-modal-card" style="max-width:520px;">' +
+          '<div class="org-modal-head"><h2>Confirm Direct UPI Payment</h2><button class="btn btn-ghost btn-sm" type="button" data-close-modal>✕</button></div>' +
+          '<form data-confirm-upi-form>' +
+          '<div style="background:var(--alt);padding:14px 16px;border-radius:8px;margin-bottom:16px;">' +
+          '<p style="margin:0 0 6px;"><strong>Booking Reference:</strong> <code>' + esc(bkRef) + '</code></p>' +
+          '<p style="margin:0 0 6px;"><strong>Amount to Verify:</strong> <strong style="color:var(--neon-green,#00FF88); font-size:1.1rem;">₹' + esc(bkAmt) + '</strong></p>' +
+          (bkUtr ? '<p style="margin:0;"><strong>Reported UTR / Ref:</strong> <code>' + esc(bkUtr) + '</code></p>' : '<p class="muted small" style="margin:0;">Attendee has not submitted a UTR, but you may confirm if received.</p>') +
+          '</div>' +
+          '<div class="wz-alert" style="background:rgba(255,193,7,0.1); border-color:#ffc107; color:#ffeb3b; margin-bottom:16px; padding:12px; border-radius:8px; font-size:0.9rem; line-height:1.4;">' +
+          '⚠️ <strong>CRITICAL VERIFICATION REQUIRED:</strong><br>' +
+          'A UTR submission or screenshot is NOT proof of credit. You must independently check your bank or UPI app to ensure ₹' + esc(bkAmt) + ' has actually been credited.' +
+          '</div>' +
+          '<label class="check" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:16px;font-size:0.92rem;line-height:1.4;cursor:pointer;">' +
+          '<input type="checkbox" name="warningConfirmed" required value="1" style="margin-top:3px;"> ' +
+          '<span><strong>I confirm that I independently checked my bank/UPI account and verified that the full amount was received for this booking.</strong></span>' +
+          '</label>' +
+          '<label class="fld"><span class="lbl">Audit Note (optional)</span><input type="text" name="note" placeholder="e.g. Verified in HDFC UPI app ref ' + esc(bkUtr || '') + '"></label>' +
+          '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">' +
+          '<button class="btn btn-ghost btn-sm" type="button" data-close-modal>Cancel</button>' +
+          '<button class="btn btn-primary" type="submit">Confirm &amp; Issue Tickets</button>' +
+          '</div>' +
+          '<p class="form-msg" data-confirm-msg style="margin-top:10px;"></p>' +
+          '</form></div>';
+        document.body.appendChild(modal);
+
+        modal.addEventListener('click', function (mev) {
+          if (mev.target === modal || mev.target.hasAttribute('data-close-modal')) modal.remove();
+        });
+
+        var cform = $('form[data-confirm-upi-form]', modal);
+        cform.addEventListener('submit', function (mev) {
+          mev.preventDefault();
+          var cMsg = $('[data-confirm-msg]', cform);
+          var sBtn = $('button[type=submit]', cform);
+          if (!cform.warningConfirmed.checked) {
+            cMsg.className = 'form-msg error';
+            cMsg.textContent = 'You must acknowledge the verification confirmation.';
+            return;
+          }
+          sBtn.disabled = true;
+          api('POST', '/api/organiser/events/' + encodeURIComponent(id) + '/payments/' + encodeURIComponent(bkId) + '/confirm', {
+            warningConfirmed: true,
+            note: cform.note.value
+          }).then(function (cr) {
+            if (cr.ok) {
+              modal.remove();
+              renderCurrentTab();
+            } else {
+              sBtn.disabled = false;
+              cMsg.className = 'form-msg error';
+              cMsg.textContent = cr.message || 'Could not confirm payment.';
+            }
+          }).catch(function (err) {
+            sBtn.disabled = false;
+            cMsg.className = 'form-msg error';
+            cMsg.textContent = (err && (err.message || err.error)) || 'Network error.';
+          });
+        });
+        return;
+      }
+
+      if (b.getAttribute('data-action') === 'reject-upi-payment') {
+        var rjId = b.getAttribute('data-id');
+        var rjRef = b.getAttribute('data-ref');
+        var reason = window.prompt('Reject payment for booking ' + rjRef + '?\nReserved seats will be released.\n\nEnter reason:', 'Payment not received in account');
+        if (reason == null) return;
+        if (reason.trim().length < 3) {
+          alert('Please enter a valid rejection reason (at least 3 characters).');
+          return;
+        }
+        b.disabled = true;
+        api('POST', '/api/organiser/events/' + encodeURIComponent(id) + '/payments/' + encodeURIComponent(rjId) + '/reject', {
+          reason: reason.trim()
+        }).then(function (rr) {
+          if (rr.ok) {
+            renderCurrentTab();
+          } else {
+            alert(rr.message || 'Could not reject payment.');
+            b.disabled = false;
+          }
+        }).catch(function (err) {
+          alert((err && (err.message || err.error)) || 'Network error.');
+          b.disabled = false;
         });
         return;
       }
@@ -1991,42 +2224,75 @@
         ['custom', 'Custom Category']
       ];
 
-      var freeNotice = '<div class="notice notice-warn" role="status" style="margin-bottom:16px;">' +
-        '<p><strong>Online payment is pending gateway configuration.</strong> NIGHTLIFEZ is currently in free-listing only mode.</p>' +
-        '<p class="small" style="margin:6px 0 0;">Paid ticket sales and live payment collection are disabled during this phase. All published listings must be free for attendees.</p>' +
+      d.paymentMethod = d.paymentMethod || (d.organiserUpiId ? 'direct_upi' : 'free');
+      var isDirect = d.paymentMethod === 'direct_upi';
+
+      var paymentMethodSelector = '<div class="fld" style="margin-bottom:16px;">' +
+        '<span class="lbl">Payment Method</span>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;">' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:10px 16px;background:var(--surface-input,#0B0E1E);border:1px solid ' + (!isDirect ? 'var(--neon-green,#00FF88)' : 'var(--border-soft,#333B6A)') + ';border-radius:8px;cursor:pointer;">' +
+        '<input type="radio" name="paymentMethodRadio" value="free"' + (!isDirect ? ' checked' : '') + ' data-act="set-pay-method" data-method="free"> <strong>Free Event</strong> (No payment required)' +
+        '</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;padding:10px 16px;background:var(--surface-input,#0B0E1E);border:1px solid ' + (isDirect ? 'var(--neon-cyan,#00D9FF)' : 'var(--border-soft,#333B6A)') + ';border-radius:8px;cursor:pointer;">' +
+        '<input type="radio" name="paymentMethodRadio" value="direct_upi"' + (isDirect ? ' checked' : '') + ' data-act="set-pay-method" data-method="direct_upi"> <strong>Direct UPI Payment to Organiser</strong> (Configure your UPI ID)' +
+        '</label>' +
+        '</div>' +
         '</div>';
 
-      var hasPaid = (d.tickets || []).some(function (t) { return t.kind === 'paid' || (t.pricePaise || 0) > 0; });
-      var paidNotice = hasPaid
-        ? '<div class="wz-alert" style="margin-bottom:16px;border-color:var(--party-pink,#FF315B);"><p><strong>Paid tickets cannot be published:</strong> Convert paid tickets to Free (₹0) to publish this event.</p>' +
-          '<button class="btn btn-sm btn-primary" type="button" data-act="convert-all-free">Convert all tickets to Free (₹0)</button></div>'
-        : '';
+      var paymentDetailsBox = '';
+      if (isDirect) {
+        paymentDetailsBox = '<div class="direct-upi-box" style="padding:16px;background:var(--surface-input,#0B0E1E);border:1px solid var(--border-soft,#333B6A);border-radius:10px;margin-bottom:16px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">' +
+          '<h4 style="margin:0;color:var(--neon-cyan,#00D9FF);">Direct UPI Configuration</h4>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-act="use-saved-upi">Use saved business payment details</button>' +
+          '</div>' +
+          '<div class="row2">' +
+          text('organiserUpiId', 'Organiser UPI ID*', { max: 256, placeholder: 'e.g. name@okhdfcbank or business@upi', help: 'Attendees transfer ticket payments directly to this UPI ID.' }) +
+          text('organiserPayeeName', 'Account / Payee Display Name*', { max: 100, placeholder: 'e.g. Rohit Sharma or Nightlife Ventures', help: 'Account holder name displayed in attendee UPI apps.' }) +
+          '</div>' +
+          text('paymentInstructions', 'Payment Instructions for Attendees (Optional)', { max: 1000, area: true, rows: 2, placeholder: 'e.g. Please put your booking reference in the transaction note.', help: 'Shown on the attendee UPI checkout screen.' }) +
+          '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px;">' +
+          '<span class="pill pill-warn" style="font-size:0.75rem;">Unverified Destination (Direct payment to your account)</span>' +
+          '<span style="font-size:0.8rem;color:var(--neon-green,#00FF88);">✓ Event payment settings saved with draft</span>' +
+          '</div>' +
+          errSlot('organiserUpiId') +
+          errSlot('organiserPayeeName') +
+          '</div>';
+      } else {
+        paymentDetailsBox = '<div class="notice notice-info" role="status" style="margin-bottom:16px;">' +
+          '<p><strong>Free Event Listing:</strong> Attendees can RSVP and book tickets for free without payment.</p>' +
+          '</div>';
+      }
 
       var tiers = (d.tickets || []).map(function (t, i) {
         var p = 'tickets.' + i;
-        var isPaid = t.kind === 'paid' || (t.pricePaise || 0) > 0;
+        var isPaid = isDirect && (t.kind === 'paid' || (t.pricePaise || 0) > 0);
         var statusPill = isPaid
-          ? '<span class="pill pill-warn pill-draft" style="background:rgba(255,180,0,0.18);color:#FFB800;border:1px solid rgba(255,180,0,0.35);">Paid (Gateway Pending)</span>'
+          ? '<span class="pill pill-ok">Paid (₹' + ((t.pricePaise || 0) / 100) + ')</span>'
           : '<span class="pill pill-free">Free RSVP (₹0)</span>';
-
-        var paidWarning = isPaid
-          ? '<p class="help small" style="color:#FFB800;margin-top:6px;">⚠️ Paid tickets are preserved but cannot be published. <button class="linkish" type="button" data-act="convert-tier-free" data-i="' + i + '">Convert to Free (₹0)</button></p>'
-          : '';
 
         var defaultAdmit = t.category === 'couple' ? 2 : (t.category === 'group' ? 4 : 1);
 
+        var typeAndPrice = isDirect
+          ? ('<div class="row2">' +
+             select(p + '.kind', 'Ticket Type', [['paid', 'Paid Pass'], ['free', 'Free Pass']], { def: t.kind || 'paid', rerender: true }) +
+             (t.kind !== 'free'
+               ? text(p + '.pricePaise', 'Ticket price (₹)*', { type: 'number', min: 1, max: 100000, inputmode: 'numeric', kind: 'rupees', placeholder: '499', help: 'Attendee transfers ₹' + ((t.pricePaise || 0) / 100) + ' directly to your UPI ID' })
+               : '<div class="fld"><p class="lbl">Price</p><p class="free-note" style="margin:6px 0 0;color:var(--neon-cyan,#00D9FF);font-weight:600;">Free — ₹0</p></div>') +
+             '</div>')
+          : ('<div class="row2">' +
+             '<div class="fld"><p class="lbl">Ticket Type</p><p class="free-note" style="margin:6px 0 0;color:var(--neon-cyan,#00D9FF);font-weight:600;">Free Pass (₹0)</p></div>' +
+             '<div class="fld"><p class="lbl">Price</p><p class="free-note" style="margin:6px 0 0;color:var(--neon-cyan,#00D9FF);font-weight:600;">Free — ₹0</p></div>' +
+             '</div>');
+
         return '<li class="tier-card"><div class="tier-card-head"><h4>' + esc(t.name || 'Untitled ticket') + '</h4>' + statusPill + '</div>' +
-          paidWarning +
           '<div class="row2">' +
           select(p + '.category', 'Ticket category', catOptions, { def: 'general' }) +
           text(p + '.name', 'Ticket display name', { max: 60, placeholder: 'e.g. Free RSVP / General Admission' }) +
           '</div>' +
-          '<div class="row2">' +
-          '<div class="fld"><p class="lbl">Ticket Type</p><p class="free-note" style="margin:6px 0 0;color:var(--neon-cyan,#00D9FF);font-weight:600;">' + (isPaid ? 'Paid Pass (₹' + ((t.pricePaise || 0) / 100) + ')' : 'Free Pass (₹0)') + '</p></div>' +
-          text(p + '.admitCount', 'Admits (guests per ticket)', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: defaultAdmit, help: 'E.g. Couple = 2 guests, Group = 4 guests' }) +
-          '</div>' +
+          typeAndPrice +
           '<div class="row3">' +
-          '<div class="fld"><p class="lbl">Price</p><p class="free-note">' + (isPaid ? '₹' + ((t.pricePaise || 0) / 100) : 'Free — ₹0') + '</p></div>' +
+          text(p + '.admitCount', 'Admits (guests per ticket)', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: defaultAdmit, help: 'E.g. Couple = 2 guests, Group = 4 guests' }) +
           text(p + '.quantity', 'Quantity available', { type: 'number', min: 1, max: 5000, inputmode: 'numeric', kind: 'int', placeholder: '50' }) +
           text(p + '.maxPerBooking', 'Max per booking', { type: 'number', min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: t.category === 'couple' ? 1 : 4 }) +
           '</div>' +
@@ -2039,7 +2305,7 @@
           '<button class="btn btn-sm btn-ghost" type="button" data-act="del-tier" data-i="' + i + '">Delete</button></div></li>';
       }).join('');
 
-      return card('Payment', freeNotice + paidNotice) +
+      return card('Payment', paymentMethodSelector + paymentDetailsBox) +
         card('Ticket types', '<p class="help">Quick add:</p><div class="chips">' + Object.keys(CFG.ticketPresets).map(function (k) {
           return '<button type="button" class="chip" data-act="add-tier" data-preset="' + esc(k) + '">+ ' + esc(CFG.ticketPresets[k].name) + '</button>';
         }).join('') + '</div>' + errSlot('tickets') +
@@ -2047,7 +2313,7 @@
           ((d.tickets || []).length < CFG.limits.tiers ? '<button class="btn btn-ghost btn-sm" type="button" data-act="add-tier" data-preset="free">+ Add another ticket type</button>' : '')) +
         card('Inventory', '<div data-live="inventory"></div>') +
         policyCardHtml() +
-        card('Coming later', '<ul class="later"><li>Paid ticket sales &amp; instant payouts</li><li>Promo codes</li><li>Complimentary passes</li></ul><p class="help">These features will be enabled in a future release.</p>', { cls: 'wz-card-muted' }) +
+        nav('basics', 'features', 'Next: Features');
         nav('basics', 'features', 'Next: Features');
     }
 
@@ -2099,9 +2365,13 @@
       var co = CFG.checkout;
       var schedDates = (d.schedule && d.schedule.dates && d.schedule.dates.length) ? d.schedule.dates : null;
       var isMulti = Boolean(d.multiDay) || Boolean(schedDates && schedDates.length > 1);
+      var isDirect = d.paymentMethod === 'direct_upi' || (d.organiserUpiId && d.organiserPayeeName);
       var where = d.privateVenue ? [d.area, d.city].filter(Boolean).join(', ') + ' — exact address shared with confirmed guests' : [d.venue, d.area, d.city].filter(Boolean).join(', ');
       var tix = (d.tickets || []).map(function (t) {
-        var note = t.kind === 'paid' && !co.available ? ' — Paid ticket — external checkout not configured' : '';
+        var note = '';
+        if (t.kind === 'paid') {
+          note = isDirect ? ' · Direct UPI payment to organiser' : (!co.available ? ' — Paid ticket — external checkout not configured' : '');
+        }
         var valid = isMulti ? (t.validOn && t.validOn !== 'all' ? ' · Valid on ' + dayLabel(t.validOn) : ' · Valid for all dates') : '';
         return '<li><strong>' + esc(t.name || 'Untitled') + '</strong> · ' + (t.kind === 'free' ? 'Free' : Number.isInteger(t.pricePaise) ? esc(money(t.pricePaise)) : 'price missing') +
           ' · ' + esc(Number.isInteger(t.quantity) ? t.quantity : '?') + ' available' + esc(valid) + (f.balance && f.balance.enabled && t.eligibility ? ' · for ' + esc(t.eligibility) : '') + esc(note) + '</li>';
@@ -2113,6 +2383,15 @@
             return '<li><strong>' + esc(dayLabel(s.date)) + '</strong> · ' + esc(s.startLocal.slice(11, 16)) + '–' + esc(s.endLocal.slice(11, 16)) + (s.label ? ' (' + esc(s.label) + ')' : '') + '</li>';
           }).join('') + '</ul>')
         : '';
+      var paymentPreview = isDirect
+        ? ('<h4>Payment Transparency</h4>' +
+           '<div style="font-size:0.88rem;background:var(--alt);padding:12px;border-radius:var(--radius);border:1px solid var(--line);margin-bottom:12px;">' +
+           '<p style="margin:0 0 4px 0;"><strong>Recipient:</strong> ' + esc(d.organiserPayeeName || 'Organiser') + ' (<code>' + esc(d.organiserUpiId || 'UPI ID') + '</code>)</p>' +
+           (d.paymentInstructions ? '<p style="margin:0 0 6px 0;" class="small muted"><strong>Instructions:</strong> ' + esc(d.paymentInstructions) + '</p>' : '') +
+           '<p class="small muted" style="margin:0;">Your payment goes directly to the event organiser\'s UPI account. NIGHTLIFEZ does not collect or hold this ticket payment. Your ticket will be confirmed after the organiser verifies receipt.</p>' +
+           '</div>')
+        : '';
+
       return '<article class="att-prev" aria-label="What guests will see">' +
         (d.coverImageId ? '<img src="/media/event-images/' + esc(d.coverImageId) + '" alt="" width="800" height="450">' : '<div class="att-art" aria-hidden="true"></div>') +
         '<div class="att-body"><p class="card-meta"><span>' + esc(CAT[d.category] || '') + '</span><span>' + esc(d.city || '') + '</span></p>' +
@@ -2123,6 +2402,7 @@
         '<h4>Entry</h4><ul><li>Adults 21+ only. Guests carry a photo ID.</li>' + (f.approval && f.approval.enabled ? '<li>The host approves each guest.</li>' : '') + '</ul>' +
         (qs.length ? '<h4>Questions at booking</h4><ul>' + qs.map(function (x) { return '<li>' + esc(x.label || 'Untitled question') + (x.required ? ' <span class="muted">(required)</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
         (pts.length ? '<h4>Pickup points</h4><ul>' + pts.map(function (p) { return '<li>' + esc(p.name || 'Unnamed') + (p.time ? ' · ' + esc(fmtLocal(p.time)) : '') + '</li>'; }).join('') + '</ul>' : '') +
+        paymentPreview +
         '<h4>Cancellation & refunds</h4>' +
         '<div class="att-policy-preview" style="font-size:0.88rem;line-height:1.5;background:var(--alt);padding:12px;border-radius:var(--radius);border:1px solid var(--line);margin-bottom:12px;">' +
         '<p style="margin:0 0 6px 0;"><strong>' + esc(((d.cancellationPolicy && d.cancellationPolicy.template) || 'standard').charAt(0).toUpperCase() + ((d.cancellationPolicy && d.cancellationPolicy.template) || 'standard').slice(1)) + ' Cancellation Policy</strong> · <span style="color:var(--ok);">🛡️ 100% Host Cancel Guarantee</span></p>' +
@@ -2137,6 +2417,12 @@
       var errs = S.issues.filter(function (i) { return i.severity === 'error'; });
       var warns = S.issues.filter(function (i) { return i.severity === 'warning'; });
       var label = { basics: 'Basics', tickets: 'Tickets', features: 'Features' };
+      var isDirect = S.data.paymentMethod === 'direct_upi' || (S.data.organiserUpiId && S.data.organiserPayeeName);
+      var readyMsg = isDirect
+        ? '✓ Everything needed is in place. Your event with direct UPI payment is ready to publish.'
+        : '✓ Everything needed is in place. Your free event is ready to publish.';
+      var pubBtnLabel = isDirect ? 'Publish Event' : 'Publish Free Event';
+
       var list = function (arr) {
         return '<ul class="issues">' + arr.map(function (i) {
           return '<li><span class="pill">' + esc(label[i.step] || i.step) + '</span> ' + esc(i.message) + ' <button class="linkish" type="button" data-act="fix" data-step="' + esc(i.step) + '" data-field="' + esc(i.field) + '">Fix</button></li>';
@@ -2148,20 +2434,28 @@
         '<button class="btn btn-ghost btn-sm" type="button" data-act="go" data-step="features">✏️ Edit Features</button>' +
         '</div>';
 
-      return card('Before you publish', (errs.length ? '<p><strong>' + errs.length + ' item' + (errs.length === 1 ? '' : 's') + ' to complete before publishing:</strong></p>' + list(errs) : '<p class="ok-line" style="color:var(--neon-green,#00FF88);font-weight:600;">✓ Everything needed is in place. Your free event is ready to publish.</p>') +
+      var dialogContent = isDirect
+        ? ('<h2 id="pub-title">Publish event “' + esc(S.data.title || 'this event') + '”?</h2>' +
+           '<p>This event will be published on NIGHTLIFEZ. Attendees will pay ticket amounts directly to your UPI ID: <strong>' + esc(S.data.organiserUpiId) + '</strong> (' + esc(S.data.organiserPayeeName) + ').</p>' +
+           '<p class="notice notice-info"><strong>Direct Organiser UPI:</strong> NIGHTLIFEZ does not receive or hold ticket payments. You independently verify receipt in your bank/UPI account before confirming bookings.</p>' +
+           '<p class="form-msg error" data-publish-msg role="alert"></p>' +
+           '<div class="org-item-actions"><button class="btn btn-ghost" type="button" data-act="publish-cancel">Not yet</button><button class="btn btn-primary" type="button" data-act="publish-confirm">Publish Event Now</button></div>')
+        : ('<h2 id="pub-title">Publish free event “' + esc(S.data.title || 'this event') + '”?</h2>' +
+           '<p>This free event will be published on NIGHTLIFEZ for attendees to discover and book passes' + ((S.data.features || {}).approval && S.data.features.approval.enabled ? ', and guests can send requests to join.' : '.') + '</p>' +
+           '<p class="notice notice-info">This is a free event listing. All tickets are ₹0 and no payment collection will occur.</p>' +
+           '<p class="form-msg error" data-publish-msg role="alert"></p>' +
+           '<div class="org-item-actions"><button class="btn btn-ghost" type="button" data-act="publish-cancel">Not yet</button><button class="btn btn-primary" type="button" data-act="publish-confirm">Publish Free Event Now</button></div>');
+
+      return card('Before you publish', (errs.length ? '<p><strong>' + errs.length + ' item' + (errs.length === 1 ? '' : 's') + ' to complete before publishing:</strong></p>' + list(errs) : '<p class="ok-line" style="color:var(--neon-green,#00FF88);font-weight:600;">' + esc(readyMsg) + '</p>') +
         (warns.length ? '<p class="help" style="margin-top:12px;">Suggested tips:</p>' + list(warns) : '')) +
         card('What guests will see', editNav + attendeePreview()) +
         '<div class="wz-nav wz-nav-final">' +
         '<button class="btn btn-ghost" type="button" data-act="go" data-step="features">Back to edit</button>' +
         '<button class="btn btn-ghost" type="button" data-act="save-now">Save draft</button>' +
         '<a class="btn btn-ghost" href="/organiser/drafts/' + esc(S.draft.id) + '/preview" target="_blank" rel="noopener" data-act="journey">Preview booking journey</a>' +
-        '<button class="btn btn-primary" type="button" data-act="publish"' + (errs.length ? ' disabled aria-describedby="pub-why"' : '') + '>Publish Free Event</button></div>' +
+        '<button class="btn btn-primary" type="button" data-act="publish"' + (errs.length ? ' disabled aria-describedby="pub-why"' : '') + '>' + esc(pubBtnLabel) + '</button></div>' +
         (errs.length ? '<p class="help" id="pub-why">Complete the items above to publish. Your draft is automatically saved.</p>' : '') +
-        '<dialog class="wz-dialog" data-publish-dialog aria-labelledby="pub-title"><h2 id="pub-title">Publish free event “' + esc(S.data.title || 'this event') + '”?</h2>' +
-        '<p>This free event will be published on NIGHTLIFEZ for attendees to discover and book passes' + ((S.data.features || {}).approval && S.data.features.approval.enabled ? ', and guests can send requests to join.' : '.') + '</p>' +
-        '<p class="notice notice-info">This is a free event listing. All tickets are ₹0 and no payment collection will occur.</p>' +
-        '<p class="form-msg error" data-publish-msg role="alert"></p>' +
-        '<div class="org-item-actions"><button class="btn btn-ghost" type="button" data-act="publish-cancel">Not yet</button><button class="btn btn-primary" type="button" data-act="publish-confirm">Publish Free Event Now</button></div></dialog>';
+        '<dialog class="wz-dialog" data-publish-dialog aria-labelledby="pub-title">' + dialogContent + '</dialog>';
     }
 
     function screenPublished() {
@@ -2279,8 +2573,14 @@
       var p = clone(preset);
       p.id = uid();
       p.category = p.category || key || 'general';
-      p.kind = 'free';
-      p.pricePaise = 0;
+      var isDirect = S.data && S.data.paymentMethod === 'direct_upi';
+      if (isDirect && key !== 'free') {
+        p.kind = 'paid';
+        p.pricePaise = key === 'vip' ? 99900 : (key === 'couple' ? 89900 : (key === 'early_bird' ? 29900 : 49900));
+      } else {
+        p.kind = 'free';
+        p.pricePaise = 0;
+      }
       p.admitCount = p.admitCount || (p.category === 'couple' ? 2 : p.category === 'group' ? 4 : 1);
       p.quantity = (Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 5000) ? p.quantity : 50;
       p.minPerBooking = p.minPerBooking || 1;
@@ -2458,6 +2758,29 @@
           else if (daylist.length > 1) daylist.splice(daypos, 1);
           S.data.schedule.recurring.daysOfWeek = daylist;
           touch(); return render();
+        case 'set-pay-method':
+          var payMethod = b.getAttribute('data-method') || b.value;
+          S.data.paymentMethod = payMethod;
+          if (payMethod === 'free') {
+            (S.data.tickets || []).forEach(function (x) { x.kind = 'free'; x.pricePaise = 0; });
+          }
+          touch(); return render();
+        case 'use-saved-upi':
+          b.disabled = true;
+          api('GET', '/api/organiser/payment-settings').then(function (res) {
+            b.disabled = false;
+            if (res.ok && res.settings && res.settings.configured) {
+              S.data.organiserUpiId = res.settings.upiId || S.data.organiserUpiId;
+              S.data.organiserPayeeName = res.settings.payeeName || S.data.organiserPayeeName;
+              touch();
+              render();
+            } else {
+              window.alert('No saved business payment details found. Please enter your UPI ID and payee name directly.');
+            }
+          }).catch(function () {
+            b.disabled = false;
+          });
+          return;
         case 'convert-all-free':
           (S.data.tickets || []).forEach(function (x) { x.kind = 'free'; x.pricePaise = 0; });
           touch(); return render();
