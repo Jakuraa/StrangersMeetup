@@ -187,11 +187,11 @@
             a.setAttribute('href', '/signin');
           }
           if (a.hasAttribute('data-auth-button')) {
-            a.textContent = 'Continue with Telegram';
-            a.setAttribute('aria-label', 'Continue with Telegram');
+            a.textContent = 'Sign in';
+            a.setAttribute('aria-label', 'Sign in to NIGHTLIFEZ');
             a.setAttribute('href', '/signin');
-            a.classList.remove('btn-ghost', 'btn-primary');
-            a.classList.add('btn-tg');
+            a.classList.remove('btn-tg', 'btn-ghost');
+            a.classList.add('btn-primary');
           }
         }
       });
@@ -2743,6 +2743,7 @@
   function initBusinessHub() {
     var hub = $('[data-business-hub]');
     if (!hub) return;
+    if (hub.getAttribute('data-csrf')) state.csrf = hub.getAttribute('data-csrf');
 
     var msgEl = $('[data-biz-msg]', hub);
     function showBizMsg(text, type) {
@@ -2767,6 +2768,7 @@
         if (tab === 'team') loadTeam();
         if (tab === 'suppliers') loadSuppliers();
         if (tab === 'analytics') loadAnalytics();
+        if (tab === 'payments') loadPaymentSettings();
       });
     });
 
@@ -3163,6 +3165,82 @@
         });
         tbody.innerHTML = h;
       });
+    }
+
+    function loadPaymentSettings() {
+      var badge = $('[data-payment-status-badge]', hub);
+      var upiInput = $('#biz-upi-id', hub);
+      var payeeInput = $('#biz-payee-name', hub);
+      var removeBtn = $('[data-remove-payment-btn]', hub);
+
+      api('GET', '/api/business/payment-settings').then(function (r) {
+        if (!r.ok) return;
+        var s = r.settings || {};
+        if (s.configured && s.upiId) {
+          if (upiInput) upiInput.value = s.upiId;
+          if (payeeInput) payeeInput.value = s.payeeName || '';
+          if (badge) {
+            badge.className = 'pill pill-ok';
+            badge.textContent = s.statusLabel || 'Configured (Verification Pending)';
+          }
+          if (removeBtn) removeBtn.hidden = false;
+        } else {
+          if (badge) {
+            badge.className = 'pill pill-draft';
+            badge.textContent = 'Status: Not Configured';
+          }
+          if (removeBtn) removeBtn.hidden = true;
+        }
+      });
+    }
+
+    var payForm = $('[data-payment-settings-form]', hub);
+    if (payForm) {
+      payForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var upi = ($('#biz-upi-id', hub) || {}).value;
+        var payee = ($('#biz-payee-name', hub) || {}).value;
+        var msg = $('[data-payment-msg]', hub);
+        var btn = $('[data-save-payment-btn]', hub);
+        if (btn) btn.disabled = true;
+        if (msg) { msg.className = 'form-msg info'; msg.textContent = 'Saving payment details…'; }
+
+        api('PUT', '/api/business/payment-settings', { upiId: upi, payeeName: payee }).then(function (r) {
+          if (btn) btn.disabled = false;
+          if (r.ok) {
+            if (msg) { msg.className = 'form-msg success'; msg.textContent = '✓ ' + (r.message || 'Payment details saved successfully.'); }
+            loadPaymentSettings();
+          } else {
+            if (msg) { msg.className = 'form-msg error'; msg.textContent = r.message || 'Could not save payment details.'; }
+          }
+        }).catch(function (err) {
+          if (btn) btn.disabled = false;
+          if (msg) { msg.className = 'form-msg error'; msg.textContent = err.message || 'Network error.'; }
+        });
+      });
+    }
+
+    var removePayBtn = $('[data-remove-payment-btn]', hub);
+    if (removePayBtn) {
+      removePayBtn.addEventListener('click', function () {
+        if (!window.confirm('Are you sure you want to remove your saved UPI payment details?')) return;
+        var msg = $('[data-payment-msg]', hub);
+        api('DELETE', '/api/business/payment-settings').then(function (r) {
+          if (r.ok) {
+            if (msg) { msg.className = 'form-msg success'; msg.textContent = 'Payment details removed.'; }
+            var upiInput = $('#biz-upi-id', hub); if (upiInput) upiInput.value = '';
+            var payeeInput = $('#biz-payee-name', hub); if (payeeInput) payeeInput.value = '';
+            loadPaymentSettings();
+          } else {
+            if (msg) { msg.className = 'form-msg error'; msg.textContent = r.message || 'Could not remove details.'; }
+          }
+        });
+      });
+    }
+
+    if (location.hash === '#payments') {
+      var pBtn = $('[data-biz-tab="payments"]', hub);
+      if (pBtn) pBtn.click();
     }
 
     loadOverview();

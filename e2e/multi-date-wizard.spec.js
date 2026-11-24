@@ -94,14 +94,14 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     await expect(quickAddGeneral).toBeVisible();
     await expect(quickAddFree).toBeVisible();
 
-    // Add a paid tier and a free tier
+    // Add general and free tiers (all presets create free tickets in free-only phase)
     await quickAddGeneral.click();
     await quickAddFree.click();
 
-    // Check that paid tier displays draft indicator and warning
-    const draftPill = page.locator('.pill-draft').first();
-    await expect(draftPill).toBeVisible();
-    await expect(draftPill).toContainText(/Paid \((?:Gateway Pending|Draft — External Checkout Pending)\)/);
+    // Check that added tiers display free RSVP (₹0)
+    const freePill = page.locator('.pill-free').first();
+    await expect(freePill).toBeVisible();
+    await expect(freePill).toContainText('Free RSVP (₹0)');
 
     // Capture Step 2 evidence
     await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-tickets-draft-state.png'), fullPage: true });
@@ -121,7 +121,7 @@ test.describe('Event Creation UX - Multi-Date Scheduling & Accessibility', () =>
     await expect(attPrev).toContainText('Grand Finale');
 
     // Verify ticket states in attendee preview
-    await expect(attPrev).toContainText('Paid ticket — external checkout not configured');
+    await expect(attPrev).toContainText('Free');
 
     // Capture Step 4 evidence
     await page.screenshot({ path: path.join(ARTIFACT_DIR, 'multi-date-attendee-preview.png'), fullPage: true });

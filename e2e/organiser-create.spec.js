@@ -52,8 +52,8 @@ test('organiser publishes a free event from the wizard', async ({ page, browser 
   await expect(page.getByText('Everything needed is in place.')).toBeVisible();
   await expectAccessible(page);
   await screenshot(page, testInfo, 'organiser-wizard-preview');
-  await page.getByRole('button', { name: 'Publish event' }).click();
-  await page.getByRole('button', { name: 'Publish now' }).click();
+  await page.getByRole('button', { name: /Publish (Free )?Event/i }).click();
+  await page.getByRole('button', { name: /Publish.*Now/i }).click();
   await expect(page.getByRole('heading', { name: 'Your event is live' })).toBeVisible({ timeout: 15_000 });
   const url = await page.locator('.share-url').inputValue();
   await screenshot(page, testInfo, 'organiser-wizard-published');
