@@ -1,6 +1,7 @@
 /* NIGHTLIFEZ organiser tools — wizard, dashboard, guest management. Mobile first.
    Builds on the tokens and form controls in site.css. */
 .org-body .site-footer { margin-top: 48px; }
+.org-body .mobile-bottom-nav { display: none !important; }
 .org-gate { padding: 8px var(--gutter) 64px; }
 .org-h2 { font-size: 1.25rem; margin-top: 32px; }
 .org-title { font-size: clamp(1.6rem, 4vw, 2.2rem); }
