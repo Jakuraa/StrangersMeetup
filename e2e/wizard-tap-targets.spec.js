@@ -43,6 +43,7 @@ for (const width of [320, 360, 375, 390, 430]) {
 
     // Features step: every switch.
     await page.getByRole('button', { name: /Next: Features/ }).click();
+    await expect(page.getByRole('heading', { name: 'Ask guests questions' })).toBeVisible();
     const switches = page.getByRole('switch');
     expect(await switches.count()).toBeGreaterThanOrEqual(4);
     for (const s of await switches.all()) await expect.poll(async () => Math.min(...((await box(s)) ?? [0]))).toBeGreaterThanOrEqual(44);

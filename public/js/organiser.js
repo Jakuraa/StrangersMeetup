@@ -2259,8 +2259,9 @@
           errSlot('organiserPayeeName') +
           '</div>';
       } else {
-        paymentDetailsBox = '<div class="notice notice-info" role="status" style="margin-bottom:16px;">' +
-          '<p><strong>Free Event Listing:</strong> Attendees can RSVP and book tickets for free without payment.</p>' +
+        paymentDetailsBox = '<div class="notice notice-warn" role="status" style="margin-bottom:16px;">' +
+          '<p><strong>Free Event Listing:</strong> Online payment is not configured yet for this event.</p>' +
+          '<p class="small" style="margin:4px 0 0;">Attendees can RSVP and book tickets for free. To sell paid tickets, select "Direct UPI Payment to Organiser" above.</p>' +
           '</div>';
       }
 
