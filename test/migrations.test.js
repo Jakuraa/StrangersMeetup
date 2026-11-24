@@ -20,13 +20,13 @@ test('migration files inventory: sequential numbering, correct naming, and sorte
     .filter((f) => /^\d+_.*\.sql$/.test(f))
     .sort();
 
-  // Exactly 30 migrations currently exist: 003 through 032
-  assert.equal(files.length, 30, `expected 30 migration files, got ${files.length}: ${files.join(', ')}`);
+  // Exactly 31 migrations currently exist: 003 through 033
+  assert.equal(files.length, 31, `expected 31 migration files, got ${files.length}: ${files.join(', ')}`);
 
   // Verify sequential ordering
   const expectedPrefixes = [
     '003_', '004_', '005_', '006_', '007_', '008_',
-    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_', '029_', '030_', '031_', '032_'
+    '009_', '010_', '011_', '012_', '013_', '014_', '015_', '016_', '017_', '018_', '019_', '020_', '021_', '022_', '023_', '024_', '025_', '026_', '027_', '028_', '029_', '030_', '031_', '032_', '033_'
   ];
   for (let i = 0; i < expectedPrefixes.length; i++) {
     assert.ok(
@@ -45,9 +45,9 @@ test('migration idempotency: re-running migrate() on an up-to-date database appl
   assert.deepEqual(thirdRun, [], 'expected zero migrations applied on third run');
 });
 
-test('schema_migrations table records all 30 migrations in correct order', async () => {
+test('schema_migrations table records all 31 migrations in correct order', async () => {
   const { rows } = await db.query('SELECT name, applied_at FROM schema_migrations ORDER BY name ASC');
-  assert.equal(rows.length, 30);
+  assert.equal(rows.length, 31);
 
   const appliedNames = rows.map((r) => r.name);
   const filesOnDisk = fs.readdirSync(MIGRATIONS_DIR)
@@ -74,9 +74,9 @@ test('advisory lock serializes concurrent migrate() calls', async () => {
   assert.deepEqual(res2, []);
   assert.deepEqual(res3, []);
 
-  // Total count in schema_migrations must remain exactly 30
+  // Total count in schema_migrations must remain exactly 31
   const countRes = await db.one('SELECT count(*)::int AS n FROM schema_migrations');
-  assert.equal(countRes.n, 30);
+  assert.equal(countRes.n, 31);
 });
 
 test('migration policy respects environment boundaries', () => {
@@ -586,4 +586,49 @@ test('migration 032: direct organiser upi payments schema objects exist', async 
   assert.ok(auditCols.includes('event_id'), 'direct_upi_payment_audits must have event_id');
   assert.ok(auditCols.includes('actor_user_id'), 'direct_upi_payment_audits must have actor_user_id');
   assert.ok(auditCols.includes('to_status'), 'direct_upi_payment_audits must have to_status');
+});
+
+test('migration 033: advanced event configuration schema objects exist', async () => {
+  const eventCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'events'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(eventCols.includes('has_facilities'), 'events must have has_facilities');
+  assert.ok(eventCols.includes('has_venue_layout'), 'events must have has_venue_layout');
+  assert.ok(eventCols.includes('has_sales_phases'), 'events must have has_sales_phases');
+  assert.ok(eventCols.includes('has_offers'), 'events must have has_offers');
+
+  const facilityCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'event_facilities'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(facilityCols.includes('category'), 'event_facilities must have category');
+  assert.ok(facilityCols.includes('facility_key'), 'event_facilities must have facility_key');
+  assert.ok(facilityCols.includes('name'), 'event_facilities must have name');
+
+  const sectionCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'event_venue_sections'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(sectionCols.includes('layout_id'), 'event_venue_sections must have layout_id');
+  assert.ok(sectionCols.includes('price_paise'), 'event_venue_sections must have price_paise');
+  assert.ok(sectionCols.includes('capacity'), 'event_venue_sections must have capacity');
+
+  const phaseCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'event_sales_phases'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(phaseCols.includes('starts_at'), 'event_sales_phases must have starts_at');
+  assert.ok(phaseCols.includes('ends_at'), 'event_sales_phases must have ends_at');
+  assert.ok(phaseCols.includes('price_paise'), 'event_sales_phases must have price_paise');
+
+  const offerCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'event_offers'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(offerCols.includes('discount_type'), 'event_offers must have discount_type');
+  assert.ok(offerCols.includes('discount_value'), 'event_offers must have discount_value');
+  assert.ok(offerCols.includes('code'), 'event_offers must have code');
+
+  const snapshotCols = (await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'booking_price_snapshots'`
+  )).rows.map((r) => r.column_name);
+  assert.ok(snapshotCols.includes('booking_id'), 'booking_price_snapshots must have booking_id');
+  assert.ok(snapshotCols.includes('final_paise'), 'booking_price_snapshots must have final_paise');
+  assert.ok(snapshotCols.includes('subtotal_paise'), 'booking_price_snapshots must have subtotal_paise');
 });

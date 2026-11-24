@@ -2199,6 +2199,162 @@
       );
     }
 
+    function venueCardHtml() {
+      var d = S.data;
+      if (!d.venueLayout) d.venueLayout = { layoutType: 'none', sections: [] };
+      var vl = d.venueLayout;
+      var isSection = vl.layoutType === 'section_based';
+      var secs = vl.sections || [];
+
+      var typeToggle = '<div class="fld" style="margin-bottom:16px;">' +
+        '<span class="lbl">Venue Seating &amp; Layout (Optional)</span>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;">' +
+        '<button type="button" class="chip' + (!isSection ? ' is-active' : '') + '" data-act="set-venue-layout-type" data-val="none">' + (!isSection ? '✓ ' : '') + 'General Admission (No map)</button>' +
+        '<button type="button" class="chip' + (isSection ? ' is-active' : '') + '" data-act="set-venue-layout-type" data-val="section_based">' + (isSection ? '✓ ' : '') + 'Section-Based Venue (Interactive map &amp; tiers)</button>' +
+        '</div>' +
+        '<p class="help">Section-based maps allow separately priced sections (VIP, Fanpit, Gold, Stage, etc.) with visual layout.</p>' +
+        '</div>';
+
+      if (!isSection) {
+        return card('Venue layout (Optional)', typeToggle + '<p class="small muted">Standard general admission pricing is currently active. Click above to create a section-based visual layout.</p>');
+      }
+
+      var presetChips = '<div class="fld" style="margin-bottom:12px;"><span class="lbl">Add venue section:</span><div class="chips" style="margin-top:6px;">' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="stage">+ Stage Area</button>' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="vip">+ VIP Lounge</button>' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="fanpit">+ Fanpit</button>' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="gold">+ Gold Section</button>' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="silver">+ Silver Section</button>' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="general">+ Standing Area</button>' +
+        '<button type="button" class="chip" data-act="add-venue-section" data-sec="custom">+ Custom Section</button>' +
+        '</div></div>';
+
+      var mapPreview = '<div style="background:#0b0e1e;border:1px solid var(--border-soft,#333B6A);border-radius:8px;padding:14px;margin-bottom:16px;text-align:center;">' +
+        '<div style="display:inline-block;background:#1e293b;border:2px solid #64748b;color:#f8fafc;padding:4px 30px;border-radius:6px;font-weight:700;font-size:0.85rem;margin-bottom:12px;">STAGE</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));gap:8px;">' +
+        (secs.length ? secs.map(function (s) {
+          return '<div style="background:' + (s.color || '#4f46e5') + '22;border:2px solid ' + (s.color || '#4f46e5') + ';border-radius:6px;padding:8px;font-size:0.85rem;">' +
+            '<strong style="display:block;color:#fff;">' + esc(s.name) + '</strong>' +
+            '<span style="color:var(--neon-cyan,#00D9FF);font-size:0.75rem;">' + (s.pricePaise != null ? '₹' + ((s.pricePaise || 0) / 100) : 'Free') + ' · ' + (s.capacity || 0) + ' seats</span>' +
+            '</div>';
+        }).join('') : '<p class="muted small" style="grid-column:1/-1;">No sections added yet. Click a section type above to add.</p>') +
+        '</div></div>';
+
+      var secList = secs.map(function (s, i) {
+        var p = 'venueLayout.sections.' + i;
+        return '<li class="tier-card">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<h4 style="margin:0;color:' + esc(s.color || 'var(--neon-cyan,#00D9FF)') + ';">' + esc(s.name || 'Untitled Section') + '</h4>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-act="del-venue-section" data-i="' + i + '" style="color:var(--party-pink);">Delete section</button>' +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.name', 'Section name', { max: 80, placeholder: 'e.g. Fanpit Left' }) +
+          select(p + '.category', 'Category', [['stage', 'Stage'], ['vip', 'VIP'], ['fanpit', 'Fanpit'], ['gold', 'Gold'], ['silver', 'Silver'], ['platinum', 'Platinum'], ['general', 'General Admission'], ['custom', 'Custom Section']], { def: s.category || 'custom' }) +
+          '</div>' +
+          '<div class="row3">' +
+          text(p + '.pricePaise', 'Ticket price (₹)', { type: 'number', min: 0, max: 100000, inputmode: 'numeric', kind: 'rupees', def: s.pricePaise || 0, placeholder: '499' }) +
+          text(p + '.capacity', 'Capacity', { type: 'number', min: 0, max: 10000, inputmode: 'numeric', kind: 'int', def: s.capacity || 100 }) +
+          select(p + '.status', 'Status', [['available', 'Available for booking'], ['unavailable', 'Unavailable (Blocked)'], ['sold_out', 'Sold out']], { def: s.status || 'available' }) +
+          '</div>' +
+          '</li>';
+      }).join('');
+
+      return card('Venue layout (Optional)', typeToggle + presetChips + mapPreview +
+        (secList ? '<ul class="tier-list">' + secList + '</ul>' : '') +
+        errSlot('venueLayout.sections'));
+    }
+
+    function timelineCardHtml() {
+      var d = S.data;
+      if (!d.salesTimeline) d.salesTimeline = { enabled: false, phases: [] };
+      var st = d.salesTimeline;
+      var isEnabled = Boolean(st.enabled);
+      var phases = st.phases || [];
+
+      var toggleSwitch = toggle('salesTimeline.enabled', 'Enable Scheduled Sales Timeline', 'Define scheduled pricing phases (e.g. Early Access, Pre-Sale, General Sale) that activate automatically.');
+
+      if (!isEnabled) {
+        return card('Sales timeline & scheduled pricing (Optional)', toggleSwitch + '<p class="small muted">Standard ticket sale timeline applies. Switch on to configure progressive sales phases.</p>');
+      }
+
+      var presetChips = '<div class="fld" style="margin-bottom:12px;"><span class="lbl">Add sales phase:</span><div class="chips" style="margin-top:6px;">' +
+        '<button type="button" class="chip" data-act="add-sales-phase" data-phase="early_access">+ Early Access</button>' +
+        '<button type="button" class="chip" data-act="add-sales-phase" data-phase="pre_sale">+ Pre-Sale</button>' +
+        '<button type="button" class="chip" data-act="add-sales-phase" data-phase="general">+ General Sale</button>' +
+        '<button type="button" class="chip" data-act="add-sales-phase" data-phase="final_release">+ Final Release</button>' +
+        '</div></div>';
+
+      var phaseList = phases.map(function (ph, i) {
+        var p = 'salesTimeline.phases.' + i;
+        return '<li class="tier-card">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<h4 style="margin:0;color:var(--neon-cyan,#00D9FF);">' + esc(ph.name || 'Sales Phase') + '</h4>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-act="del-sales-phase" data-i="' + i + '" style="color:var(--party-pink);">Delete phase</button>' +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.name', 'Phase display name', { max: 80, placeholder: 'e.g. Phase 1 — Early Bird' }) +
+          text(p + '.pricePaise', 'Phase price (₹, leave blank for standard)', { type: 'number', optional: true, min: 0, max: 100000, inputmode: 'numeric', kind: 'rupees', placeholder: '499' }) +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.startsAt', 'Starts date & time', { type: 'datetime-local' }) +
+          text(p + '.endsAt', 'Ends date & time', { type: 'datetime-local' }) +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.quota', 'Ticket quota / allocation (optional)', { type: 'number', optional: true, min: 1, max: 10000, inputmode: 'numeric', kind: 'int', placeholder: '100' }) +
+          text(p + '.accessCode', 'Unlock access code (optional)', { max: 30, optional: true, placeholder: 'e.g. VIPACCESS' }) +
+          '</div>' +
+          '</li>';
+      }).join('');
+
+      return card('Sales timeline & scheduled pricing (Optional)', toggleSwitch + presetChips +
+        (phaseList ? '<ul class="tier-list">' + phaseList + '</ul>' : '<p class="muted small">No phases added yet. Click a phase preset above to add one.</p>') +
+        errSlot('salesTimeline.phases'));
+    }
+
+    function offersCardHtml() {
+      var d = S.data;
+      if (!d.offers) d.offers = [];
+      var offers = d.offers;
+
+      var presetChips = '<div class="fld" style="margin-bottom:12px;"><span class="lbl">Create promotion / offer:</span><div class="chips" style="margin-top:6px;">' +
+        '<button type="button" class="chip" data-act="add-offer" data-offer="percent10">+ 10% OFF Promo Code</button>' +
+        '<button type="button" class="chip" data-act="add-offer" data-offer="fixed200">+ ₹200 OFF Fixed Discount</button>' +
+        '<button type="button" class="chip" data-act="add-offer" data-offer="group15">+ Buy 2+ Tickets 15% OFF</button>' +
+        '<button type="button" class="chip" data-act="add-offer" data-offer="custom">+ Custom Offer</button>' +
+        '</div></div>';
+
+      var offerList = offers.map(function (o, i) {
+        var p = 'offers.' + i;
+        var isPct = o.discountType === 'percentage';
+        return '<li class="tier-card">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<h4 style="margin:0;color:var(--neon-green,#00FF88);">' + esc(o.name || 'Promotional Offer') + '</h4>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-act="del-offer" data-i="' + i + '" style="color:var(--party-pink);">Delete offer</button>' +
+          '</div>' +
+          '<div class="row2">' +
+          text(p + '.name', 'Offer title', { max: 80, placeholder: 'e.g. Early Bird 10% Off' }) +
+          text(p + '.code', 'Promo code (optional)', { max: 30, optional: true, placeholder: 'e.g. NIGHTLIFE10', help: 'Leave empty for automatic discount' }) +
+          '</div>' +
+          '<div class="row2">' +
+          select(p + '.discountType', 'Discount type', [['percentage', 'Percentage discount (%)'], ['fixed_amount', 'Fixed rupee discount (₹)']], { def: o.discountType || 'percentage', rerender: true }) +
+          (isPct
+            ? text(p + '.discountValue', 'Discount percent (%)*', { type: 'number', min: 1, max: 100, inputmode: 'numeric', kind: 'int', placeholder: '10' })
+            : text(p + '.discountValue', 'Discount amount (₹)*', { type: 'number', min: 1, max: 50000, inputmode: 'numeric', kind: 'rupees', placeholder: '200' })) +
+          '</div>' +
+          '<div class="row3">' +
+          (isPct ? text(p + '.maxDiscountPaise', 'Max discount cap (₹)', { type: 'number', optional: true, min: 1, max: 50000, inputmode: 'numeric', kind: 'rupees', placeholder: '100' }) : '<div class="fld"></div>') +
+          text(p + '.minOrderPaise', 'Min order value (₹)', { type: 'number', optional: true, min: 0, max: 100000, inputmode: 'numeric', kind: 'rupees', placeholder: '1000' }) +
+          text(p + '.minQuantity', 'Min tickets required', { type: 'number', optional: true, min: 1, max: 20, inputmode: 'numeric', kind: 'int', def: 1 }) +
+          '</div>' +
+          text(p + '.description', 'Description for attendees (optional)', { max: 300, optional: true, placeholder: 'e.g. Applicable on booking 2 or more tickets' }) +
+          '</li>';
+      }).join('');
+
+      return card('Offers & discounts (Optional)', presetChips +
+        (offerList ? '<ul class="tier-list">' + offerList + '</ul>' : '<p class="muted small">No promotional offers added yet. Organisers can add promotions anytime without changing ticket base prices.</p>') +
+        errSlot('offers'));
+    }
+
     function stepTickets() {
       var d = S.data;
       var schedDates = (d.schedule && d.schedule.dates && d.schedule.dates.length) ? d.schedule.dates : null;
@@ -2313,9 +2469,51 @@
           (tiers ? '<ul class="tier-list">' + tiers + '</ul>' : '<p class="muted">No tickets yet. Add one above.</p>') +
           ((d.tickets || []).length < CFG.limits.tiers ? '<button class="btn btn-ghost btn-sm" type="button" data-act="add-tier" data-preset="free">+ Add another ticket type</button>' : '')) +
         card('Inventory', '<div data-live="inventory"></div>') +
+        venueCardHtml() +
+        timelineCardHtml() +
+        offersCardHtml() +
         policyCardHtml() +
         nav('basics', 'features', 'Next: Features');
-        nav('basics', 'features', 'Next: Features');
+    }
+
+    function facilitiesCardHtml() {
+      var d = S.data;
+      if (!d.facilities) d.facilities = [];
+      var facs = d.facilities;
+      var selectedKeys = {};
+      facs.forEach(function (f) { selectedKeys[f.facilityKey || f.key || f.name] = true; });
+
+      var preList = (CFG.predefinedFacilities || []).map(function (f) {
+        var isSel = Boolean(selectedKeys[f.key]);
+        return '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-input,#0B0E1E);border:1px solid ' + (isSel ? 'var(--neon-cyan,#00D9FF)' : 'var(--border-soft,#333B6A)') + ';border-radius:6px;cursor:pointer;font-size:0.88rem;">' +
+          '<input type="checkbox" data-act="toggle-facility" data-key="' + esc(f.key) + '" data-cat="' + esc(f.category) + '" data-name="' + esc(f.name) + '" data-icon="' + esc(f.icon) + '"' + (isSel ? ' checked' : '') + '> ' +
+          '<span>' + esc(f.name) + '</span>' +
+          '</label>';
+      }).join('');
+
+      var customList = facs.filter(function (f) { return f.isCustom; }).map(function (f) {
+        return '<li style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:6px;">' +
+          '<div><strong>' + esc(f.name) + '</strong> (' + esc(f.category) + ')' + (f.description ? '<p class="small muted" style="margin:2px 0 0;">' + esc(f.description) + '</p>' : '') + '</div>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-act="del-custom-facility" data-name="' + esc(f.name) + '" style="color:var(--party-pink);">Remove</button>' +
+          '</li>';
+      }).join('');
+
+      var addCustomBox = '<div style="margin-top:16px;padding:12px;border:1px dashed var(--border-soft,#333B6A);border-radius:8px;">' +
+        '<h4 style="margin:0 0 10px;font-size:0.95rem;">+ Add Custom Facility or Amenity</h4>' +
+        '<div class="row2">' +
+        '<div class="fld"><span class="lbl">Facility name</span><input type="text" id="custom-fac-name" placeholder="e.g. Rooftop pool access"></div>' +
+        '<div class="fld"><span class="lbl">Category</span><select id="custom-fac-cat"><option value="parking">Parking</option><option value="food_beverage">Food &amp; Beverages</option><option value="accessibility">Accessibility</option><option value="medical_safety">Medical &amp; Safety</option><option value="other" selected>Other / Rules</option></select></div>' +
+        '</div>' +
+        '<div class="fld"><span class="lbl">Additional notes / details (optional)</span><input type="text" id="custom-fac-desc" placeholder="e.g. Towels provided at entry"></div>' +
+        '<button class="btn btn-sm btn-ghost" type="button" data-act="add-custom-facility">+ Add this facility</button>' +
+        '</div>';
+
+      return card('Facilities & amenities (Optional)',
+        '<p class="help">Select available amenities for parking, food, accessibility, medical support, and policies. Only selected facilities appear on your public event page.</p>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:8px;margin-bottom:14px;">' + preList + '</div>' +
+        (customList ? '<ul style="list-style:none;padding:0;margin:10px 0;">' + customList + '</ul>' : '') +
+        addCustomBox +
+        errSlot('facilities'));
     }
 
     function stepFeatures() {
@@ -2349,6 +2547,7 @@
         text('features.contact.phone', 'WhatsApp number', { type: 'tel', max: 24, inputmode: 'tel', placeholder: '98765 43210' }) + '</div>' +
         '<p class="help">This number is shown only to guests with a confirmed booking — never on the public page.</p>';
       return card('Ask guests questions', toggle('features.questions.enabled', 'Ask questions when guests book', 'Collect what you need to run the event, like dietary needs.') + qBody) +
+        facilitiesCardHtml() +
         card('Approve each guest', toggle('features.approval.enabled', 'Approve every booking yourself', '') +
           '<ul class="explain"><li><strong>What guests see:</strong> a “Request to join” button. Their request waits for you; nothing is charged.</li>' +
           '<li><strong>What you do:</strong> approve or decline each request from your event page. You’ll get a Telegram message for each one.</li>' +
@@ -2393,13 +2592,50 @@
            '</div>')
         : '';
 
+      var facHtml = '';
+      if (d.facilities && d.facilities.length) {
+        facHtml = '<h4>Facilities &amp; Amenities</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
+          d.facilities.map(function (fc) {
+            return '<span class="pill pill-info" style="font-size:0.82rem;">' + esc(fc.icon ? fc.icon + ' ' : '') + esc(fc.name) + '</span>';
+          }).join('') + '</div>';
+      }
+
+      var venueSecHtml = '';
+      if (d.venueLayout && d.venueLayout.layoutType === 'section_based' && d.venueLayout.sections && d.venueLayout.sections.length) {
+        venueSecHtml = '<h4>Venue Sections &amp; Layout</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
+          d.venueLayout.sections.map(function (sc) {
+            return '<div style="padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:6px;border:1px solid var(--line);font-size:0.82rem;"><strong>' + esc(sc.name) + '</strong> · ' + (sc.pricePaise ? money(sc.pricePaise) : 'Free') + ' (' + esc(sc.capacity) + ' spots)</div>';
+          }).join('') + '</div>';
+      }
+
+      var offersHtml = '';
+      if (d.offers && d.offers.length) {
+        offersHtml = '<h4>Special Offers</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
+          d.offers.map(function (of) {
+            var disc = of.discountType === 'percentage' ? of.discountValue + '% OFF' : '₹' + (of.discountValue / 100) + ' OFF';
+            return '<div style="padding:6px 10px;background:rgba(0,255,136,0.08);border-radius:6px;border:1px solid rgba(0,255,136,0.25);font-size:0.82rem;color:var(--neon-green,#00FF88);"><strong>' + esc(of.name) + '</strong> (' + esc(disc) + (of.code ? ' · Code: ' + esc(of.code) : '') + ')</div>';
+          }).join('') + '</div>';
+      }
+
+      var timelineHtml = '';
+      if (d.salesTimeline && d.salesTimeline.enabled && d.salesTimeline.phases && d.salesTimeline.phases.length) {
+        timelineHtml = '<h4>Sales Timeline</h4><ul style="font-size:0.85rem;margin-bottom:12px;">' +
+          d.salesTimeline.phases.map(function (ph) {
+            return '<li><strong>' + esc(ph.name) + '</strong>' + (ph.pricePaise != null ? ' · ' + money(ph.pricePaise) : '') + (ph.startsAt ? ' (from ' + esc(fmtLocal(ph.startsAt)) + ')' : '') + '</li>';
+          }).join('') + '</ul>';
+      }
+
       return '<article class="att-prev" aria-label="What guests will see">' +
         (d.coverImageId ? '<img src="/media/event-images/' + esc(d.coverImageId) + '" alt="" width="800" height="450">' : '<div class="att-art" aria-hidden="true"></div>') +
         '<div class="att-body"><p class="card-meta"><span>' + esc(CAT[d.category] || '') + '</span><span>' + esc(d.city || '') + '</span></p>' +
         '<h3>' + esc(d.title || 'Untitled event') + '</h3><p class="muted">' + esc(whenSummary()) + '</p><p>' + esc(where || 'Location to be added') + '</p>' +
         (d.description ? '<p class="att-desc">' + esc(d.description.slice(0, 700)) + (d.description.length > 700 ? '…' : '') + '</p>' : '') +
         schedHtml +
+        venueSecHtml +
+        timelineHtml +
+        offersHtml +
         '<h4>Tickets</h4>' + (tix ? '<ul>' + tix + '</ul>' : '<p class="muted">No tickets yet.</p>') +
+        facHtml +
         '<h4>Entry</h4><ul><li>Adults 21+ only. Guests carry a photo ID.</li>' + (f.approval && f.approval.enabled ? '<li>The host approves each guest.</li>' : '') + '</ul>' +
         (qs.length ? '<h4>Questions at booking</h4><ul>' + qs.map(function (x) { return '<li>' + esc(x.label || 'Untitled question') + (x.required ? ' <span class="muted">(required)</span>' : '') + '</li>'; }).join('') + '</ul>' : '') +
         (pts.length ? '<h4>Pickup points</h4><ul>' + pts.map(function (p) { return '<li>' + esc(p.name || 'Unnamed') + (p.time ? ' · ' + esc(fmtLocal(p.time)) : '') + '</li>'; }).join('') + '</ul>' : '') +
@@ -2833,6 +3069,155 @@
           });
         case 'publish-cancel': return $('[data-publish-dialog]', el).close();
         case 'publish-confirm': return publishNow(b);
+        case 'set-venue-layout-type':
+          var vType = b.getAttribute('data-val') || 'none';
+          if (!S.data.venueLayout) S.data.venueLayout = { layoutType: vType, sections: [] };
+          S.data.venueLayout.layoutType = vType;
+          if (vType === 'section_based' && (!S.data.venueLayout.sections || !S.data.venueLayout.sections.length)) {
+            S.data.venueLayout.sections = [
+              { id: uid(), name: 'General Admission', category: 'general', pricePaise: 0, capacity: 200, status: 'available', color: '#6366f1' }
+            ];
+          }
+          touch(); return render();
+        case 'add-venue-section':
+          if (!S.data.venueLayout) S.data.venueLayout = { layoutType: 'section_based', sections: [] };
+          var secPresetKey = b.getAttribute('data-sec') || 'custom';
+          var secPresets = {
+            stage: { name: 'Stage Front', category: 'stage', pricePaise: 99900, capacity: 50, color: '#f43f5e' },
+            vip: { name: 'VIP Lounge', category: 'vip', pricePaise: 149900, capacity: 30, color: '#a855f7' },
+            fanpit: { name: 'Fanpit', category: 'fanpit', pricePaise: 79900, capacity: 100, color: '#06b6d4' },
+            gold: { name: 'Gold Tier', category: 'gold', pricePaise: 59900, capacity: 150, color: '#eab308' },
+            silver: { name: 'Silver Tier', category: 'silver', pricePaise: 39900, capacity: 200, color: '#94a3b8' },
+            general: { name: 'Standing Area', category: 'general', pricePaise: 19900, capacity: 300, color: '#10b981' },
+            custom: { name: 'Custom Section', category: 'custom', pricePaise: 49900, capacity: 100, color: '#3b82f6' }
+          };
+          var sp = secPresets[secPresetKey] || secPresets.custom;
+          var newSec = {
+            id: uid(),
+            name: sp.name,
+            category: sp.category,
+            pricePaise: S.data.paymentMethod === 'direct_upi' ? sp.pricePaise : 0,
+            capacity: sp.capacity,
+            status: 'available',
+            color: sp.color
+          };
+          S.data.venueLayout.sections = (S.data.venueLayout.sections || []).concat(newSec);
+          touch(); return render();
+        case 'del-venue-section':
+          if (S.data.venueLayout && S.data.venueLayout.sections) {
+            S.data.venueLayout.sections.splice(i, 1);
+            touch(); return render();
+          }
+          return;
+        case 'add-sales-phase':
+          if (!S.data.salesTimeline) S.data.salesTimeline = { enabled: true, phases: [] };
+          var phKey = b.getAttribute('data-phase') || 'general';
+          var phPresets = {
+            early_access: { name: 'Early Access', phaseType: 'early_access', pricePaise: 29900, quota: 50 },
+            pre_sale: { name: 'Pre-Sale Phase', phaseType: 'pre_sale', pricePaise: 39900, quota: 100 },
+            general: { name: 'General Public Sale', phaseType: 'general', pricePaise: 49900, quota: null },
+            final_release: { name: 'Final Release', phaseType: 'final_release', pricePaise: 69900, quota: 50 }
+          };
+          var php = phPresets[phKey] || phPresets.general;
+          var newPhase = {
+            id: uid(),
+            name: php.name,
+            phaseType: php.phaseType,
+            pricePaise: S.data.paymentMethod === 'direct_upi' ? php.pricePaise : null,
+            startsAt: S.data.startLocal || '',
+            endsAt: S.data.endLocal || '',
+            quota: php.quota,
+            accessCode: ''
+          };
+          S.data.salesTimeline.phases = (S.data.salesTimeline.phases || []).concat(newPhase);
+          touch(); return render();
+        case 'del-sales-phase':
+          if (S.data.salesTimeline && S.data.salesTimeline.phases) {
+            S.data.salesTimeline.phases.splice(i, 1);
+            touch(); return render();
+          }
+          return;
+        case 'add-offer':
+          if (!S.data.offers) S.data.offers = [];
+          var offKey = b.getAttribute('data-offer') || 'custom';
+          var offPresets = {
+            percent10: { name: '10% Off Early Special', code: 'SAVE10', discountType: 'percentage', discountValue: 10, maxDiscountPaise: 20000, minOrderPaise: null, minQuantity: 1 },
+            fixed200: { name: '₹200 Flat Discount', code: 'PARTY200', discountType: 'fixed_amount', discountValue: 20000, maxDiscountPaise: null, minOrderPaise: 50000, minQuantity: 1 },
+            group15: { name: 'Squad Deal (2+ tickets)', code: 'SQUAD15', discountType: 'percentage', discountValue: 15, maxDiscountPaise: 50000, minOrderPaise: null, minQuantity: 2 },
+            custom: { name: 'Special Promotion', code: '', discountType: 'percentage', discountValue: 10, maxDiscountPaise: null, minOrderPaise: null, minQuantity: 1 }
+          };
+          var op = offPresets[offKey] || offPresets.custom;
+          var newOffer = {
+            id: uid(),
+            name: op.name,
+            code: op.code,
+            discountType: op.discountType,
+            discountValue: op.discountValue,
+            maxDiscountPaise: op.maxDiscountPaise,
+            minOrderPaise: op.minOrderPaise,
+            minQuantity: op.minQuantity,
+            description: ''
+          };
+          S.data.offers.push(newOffer);
+          touch(); return render();
+        case 'del-offer':
+          if (S.data.offers) {
+            S.data.offers.splice(i, 1);
+            touch(); return render();
+          }
+          return;
+        case 'toggle-facility':
+          if (!S.data.facilities) S.data.facilities = [];
+          var fKey = b.getAttribute('data-key');
+          var fCat = b.getAttribute('data-cat') || 'other';
+          var fName = b.getAttribute('data-name');
+          var fIcon = b.getAttribute('data-icon') || '';
+          var existingIdx = -1;
+          for (var fi = 0; fi < S.data.facilities.length; fi++) {
+            if ((S.data.facilities[fi].facilityKey || S.data.facilities[fi].key) === fKey) {
+              existingIdx = fi;
+              break;
+            }
+          }
+          if (existingIdx >= 0) {
+            S.data.facilities.splice(existingIdx, 1);
+          } else {
+            S.data.facilities.push({
+              facilityKey: fKey,
+              category: fCat,
+              name: fName,
+              icon: fIcon,
+              isCustom: false
+            });
+          }
+          touch(); return render();
+        case 'add-custom-facility':
+          if (!S.data.facilities) S.data.facilities = [];
+          var customNameInput = $('#custom-fac-name', el);
+          var customCatSelect = $('#custom-fac-cat', el);
+          var customDescInput = $('#custom-fac-desc', el);
+          var cName = customNameInput ? customNameInput.value.trim() : '';
+          var cCat = customCatSelect ? customCatSelect.value : 'other';
+          var cDesc = customDescInput ? customDescInput.value.trim() : '';
+          if (!cName) {
+            alert('Please enter a facility name.');
+            return;
+          }
+          S.data.facilities.push({
+            facilityKey: 'custom_' + uid(),
+            category: cCat,
+            name: cName,
+            description: cDesc,
+            isCustom: true
+          });
+          touch(); return render();
+        case 'del-custom-facility':
+          if (!S.data.facilities) return;
+          var delName = b.getAttribute('data-name');
+          S.data.facilities = S.data.facilities.filter(function (f) {
+            return f.name !== delName;
+          });
+          touch(); return render();
         case 'copy': return copyText(b.getAttribute('data-url'), b);
         case 'share': return share(S.data.title, b.getAttribute('data-url'), b);
       }
