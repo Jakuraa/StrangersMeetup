@@ -75,8 +75,8 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 80px; }
-body { margin: 0; background-color: var(--bg); background-image: var(--bg-gradient); background-repeat: no-repeat; background-attachment: fixed; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 80px; max-width: 100%; overflow-x: hidden; }
+body { margin: 0; background-color: var(--bg); background-image: var(--bg-gradient); background-repeat: no-repeat; background-attachment: fixed; color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; min-height: 100vh; max-width: 100%; overflow-x: hidden; }
 img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; text-decoration-color: rgba(49, 91, 255, .45); text-underline-offset: 3px; }
 a:hover { color: var(--neon-cyan); }
@@ -2264,7 +2264,10 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
 
 @media (max-width: 768px) {
   body {
-    padding-bottom: 64px;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  .site-footer {
+    display: none !important;
   }
   .mobile-bottom-nav {
     display: flex;
@@ -2272,15 +2275,16 @@ select:focus-visible, input:focus-visible, textarea:focus-visible {
     bottom: 0;
     left: 0;
     right: 0;
-    height: 60px;
+    height: calc(60px + env(safe-area-inset-bottom, 0px));
     background: rgba(9, 11, 22, 0.96);
     backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     z-index: 990;
     justify-content: space-around;
     align-items: center;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .bottom-nav-item {
     display: flex;

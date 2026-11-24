@@ -445,3 +445,179 @@
 .pill-danger { background: rgba(255, 49, 91, 0.15); border-color: rgba(255, 49, 91, 0.4); color: var(--party-pink, #FF315B); }
 .pill-pending { background: rgba(255, 200, 0, 0.15); border-color: rgba(255, 200, 0, 0.4); color: #ffd15c; }
 
+/* ==========================================================================
+   Facilities & Amenities Redesign (Phase 2 & Screenshot 1 Remediation)
+   ========================================================================== */
+.facilities-top-bar {
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: var(--surface-input, #0B0E1E);
+  border: 1px solid var(--border-soft, #2A3158);
+  border-radius: 8px;
+}
+.facility-category-section {
+  background: var(--surface-input, #0B0E1E);
+  border: 1px solid var(--border-soft, #2A3158);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.facility-category-section:focus-within {
+  border-color: rgba(0, 217, 255, 0.4);
+}
+.facility-category-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.facility-category-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.facility-category-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.facility-category-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink, #FFFFFF);
+}
+.facility-category-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: var(--muted, #8E92B2);
+  font-weight: 600;
+}
+.facility-category-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.facility-category-actions .btn-xs {
+  font-size: 0.75rem;
+  padding: 3px 8px;
+  min-height: 28px;
+}
+.facility-category-hint {
+  font-size: 0.8rem;
+  color: var(--muted, #8E92B2);
+  margin: 4px 0 12px;
+}
+.facilities-category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+@media (max-width: 600px) {
+  .facilities-category-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
+@media (max-width: 380px) {
+  .facilities-category-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.facility-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-soft, #2A3158);
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 48px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+.facility-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--neon-cyan, #00D9FF);
+  transform: translateY(-1px);
+}
+.facility-card:focus-visible {
+  outline: 2px solid var(--neon-cyan, #00D9FF);
+  outline-offset: 2px;
+}
+.facility-card.is-selected {
+  background: rgba(0, 217, 255, 0.08);
+  border-color: var(--neon-cyan, #00D9FF);
+  box-shadow: 0 0 12px rgba(0, 217, 255, 0.12);
+}
+.facility-icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.facility-name {
+  font-size: 0.84rem;
+  font-weight: 500;
+  color: var(--ink, #FFFFFF);
+  flex: 1;
+  line-height: 1.3;
+}
+.facility-card.is-selected .facility-name {
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.facility-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-soft, #4B5585);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: transparent;
+  transition: all 0.15s ease;
+}
+.facility-card.is-selected .facility-check {
+  background: var(--neon-cyan, #00D9FF);
+  border-color: var(--neon-cyan, #00D9FF);
+  color: #090B16;
+}
+.custom-facility-box {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px dashed var(--border-soft, #333B6A);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.custom-facilities-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.custom-facility-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-soft, #333B6A);
+  border-radius: 8px;
+}
+.custom-facility-meta {
+  flex: 1;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+

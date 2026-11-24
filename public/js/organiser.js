@@ -2476,42 +2476,113 @@
         nav('basics', 'features', 'Next: Features');
     }
 
+    var FACILITY_ICONS = {
+      paid_parking: '🅿️', free_parking: '🆓', two_wheeler_parking: '🛵', four_wheeler_parking: '🚗', valet_parking: '🔑',
+      food_available: '🍽️', veg_options: '🥗', non_veg_options: '🍗', alcohol_available: '🍸', non_alcoholic: '🥤', outside_food_restrictions: '🚫',
+      wheelchair_accessible: '♿', accessible_entrance: '🚪', accessible_washrooms: '🚻', companion_assistance: '🤝', accessible_parking: '🅿️',
+      first_aid: '🩹', medical_staff: '🩺', ambulance: '🚑', security_personnel: '👮', emergency_assistance: '🚨',
+      common_washrooms: '🚻', smoking_zones: '🚬', cloakroom: '🧳', photography_rules: '📷', re_entry_policy: '🔄',
+      age_restrictions: '🔞', dress_code: '👔', pet_policy: '🐾'
+    };
+
+    var CATEGORY_ORDER = [
+      { key: 'parking', name: 'Parking', icon: '🚗', hint: 'Vehicle parking & valet options' },
+      { key: 'food_beverage', name: 'Food & Beverages', icon: '🍽️', hint: 'Dining, dietary options & bar rules' },
+      { key: 'accessibility', name: 'Accessibility', icon: '♿', hint: 'Step-free access & guest assistance' },
+      { key: 'medical_safety', name: 'Medical & Safety', icon: '🛡️', hint: 'First aid, on-site personnel & security' },
+      { key: 'other', name: 'Other Facilities & Rules', icon: 'ℹ️', hint: 'Venue facilities, dress code & policies' }
+    ];
+
     function facilitiesCardHtml() {
       var d = S.data;
       if (!d.facilities) d.facilities = [];
       var facs = d.facilities;
       var selectedKeys = {};
-      facs.forEach(function (f) { selectedKeys[f.facilityKey || f.key || f.name] = true; });
+      var totalSelected = 0;
+      facs.forEach(function (f) {
+        var k = f.facilityKey || f.key || f.name;
+        selectedKeys[k] = true;
+        totalSelected++;
+      });
 
-      var preList = (CFG.predefinedFacilities || []).map(function (f) {
-        var isSel = Boolean(selectedKeys[f.key]);
-        return '<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface-input,#0B0E1E);border:1px solid ' + (isSel ? 'var(--neon-cyan,#00D9FF)' : 'var(--border-soft,#333B6A)') + ';border-radius:6px;cursor:pointer;font-size:0.88rem;">' +
-          '<input type="checkbox" data-act="toggle-facility" data-key="' + esc(f.key) + '" data-cat="' + esc(f.category) + '" data-name="' + esc(f.name) + '" data-icon="' + esc(f.icon) + '"' + (isSel ? ' checked' : '') + '> ' +
-          '<span>' + esc(f.name) + '</span>' +
-          '</label>';
+      var preList = CFG.predefinedFacilities || [];
+      var byCat = {};
+      CATEGORY_ORDER.forEach(function (c) { byCat[c.key] = []; });
+      preList.forEach(function (f) {
+        var catKey = f.category || 'other';
+        if (!byCat[catKey]) byCat[catKey] = [];
+        byCat[catKey].push(f);
+      });
+
+      var categoriesHtml = CATEGORY_ORDER.map(function (cat) {
+        var items = byCat[cat.key] || [];
+        if (!items.length) return '';
+        var selectedInCat = items.filter(function (f) { return Boolean(selectedKeys[f.key]); }).length;
+
+        var itemsHtml = items.map(function (f) {
+          var isSel = Boolean(selectedKeys[f.key]);
+          var icon = FACILITY_ICONS[f.key] || '✦';
+          return '<div class="facility-card' + (isSel ? ' is-selected' : '') + '" role="checkbox" aria-checked="' + (isSel ? 'true' : 'false') + '" tabindex="0" data-act="toggle-facility" data-key="' + esc(f.key) + '" data-cat="' + esc(f.category) + '" data-name="' + esc(f.name) + '" data-icon="' + esc(f.icon || '') + '">' +
+            '<span class="facility-icon" aria-hidden="true">' + icon + '</span>' +
+            '<span class="facility-name">' + esc(f.name) + '</span>' +
+            '<span class="facility-check" aria-hidden="true">' + (isSel ? '✓' : '') + '</span>' +
+            '</div>';
+        }).join('');
+
+        return '<div class="facility-category-section">' +
+          '<div class="facility-category-head">' +
+          '<div class="facility-category-title-wrap">' +
+          '<span class="facility-category-icon" aria-hidden="true">' + cat.icon + '</span>' +
+          '<h4 class="facility-category-title">' + esc(cat.name) + '</h4>' +
+          '<span class="facility-category-badge">' + selectedInCat + ' / ' + items.length + ' selected</span>' +
+          '</div>' +
+          '<div class="facility-category-actions">' +
+          '<button type="button" class="btn btn-xs btn-ghost" data-act="select-all-cat" data-cat="' + esc(cat.key) + '">Select all</button>' +
+          '<button type="button" class="btn btn-xs btn-ghost" data-act="clear-cat" data-cat="' + esc(cat.key) + '">Clear</button>' +
+          '</div>' +
+          '</div>' +
+          '<p class="facility-category-hint">' + esc(cat.hint) + '</p>' +
+          '<div class="facilities-category-grid">' + itemsHtml + '</div>' +
+          '</div>';
       }).join('');
 
       var customList = facs.filter(function (f) { return f.isCustom; }).map(function (f) {
-        return '<li style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;margin-bottom:6px;">' +
-          '<div><strong>' + esc(f.name) + '</strong> (' + esc(f.category) + ')' + (f.description ? '<p class="small muted" style="margin:2px 0 0;">' + esc(f.description) + '</p>' : '') + '</div>' +
-          '<button class="btn btn-sm btn-ghost" type="button" data-act="del-custom-facility" data-name="' + esc(f.name) + '" style="color:var(--party-pink);">Remove</button>' +
+        var catInfo = CATEGORY_ORDER.filter(function (c) { return c.key === f.category; })[0];
+        var catLabel = catInfo ? catInfo.name : 'Custom';
+        return '<li class="custom-facility-item">' +
+          '<div class="custom-facility-meta">' +
+          '<span class="pill pill-info" style="font-size:0.75rem;">' + esc(catLabel) + '</span> ' +
+          '<strong>' + esc(f.name) + '</strong>' +
+          (f.description ? '<p class="small muted" style="margin:4px 0 0;">' + esc(f.description) + '</p>' : '') +
+          '</div>' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-act="del-custom-facility" data-name="' + esc(f.name) + '" style="color:var(--party-pink,#FF315B);">Remove</button>' +
           '</li>';
       }).join('');
 
-      var addCustomBox = '<div style="margin-top:16px;padding:12px;border:1px dashed var(--border-soft,#333B6A);border-radius:8px;">' +
-        '<h4 style="margin:0 0 10px;font-size:0.95rem;">+ Add Custom Facility or Amenity</h4>' +
+      var addCustomBox = '<div class="custom-facility-box">' +
+        '<h4 style="margin:0 0 10px;font-size:0.95rem;color:var(--neon-cyan,#00D9FF);">+ Add Custom Facility or Amenity</h4>' +
         '<div class="row2">' +
-        '<div class="fld"><span class="lbl">Facility name</span><input type="text" id="custom-fac-name" placeholder="e.g. Rooftop pool access"></div>' +
-        '<div class="fld"><span class="lbl">Category</span><select id="custom-fac-cat"><option value="parking">Parking</option><option value="food_beverage">Food &amp; Beverages</option><option value="accessibility">Accessibility</option><option value="medical_safety">Medical &amp; Safety</option><option value="other" selected>Other / Rules</option></select></div>' +
+        '<div class="fld"><label for="custom-fac-name" class="lbl">Facility name*</label><input type="text" id="custom-fac-name" placeholder="e.g. Swimming Pool, Hookah Lounge"></div>' +
+        '<div class="fld"><label for="custom-fac-cat" class="lbl">Category</label><select id="custom-fac-cat" aria-label="Category">' +
+        CATEGORY_ORDER.map(function (c) { return '<option value="' + esc(c.key) + '">' + esc(c.name) + '</option>'; }).join('') +
+        '</select></div>' +
         '</div>' +
-        '<div class="fld"><span class="lbl">Additional notes / details (optional)</span><input type="text" id="custom-fac-desc" placeholder="e.g. Towels provided at entry"></div>' +
-        '<button class="btn btn-sm btn-ghost" type="button" data-act="add-custom-facility">+ Add this facility</button>' +
+        '<div class="fld"><label for="custom-fac-desc" class="lbl">Additional notes / rules (optional)</label><input type="text" id="custom-fac-desc" placeholder="e.g. Valid swimming costume required"></div>' +
+        '<button class="btn btn-sm btn-ghost" type="button" data-act="add-custom-facility">+ Add this amenity</button>' +
+        '</div>';
+
+      var topBar = '<div class="facilities-top-bar">' +
+        '<p class="help" style="margin:0;">Select amenities available at your event. Grouped by category for quick setup. Only selected amenities appear on your public event page.</p>' +
+        '<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;">' +
+        '<span class="pill pill-free" style="font-size:0.82rem;font-weight:600;">' + totalSelected + ' amenit' + (totalSelected === 1 ? 'y' : 'ies') + ' selected</span>' +
+        (totalSelected > 0 ? '<button type="button" class="btn btn-xs btn-ghost" data-act="clear-all-facilities" style="color:var(--party-pink,#FF315B);">Clear all amenities</button>' : '') +
+        '</div>' +
         '</div>';
 
       return card('Facilities & amenities (Optional)',
-        '<p class="help">Select available amenities for parking, food, accessibility, medical support, and policies. Only selected facilities appear on your public event page.</p>' +
-        '<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:8px;margin-bottom:14px;">' + preList + '</div>' +
-        (customList ? '<ul style="list-style:none;padding:0;margin:10px 0;">' + customList + '</ul>' : '') +
+        topBar +
+        categoriesHtml +
+        (customList ? '<div style="margin-top:20px;"><h4 style="margin:0 0 10px;font-size:0.95rem;">Custom Amenities</h4><ul class="custom-facilities-list">' + customList + '</ul></div>' : '') +
         addCustomBox +
         errSlot('facilities'));
     }
@@ -2653,7 +2724,7 @@
     function stepPreview() {
       var errs = S.issues.filter(function (i) { return i.severity === 'error'; });
       var warns = S.issues.filter(function (i) { return i.severity === 'warning'; });
-      var label = { basics: 'Basics', tickets: 'Tickets', features: 'Features' };
+      var label = { basics: 'Basics', tickets: 'Tickets', features: 'Features', facilities: 'Features', offers: 'Features', venue: 'Features', timeline: 'Features' };
       var isDirect = S.data.paymentMethod === 'direct_upi' || (S.data.organiserUpiId && S.data.organiserPayeeName);
       var readyMsg = isDirect
         ? '✓ Everything needed is in place. Your event with direct UPI payment is ready to publish.'
@@ -3052,9 +3123,14 @@
           touch(); render();
           return api('DELETE', '/api/organiser/drafts/' + encodeURIComponent(S.draft.id) + '/images/' + encodeURIComponent(id));
         case 'fix':
-          S.shown[b.getAttribute('data-step')] = true;
-          goStep(b.getAttribute('data-step'));
-          var target = $('[data-path="' + b.getAttribute('data-field') + '"]', el) || $('[data-err-for="' + b.getAttribute('data-field') + '"]', el);
+          var targetStep = b.getAttribute('data-step');
+          if (targetStep === 'facilities' || targetStep === 'offers' || targetStep === 'venue' || targetStep === 'timeline') {
+            targetStep = 'features';
+          }
+          S.shown[targetStep] = true;
+          goStep(targetStep);
+          var targetField = b.getAttribute('data-field');
+          var target = $('[data-path="' + targetField + '"]', el) || $('[data-err-for="' + targetField + '"]', el) || $('[name="' + targetField + '"]', el);
           if (target) { target.scrollIntoView({ block: 'center' }); if (target.focus) target.focus(); }
           return;
         case 'conflict-theirs':
@@ -3191,6 +3267,34 @@
             });
           }
           touch(); return render();
+        case 'select-all-cat':
+          if (!S.data.facilities) S.data.facilities = [];
+          var selCatKey = b.getAttribute('data-cat');
+          var catItems = (CFG.predefinedFacilities || []).filter(function (x) { return x.category === selCatKey; });
+          var existingMap = {};
+          S.data.facilities.forEach(function (f) { existingMap[f.facilityKey || f.key] = true; });
+          catItems.forEach(function (item) {
+            if (!existingMap[item.key]) {
+              S.data.facilities.push({
+                facilityKey: item.key,
+                category: item.category,
+                name: item.name,
+                icon: item.icon || '',
+                isCustom: false
+              });
+            }
+          });
+          touch(); return render();
+        case 'clear-cat':
+          if (!S.data.facilities) return;
+          var clearCatKey = b.getAttribute('data-cat');
+          S.data.facilities = S.data.facilities.filter(function (f) {
+            return f.category !== clearCatKey || f.isCustom;
+          });
+          touch(); return render();
+        case 'clear-all-facilities':
+          S.data.facilities = [];
+          touch(); return render();
         case 'add-custom-facility':
           if (!S.data.facilities) S.data.facilities = [];
           var customNameInput = $('#custom-fac-name', el);
@@ -3223,14 +3327,32 @@
       }
     });
 
+    el.addEventListener('keydown', function (ev) {
+      if (ev.key === ' ' || ev.key === 'Enter') {
+        var card = ev.target.closest('[data-act="toggle-facility"]');
+        if (card) {
+          ev.preventDefault();
+          card.click();
+        }
+      }
+    });
+
     function publishNow(btn) {
       if (S.publishing) return;
       S.publishing = true;
-      if (btn) { btn.disabled = true; btn.setAttribute('data-orig-text', btn.textContent); btn.textContent = 'Publishing free event…'; }
+      var isDirect = S.data.paymentMethod === 'direct_upi' || (S.data.organiserUpiId && S.data.organiserPayeeName);
+      var origText = btn ? btn.textContent : (isDirect ? 'Publish Event Now' : 'Publish Free Event Now');
+      var loadingText = isDirect ? 'Publishing event…' : 'Publishing free event…';
+      if (btn) {
+        btn.disabled = true;
+        btn.setAttribute('data-orig-text', origText);
+        btn.innerHTML = '<span class="spinner-sm" aria-hidden="true" style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:6px;"></span>' + esc(loadingText);
+      }
       var msg = $('[data-publish-msg]', el);
+      if (msg) { msg.textContent = ''; msg.style.display = 'none'; }
       api('POST', '/api/organiser/drafts/' + encodeURIComponent(S.draft.id) + '/publish', { version: S.version, confirm: true }).then(function (r) {
         S.publishing = false;
-        if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-orig-text') || 'Publish Free Event Now'; }
+        if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-orig-text') || origText; }
         if (r.ok) {
           store(localKey(), null); S.dirty = false; S.published = r;
           setStatus('published');
@@ -3239,13 +3361,31 @@
           render('[data-focus]'); window.scrollTo(0, 0);
           return;
         }
-        if (r.status === 422 && r.issues) { S.issues = r.issues; var dl = $('[data-publish-dialog]', el); if (dl) dl.close(); render(); return; }
-        if (r.error === 'version_conflict') { S.conflict = r.draft; var d2 = $('[data-publish-dialog]', el); if (d2) d2.close(); render(); return; }
-        if (msg) msg.textContent = r.message || 'Could not publish. Please try again.';
-      }).catch(function () {
+        if (r.status === 422 && r.issues) {
+          S.issues = r.issues;
+          var dl = $('[data-publish-dialog]', el);
+          if (dl) dl.close();
+          render();
+          return;
+        }
+        if (r.error === 'version_conflict') {
+          S.conflict = r.draft;
+          var d2 = $('[data-publish-dialog]', el);
+          if (d2) d2.close();
+          render();
+          return;
+        }
+        if (msg) {
+          msg.textContent = r.message || 'Could not publish event. Please review all details and try again.';
+          msg.style.display = 'block';
+        }
+      }).catch(function (err) {
         S.publishing = false;
-        if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-orig-text') || 'Publish Free Event Now'; }
-        if (msg) msg.textContent = 'A network error occurred. Please try again.';
+        if (btn) { btn.disabled = false; btn.textContent = btn.getAttribute('data-orig-text') || origText; }
+        if (msg) {
+          msg.textContent = (err && err.message) || 'A network error occurred. Please try again.';
+          msg.style.display = 'block';
+        }
       });
     }
 
