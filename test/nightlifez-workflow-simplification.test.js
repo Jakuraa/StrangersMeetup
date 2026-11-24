@@ -10,6 +10,7 @@ import { resetDb, startServer, stopServer, Client, db, signedInClient } from './
 import { validateUpiId, validatePayeeName } from '../lib/services/payment-settings.js';
 import { ticketCheckoutStatus } from '../lib/payments/availability.js';
 import { seatsTaken } from '../lib/services/bookings.js';
+import { TICKET_PRESETS, TEMPLATES, initialDraftData } from '../lib/services/organiser.js';
 
 before(async () => {
   await resetDb();
@@ -364,4 +365,190 @@ test('5. Attendee experience: complete free booking, receive ticket, view bookin
   // Verify inventory is completely restored to 0 seats taken
   const seatsAfterCancel = await seatsTaken(db, eventId);
   assert.equal(seatsAfterCancel, 0, 'cancelling must restore available ticket inventory');
+});
+
+test('6. Regression: every organiser-selectable preset (general, early_bird, couple, vip, free) defaults to free and ₹0', async () => {
+  // Direct preset inspection: every preset MUST be kind: 'free' and pricePaise: 0
+  const expectedPresets = ['general', 'early_bird', 'couple', 'vip', 'free'];
+  assert.deepEqual(Object.keys(TICKET_PRESETS).sort(), expectedPresets.sort());
+
+  for (const key of expectedPresets) {
+    const preset = TICKET_PRESETS[key];
+    assert.ok(preset, `preset ${key} must exist`);
+    assert.equal(preset.kind, 'free', `preset ${key} must be kind: 'free'`);
+    assert.equal(preset.pricePaise, 0, `preset ${key} must have pricePaise: 0`);
+    assert.ok(preset.quantity > 0, `preset ${key} must have positive quantity`);
+  }
+
+  // Template inspection: every template must initialise only free tickets
+  for (const [tplKey, tpl] of Object.entries(TEMPLATES)) {
+    const d = initialDraftData(tplKey);
+    assert.ok(Array.isArray(d.tickets), `template ${tplKey} must have tickets array`);
+    for (const t of d.tickets) {
+      assert.equal(t.kind, 'free', `template ${tplKey} ticket ${t.name} must be free`);
+      assert.equal(t.pricePaise, 0, `template ${tplKey} ticket ${t.name} must have pricePaise 0`);
+    }
+  }
+
+  // Organiser wizard config inspection: wizard configuration payload must serve all free presets
+  const org = await createOrganiser();
+  const pageRes = await org.get('/organiser/new');
+  assert.equal(pageRes.status, 200);
+  const m = pageRes.text.match(/<script type="application\/json" id="wz-config">([\s\S]*?)<\/script>/);
+  assert.ok(m, 'wz-config JSON script must be present in wizard HTML');
+  const cfg = JSON.parse(m[1]);
+  assert.ok(cfg.ticketPresets);
+  for (const key of expectedPresets) {
+    const p = cfg.ticketPresets[key];
+    assert.ok(p, `cfg.ticketPresets.${key} must exist`);
+    assert.equal(p.kind, 'free', `cfg.ticketPresets.${key} must be free`);
+    assert.equal(p.pricePaise, 0, `cfg.ticketPresets.${key} must have pricePaise 0`);
+  }
+
+  // Create an event containing all 5 presets and publish it successfully
+  const allPresetsDraft = await org.post('/api/organiser/drafts', { template: 'social' });
+  const dId = allPresetsDraft.json.draft.id;
+  const allTiersData = validFreeDraftData({
+    title: 'All Presets Free Gala Showcase',
+    tickets: expectedPresets.map((key, idx) => ({
+      id: `tier_${key}_${idx}`,
+      name: TICKET_PRESETS[key].name,
+      category: TICKET_PRESETS[key].category,
+      kind: 'free',
+      pricePaise: 0,
+      admitCount: TICKET_PRESETS[key].admitCount,
+      quantity: 10 + idx * 5,
+      maxPerBooking: TICKET_PRESETS[key].maxPerBooking,
+      minPerBooking: 1,
+      validOn: 'all'
+    }))
+  });
+
+  const saveRes = await org.req('PUT', `/api/organiser/drafts/${dId}`, {
+    data: allTiersData,
+    step: 'preview',
+    version: allPresetsDraft.json.draft.version
+  });
+  assert.equal(saveRes.status, 200);
+
+  // Check preview readiness: no blocking errors
+  const checkRes = await org.get(`/api/organiser/drafts/${dId}/check`);
+  assert.equal(checkRes.status, 200);
+  const errors = checkRes.json.issues.filter((i) => i.severity === 'error');
+  assert.equal(errors.length, 0, 'all-free draft with all presets must have zero blocking errors');
+
+  // Publish event
+  const pubRes = await org.post(`/api/organiser/drafts/${dId}/publish`, {
+    version: saveRes.json.draft.version,
+    confirm: true
+  });
+  assert.equal(pubRes.status, 200);
+  const eventId = pubRes.json.eventId;
+
+  // Verify PostgreSQL database state: all 5 ticket tiers are free with price 0
+  const dbTiers = (await db.query('SELECT * FROM ticket_types WHERE event_id = $1 ORDER BY id', [eventId])).rows;
+  assert.equal(dbTiers.length, 5);
+  for (const t of dbTiers) {
+    assert.equal(t.kind, 'free', `ticket tier ${t.name} must be stored as kind 'free'`);
+    assert.equal(t.price_paise, 0, `ticket tier ${t.name} must be stored with price_paise 0`);
+  }
+});
+
+test('7. Regression: existing paid drafts are preserved without silent conversion or deletion, but publication remains rejected', async () => {
+  const org = await createOrganiser();
+
+  // Create a draft with a paid ticket (mimicking legacy or pre-existing paid draft)
+  const draftRes = await org.post('/api/organiser/drafts', { template: 'social' });
+  const dId = draftRes.json.draft.id;
+  let ver = draftRes.json.draft.version;
+
+  const legacyPaidData = validFreeDraftData({
+    title: 'Preserved Legacy Paid Draft',
+    tickets: [
+      { id: 't_vip_legacy', name: 'VIP Pass', category: 'vip', kind: 'paid', pricePaise: 79900, quantity: 25, maxPerBooking: 2, minPerBooking: 1 },
+      { id: 't_free_entry', name: 'Free Entry', category: 'general', kind: 'free', pricePaise: 0, quantity: 50, maxPerBooking: 4, minPerBooking: 1 }
+    ]
+  });
+
+  // Save the draft
+  const saveRes = await org.req('PUT', `/api/organiser/drafts/${dId}`, {
+    data: legacyPaidData,
+    step: 'tickets',
+    version: ver
+  });
+  assert.equal(saveRes.status, 200);
+  ver = saveRes.json.draft.version;
+
+  // 1. Fetch draft: verify paid tier is completely intact (NOT deleted, NOT silently converted)
+  const getDraft = await org.get(`/api/organiser/drafts/${dId}`);
+  assert.equal(getDraft.status, 200);
+  const fetchedTickets = getDraft.json.draft.data.tickets;
+  assert.equal(fetchedTickets.length, 2);
+  const vipTier = fetchedTickets.find((t) => t.id === 't_vip_legacy');
+  assert.ok(vipTier, 'legacy paid tier must be preserved in draft');
+  assert.equal(vipTier.kind, 'paid', 'paid kind must be preserved');
+  assert.equal(vipTier.pricePaise, 79900, 'pricePaise must be preserved');
+
+  // 2. Draft list: verify it appears in drafts list
+  const listRes = await org.get('/api/organiser/drafts');
+  assert.equal(listRes.status, 200);
+  const inList = listRes.json.drafts.find((d) => d.id === dId);
+  assert.ok(inList, 'draft must appear in organiser drafts list');
+  assert.equal(inList.data.tickets.find((t) => t.id === 't_vip_legacy').kind, 'paid');
+
+  // 3. Raw PostgreSQL database row inspection: verify untouched JSON data in event_drafts
+  const dbDraft = await db.one('SELECT data FROM event_drafts WHERE id = $1', [dId]);
+  const rawVip = dbDraft.data.tickets.find((t) => t.id === 't_vip_legacy');
+  assert.equal(rawVip.kind, 'paid');
+  assert.equal(rawVip.pricePaise, 79900);
+
+  // 4. Publish attempt MUST be rejected by the backend with 422
+  const pubAttempt = await org.post(`/api/organiser/drafts/${dId}/publish`, {
+    version: ver,
+    confirm: true
+  });
+  assert.equal(pubAttempt.status, 422, 'publishing a paid ticket in free-only mode must fail');
+  assert.ok(pubAttempt.json.error === 'paid_tickets_disabled' || pubAttempt.json.error === 'not_ready');
+
+  // 5. Verify no event was created in events table
+  const evCount = (await db.one('SELECT count(*)::int n FROM events WHERE title = $1', ['Preserved Legacy Paid Draft'])).n;
+  assert.equal(evCount, 0, 'no event record must be created for rejected paid publication');
+});
+
+test('8. Regression: saving UPI settings does NOT enable paid checkout or allow paid event publication', async () => {
+  const org = await createOrganiser();
+
+  // Save valid UPI settings
+  const upiSave = await org.req('PUT', '/api/organiser/payment-settings', {
+    upiId: 'nightlifez.remediation@okaxis',
+    payeeName: 'Nightlifez Remediation'
+  });
+  assert.equal(upiSave.status, 200);
+  assert.equal(upiSave.json.settings.configured, true);
+  assert.equal(upiSave.json.settings.status, 'unverified');
+
+  // Verify checkout status remains completely disabled
+  const checkout = ticketCheckoutStatus();
+  assert.equal(checkout.available, false, 'saving UPI settings must NEVER activate paid checkout');
+  assert.equal(process.env.ENABLE_LIVE_PAYMENTS, 'false');
+  assert.equal(process.env.UPI_CHECKOUT_ENABLED, 'false');
+
+  // Attempting to publish a paid event still fails closed with 422
+  const paidDraft = await org.post('/api/organiser/drafts', { template: 'social' });
+  const pId = paidDraft.json.draft.id;
+  const pData = validFreeDraftData({
+    tickets: [{ id: 't_paid_upi_test', name: 'Paid Ticket', category: 'general', kind: 'paid', pricePaise: 49900, quantity: 20, maxPerBooking: 2 }]
+  });
+  const saveRes = await org.req('PUT', `/api/organiser/drafts/${pId}`, {
+    data: pData,
+    step: 'preview',
+    version: paidDraft.json.draft.version
+  });
+  assert.equal(saveRes.status, 200);
+
+  const pubRes = await org.post(`/api/organiser/drafts/${pId}/publish`, {
+    version: saveRes.json.draft.version,
+    confirm: true
+  });
+  assert.equal(pubRes.status, 422, 'backend must reject paid tickets even if UPI settings are configured');
 });

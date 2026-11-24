@@ -49,7 +49,7 @@ test('complete end-to-end product workflow verification', async ({ page, browser
     await tiers.first().getByRole('button', { name: 'Delete' }).click();
     await expect(tiers).toHaveCount(n - 1);
   }
-  await page.getByRole('button', { name: '+ Free entry' }).click();
+  await page.getByRole('button', { name: '+ General' }).click();
   await expect(tiers).toHaveCount(1);
   await tiers.first().getByLabel(/Ticket display name|Ticket name/i).fill('General RSVP');
   await tiers.first().getByLabel('Quantity available').fill('30');
@@ -138,4 +138,91 @@ test('complete end-to-end product workflow verification', async ({ page, browser
   await expect(page.locator('#biz-upi-id')).toHaveValue('nightlifez.events@okaxis');
   await expect(page.locator('#biz-payee-name')).toHaveValue('NIGHTLIFEZ Bengaluru Club');
   await expect(page.locator('[data-payment-status-badge]')).toContainText(/Verification Pending|Unverified/i);
+});
+
+test('browser test: select every preset (general, early_bird, couple, vip, free) -> Free (₹0) and publish successfully', async ({ page }) => {
+  const eventTitle = `Free Presets Suite ${Date.now().toString(36)}`;
+  page.on('dialog', (d) => d.accept());
+
+  // Sign in as organiser
+  await page.goto('/signin');
+  await page.getByRole('button', { name: new RegExp(PERSONAS.organiser.alias) }).click();
+  await page.waitForURL((u) => u.pathname === PERSONAS.organiser.landing);
+
+  // Navigate to wizard and start fresh
+  await page.goto('/organiser/new');
+  const freshBtn = page.getByRole('button', { name: 'Start fresh' });
+  if (await freshBtn.isVisible().catch(() => false)) await freshBtn.click();
+  await page.getByRole('button', { name: /Social meetup or matchmaking/ }).click();
+
+  // Step 1: Basics
+  await page.getByLabel('Event name').fill(eventTitle);
+  await page.getByLabel('Starts').fill(localInput(14, 19));
+  await page.getByLabel(/^Ends/).fill(localInput(14, 22));
+  await page.getByLabel(/Venue or meeting point/).fill('The Grand Ballroom — MG Road');
+  await page.getByLabel(/^City/).fill('Bengaluru');
+  await page.getByLabel(/Area or neighbourhood/).fill('MG Road');
+  await page.getByLabel('Description').fill('Testing every preset chip to verify all tiers default to Free (₹0) and can be published.');
+
+  // Step 2: Tickets
+  await page.getByRole('button', { name: /Next: Tickets/ }).click();
+  const tiers = page.locator('.tier-card');
+  // Clear any pre-existing default tiers
+  for (let n = await tiers.count(); n > 0; n--) {
+    await tiers.first().getByRole('button', { name: 'Delete' }).click();
+    await expect(tiers).toHaveCount(n - 1);
+  }
+
+  // Define every preset button to click
+  const presets = [
+    { button: '+ General', expectedName: 'General' },
+    { button: '+ Early bird', expectedName: 'Early bird' },
+    { button: '+ Couple', expectedName: 'Couple' },
+    { button: '+ VIP', expectedName: 'VIP' },
+    { button: '+ Free entry', expectedName: 'Free entry' }
+  ];
+
+  for (let i = 0; i < presets.length; i++) {
+    const { button, expectedName } = presets[i];
+    await page.getByRole('button', { name: button }).click();
+    await expect(tiers).toHaveCount(i + 1);
+
+    const card = tiers.nth(i);
+    // 1. Confirm displayed ticket type is Free Pass (₹0)
+    await expect(card.locator('.free-note').first()).toHaveText('Free Pass (₹0)');
+    // 2. Confirm displayed price is Free — ₹0
+    await expect(card.locator('.free-note').nth(1)).toHaveText('Free — ₹0');
+    // 3. Confirm status pill is Free RSVP (₹0)
+    await expect(card.locator('.pill-free')).toHaveText('Free RSVP (₹0)');
+    // 4. Confirm no warning pill
+    await expect(card.locator('.pill-warn')).toHaveCount(0);
+    // 5. Confirm no paid warning help text
+    await expect(card.getByText(/Paid tickets are preserved but cannot be published/i)).toHaveCount(0);
+  }
+
+  // Confirm no page-level paid alert
+  await expect(page.locator('.wz-alert')).toHaveCount(0);
+
+  // Wait for auto-save
+  await expect(page.locator('[data-save-status]')).toContainText(/Saved|Ready to publish/i, { timeout: 10_000 });
+
+  // Step 3: Features
+  await page.getByRole('button', { name: /Next: Features/ }).click();
+
+  // Step 4: Preview
+  await page.getByRole('button', { name: /Next: Preview/ }).click();
+  await expect(page.locator('.ok-line')).toContainText('Everything needed is in place');
+
+  // Verify attendee preview cards in preview step show Free
+  const previewTiers = page.locator('.ticket-tier, .tier-row, [data-preview-tier]');
+  if (await previewTiers.count() > 0) {
+    for (let i = 0; i < await previewTiers.count(); i++) {
+      await expect(previewTiers.nth(i)).toContainText(/Free|₹0/);
+    }
+  }
+
+  // Publish event
+  await page.getByRole('button', { name: /Publish (Free )?Event/i }).click();
+  await page.getByRole('button', { name: /Publish.*Now/i }).click();
+  await expect(page.getByRole('heading', { name: 'Your event is live' })).toBeVisible({ timeout: 15_000 });
 });

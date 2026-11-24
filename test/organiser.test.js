@@ -88,7 +88,8 @@ test('create a draft from a template, save progress, and resume it later', async
   assert.equal(d.data.multiDay, true);
   assert.equal(d.data.features.pickup.enabled, true);
   assert.equal(d.data.tickets[0].name, 'General');
-  assert.equal(d.data.tickets[0].pricePaise, undefined, 'templates never invent prices');
+  assert.equal(d.data.tickets[0].kind, 'free');
+  assert.equal(d.data.tickets[0].pricePaise, 0, 'templates default to free (0 price)');
 
   const data = { ...d.data, title: 'Coorg Weekend', city: 'Bengaluru' };
   const s = await c.req('PUT', `/api/organiser/drafts/${d.id}`, { data, step: 'tickets', version: d.version });

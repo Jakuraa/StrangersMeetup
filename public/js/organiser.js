@@ -2275,12 +2275,12 @@
 
     /* ---------- actions ---------- */
     function presetTier(key) {
-      var preset = CFG.ticketPresets[key] || CFG.ticketPresets.free || CFG.ticketPresets.general;
+      var preset = (CFG.ticketPresets && (CFG.ticketPresets[key] || CFG.ticketPresets.free || CFG.ticketPresets.general)) || {};
       var p = clone(preset);
       p.id = uid();
       p.category = p.category || key || 'general';
-      p.kind = preset.kind || 'free';
-      p.pricePaise = p.kind === 'free' ? 0 : (p.pricePaise || 49900);
+      p.kind = 'free';
+      p.pricePaise = 0;
       p.admitCount = p.admitCount || (p.category === 'couple' ? 2 : p.category === 'group' ? 4 : 1);
       p.quantity = (Number.isInteger(p.quantity) && p.quantity > 0 && p.quantity <= 5000) ? p.quantity : 50;
       p.minPerBooking = p.minPerBooking || 1;
