@@ -1611,7 +1611,7 @@ test('H6. Migration 031 Pre-Migration State & Idempotency: isolated schema seede
     assert.equal(legacyVenue.name, 'Royal Heritage Ballroom');
 
     // 3. Apply migration 031 using the actual migration runner (not executing SQL directly)
-    const mig031Ran = await migrate({ client, log: false });
+    const mig031Ran = await migrate({ client, target: '031_venue_self_service_onboarding.sql', log: false });
     assert.deepEqual(mig031Ran, ['031_venue_self_service_onboarding.sql'], 'Migration runner must apply only 031');
 
     // 4. Verify legacy venues retain their intended status and visibility
@@ -1655,7 +1655,7 @@ test('H6. Migration 031 Pre-Migration State & Idempotency: isolated schema seede
     assert.equal(draftDiscovery.length, 0, 'New draft venue must be excluded from public discovery');
 
     // 6. Run the migration runner a second time and verify it reports no pending migration and causes no schema/data changes
-    const secondRan = await migrate({ client, log: false });
+    const secondRan = await migrate({ client, target: '031_venue_self_service_onboarding.sql', log: false });
     assert.deepEqual(secondRan, [], 'Second migration run must report zero pending migrations');
 
     // Verify data and schema remain identical after second run
